@@ -1,0 +1,17 @@
+{
+  "@@locale": "uz",
+  "appTitle": "Dr. Jewelry",
+  "catalog": "Katalog",
+  "cart": "Savat",
+  "profile": "Profil",
+  "addToCart": "Savatga qo'shish",
+  "translateAllLanguages": "Barcha tillarga tarjima qilish (AI)",
+  "translating": "Tarjima qilinmoqda...",
+  "translationDone": "Tarjimalar to'ldirildi — tekshiring va tahrirlang",
+  "productNameRu": "Nomi (RU)",
+  "productDescriptionRu": "Tavsif (RU)",
+  "translationsTitle": "Tarjimalar (KO / EN / UZ)",
+  "languageKo": "한국어 (KO)",
+  "languageEn": "English (EN)",
+  "languageUz": "O'zbekcha (UZ)"
+}

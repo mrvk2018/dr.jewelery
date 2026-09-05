@@ -1,0 +1,75 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code / Cursor local IDE settings
+.vscode/
+.cursor/
+
+# Flutter/Dart/Pub
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+.generated/
+build/
+/coverage/
+
+# Symbolication / obfuscation
+app.*.symbols
+app.*.map.json
+
+# Android build outputs
+/android/app/debug
+/android/app/profile
+/android/app/release
+**/android/local.properties
+**/android/**/gradle-wrapper.jar
+**/.gradle/
+
+# iOS / macOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+**/ios/ServiceDefinitions.json
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+**/google-services.json
+**/GoogleService-Info.plist
+key.properties
+**/android/key.properties
+secrets.json
+credentials.json
+service-account*.json
+
+# Generated platform files
+*.g.dart.bak
+*.freezed.dart.bak

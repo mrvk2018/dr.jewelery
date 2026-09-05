@@ -1,0 +1,17 @@
+{
+  "@@locale": "ru",
+  "appTitle": "Dr. Jewelry",
+  "catalog": "Каталог",
+  "cart": "Корзина",
+  "profile": "Профиль",
+  "addToCart": "В корзину",
+  "translateAllLanguages": "Перевести на все языки (AI)",
+  "translating": "Переводим...",
+  "translationDone": "Переводы заполнены — проверьте и при необходимости отредактируйте",
+  "productNameRu": "Название (RU)",
+  "productDescriptionRu": "Описание (RU)",
+  "translationsTitle": "Переводы (KO / EN / UZ)",
+  "languageKo": "한국어 (KO)",
+  "languageEn": "English (EN)",
+  "languageUz": "O'zbekcha (UZ)"
+}

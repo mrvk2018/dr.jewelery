@@ -1,0 +1,17 @@
+{
+  "@@locale": "ko",
+  "appTitle": "Dr. Jewelry",
+  "catalog": "카탈로그",
+  "cart": "장바구니",
+  "profile": "프로필",
+  "addToCart": "장바구니에 담기",
+  "translateAllLanguages": "모든 언어로 번역 (AI)",
+  "translating": "번역 중...",
+  "translationDone": "번역이 완료되었습니다 — 확인 후 수정하세요",
+  "productNameRu": "이름 (RU)",
+  "productDescriptionRu": "설명 (RU)",
+  "translationsTitle": "번역 (KO / EN / UZ)",
+  "languageKo": "한국어 (KO)",
+  "languageEn": "English (EN)",
+  "languageUz": "O'zbekcha (UZ)"
+}

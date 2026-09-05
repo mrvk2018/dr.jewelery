@@ -5,6 +5,8 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
+import '../../../../shared/providers/profile_scope.dart';
+import '../../../profile/domain/models/order_item.dart';
 import '../../../shell/presentation/pages/main_screen.dart';
 import '../../domain/models/payment_models.dart';
 
@@ -47,6 +49,9 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
       curve: const Interval(0.3, 1, curve: Curves.easeOut),
     );
     _controller.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _persistPaidOrder();
+    });
   }
 
   @override
@@ -55,8 +60,50 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     super.dispose();
   }
 
+  void _persistPaidOrder() {
+    final cart = CartScope.of(context);
+    if (cart.items.isEmpty) return;
+
+    final profile = ProfileScope.of(context);
+    final languageCode = LocaleScope.of(context).languageCode;
+    final names = cart.items
+        .map((item) => item.product.localizedName(languageCode))
+        .join(', ');
+    final now = DateTime.now();
+    const months = [
+      'янв',
+      'фев',
+      'мар',
+      'апр',
+      'май',
+      'июн',
+      'июл',
+      'авг',
+      'сен',
+      'окт',
+      'ноя',
+      'дек',
+    ];
+
+    profile.addOrder(
+      OrderItem(
+        id: 'ORD-${now.millisecondsSinceEpoch}',
+        productName: names,
+        amount: cart.total,
+        status: widget.status == OrderPaymentStatus.paid
+            ? OrderStatus.paid
+            : OrderStatus.newOrder,
+        dateLabel: '${now.day} ${months[now.month - 1]} ${now.year}',
+        customerName: profile.user.name.isEmpty ? 'Гость' : profile.user.name,
+      ),
+    );
+    cart.clear();
+  }
+
   void _returnHome() {
-    CartScope.of(context).clear();
+    if (CartScope.of(context).items.isNotEmpty) {
+      _persistPaidOrder();
+    }
     Navigator.of(context).pushAndRemoveUntil<void>(
       MaterialPageRoute<void>(builder: (_) => const MainScreen()),
       (_) => false,

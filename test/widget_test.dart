@@ -63,7 +63,35 @@ void main() {
     await tester.tap(find.text('Войти через Google'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Владелец Sunlight'), findsWidgets);
+    expect(find.text('Анна Иванова'), findsWidgets);
+
+    final secretAvatar = find.byKey(const Key('profile_secret_avatar'));
+    expect(secretAvatar, findsOneWidget);
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(secretAvatar);
+      await tester.pump(const Duration(milliseconds: 80));
+    }
+    await tester.pumpAndSettle();
+
+    expect(find.text('Инициализация владельца Dr. Jewelry'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const Key('admin_claim_password')),
+      'owner-passphrase',
+    );
+    await tester.enterText(
+      find.byKey(const Key('admin_claim_confirm')),
+      'owner-passphrase',
+    );
+    await tester.tap(find.byKey(const Key('admin_claim_submit')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Владелец Dr. Jewelry'), findsWidgets);
+    expect(
+      find.text('Режим администратора Dr. Jewelry активирован'),
+      findsOneWidget,
+    );
+
+    await tester.pumpAndSettle(const Duration(seconds: 4));
 
     await tester.scrollUntilVisible(
       find.text('Панель управления'),

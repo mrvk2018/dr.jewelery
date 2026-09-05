@@ -9,7 +9,7 @@ import '../widgets/home_promo_banner.dart';
 import '../widgets/home_recommended_grid.dart';
 import '../widgets/home_stories_section.dart';
 
-/// Главный экран в стиле Sunlight: истории, баннер, рекомендации.
+/// Главный экран в стиле Dr. Jewelry: истории, баннер, рекомендации.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 

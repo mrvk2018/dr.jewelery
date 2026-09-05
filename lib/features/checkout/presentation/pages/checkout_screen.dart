@@ -7,7 +7,6 @@ import '../../../../core/services/korean_address_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
-import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../domain/models/delivery_method.dart';
 
@@ -97,7 +96,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PaymentScreen(
-          productsTotalRub: widget.productsTotal,
+          productsTotalKrw: widget.productsTotal,
           deliveryFeeKrw: _deliveryFee,
         ),
       ),
@@ -106,11 +105,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   String get _orderButtonLabel {
     final base = tr(CheckoutStringKeys.placeOrder);
-    final totalRub = formatRubPrice(widget.productsTotal);
+    final productsTotal = formatWon(widget.productsTotal);
     if (_deliveryFee > 0) {
-      return '$base · $totalRub + ${formatKrw(_deliveryFee)}';
+      return '$base · $productsTotal + ${formatWon(_deliveryFee)}';
     }
-    return '$base · $totalRub';
+    return '$base · $productsTotal';
   }
 
   @override
@@ -299,7 +298,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 children: [
                   _SummaryRow(
                     label: tr(CheckoutStringKeys.productsTotal),
-                    value: formatRubPrice(widget.productsTotal),
+                    value: formatWon(widget.productsTotal),
                   ),
                   const SizedBox(height: 8),
                   _SummaryRow(

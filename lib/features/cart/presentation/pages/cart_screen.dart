@@ -16,11 +16,20 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   late final TextEditingController _promoController;
+  bool _promoSynced = false;
 
   @override
   void initState() {
     super.initState();
     _promoController = TextEditingController();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_promoSynced) return;
+    _promoSynced = true;
+    _promoController.text = CartScope.of(context).promoCode;
   }
 
   @override
@@ -81,6 +90,10 @@ class _CartScreenState extends State<CartScreen> {
                         child: CartItemTile(
                           item: item,
                           onRemove: () => cart.removeItem(item.cartKey),
+                          onIncrement: () =>
+                              cart.incrementQuantity(item.cartKey),
+                          onDecrement: () =>
+                              cart.decrementQuantity(item.cartKey),
                         ),
                       ),
                     ),

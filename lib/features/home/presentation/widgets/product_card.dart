@@ -4,7 +4,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
+import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
+import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../../../product/presentation/pages/product_detail_screen.dart';
 
 /// Карточка товара для сетки рекомендаций на главном экране.
@@ -27,8 +29,6 @@ class ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<ProductCard> {
-  bool _isFavorite = false;
-
   static const _placeholderIcons = [
     Icons.diamond_outlined,
     Icons.blur_circular_outlined,
@@ -52,6 +52,7 @@ class _ProductCardState extends State<ProductCard> {
   }
 
   void _handleAddToCart() {
+    if (widget.product.isOutOfStock) return;
     if (widget.onAddToCart != null) {
       widget.onAddToCart!();
       return;
@@ -77,6 +78,8 @@ class _ProductCardState extends State<ProductCard> {
     final product = widget.product;
     final icon = _placeholderIcons[product.iconIndex % _placeholderIcons.length];
     final languageCode = LocaleScope.of(context).languageCode;
+    final favorites = FavoritesScope.of(context);
+    final isFavorite = favorites.isFavorite(product);
 
     return Material(
       color: Colors.transparent,
@@ -124,10 +127,11 @@ class _ProductCardState extends State<ProductCard> {
                       top: 4,
                       right: 4,
                       child: _FavoriteButton(
-                        isFavorite: _isFavorite,
+                        isFavorite: isFavorite,
                         onTap: () {
-                          setState(() => _isFavorite = !_isFavorite);
-                          widget.onFavoriteToggle?.call(_isFavorite);
+                          favorites.toggleFavorite(product);
+                          widget.onFavoriteToggle
+                              ?.call(favorites.isFavorite(product));
                         },
                       ),
                     ),
@@ -162,23 +166,25 @@ class _ProductCardState extends State<ProductCard> {
                       SizedBox(
                         width: double.infinity,
                         height: 36,
-                        child: ElevatedButton(
-                          onPressed: _handleAddToCart,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.textOnPrimary,
-                            elevation: 0,
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            textStyle: AppTypography.caption(
-                              color: AppColors.textOnPrimary,
-                              fontWeight: FontWeight.w600,
-                            ).copyWith(fontSize: 12),
-                          ),
-                          child: const Text('В корзину'),
-                        ),
+                        child: product.isOutOfStock
+                            ? const OutOfStockPlaque()
+                            : ElevatedButton(
+                                onPressed: _handleAddToCart,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.textOnPrimary,
+                                  elevation: 0,
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  textStyle: AppTypography.caption(
+                                    color: AppColors.textOnPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ).copyWith(fontSize: 12),
+                                ),
+                                child: const Text('В корзину'),
+                              ),
                       ),
                     ],
                   ),
@@ -265,7 +271,7 @@ class _PriceRow extends StatelessWidget {
       runSpacing: 2,
       children: [
         Text(
-          formatRubPrice(salePrice),
+          formatWon(salePrice),
           style: AppTypography.price(
             fontSize: 15,
             color: AppColors.saleRed,
@@ -273,7 +279,7 @@ class _PriceRow extends StatelessWidget {
           ),
         ),
         Text(
-          formatRubPrice(oldPrice),
+          formatWon(oldPrice),
           style: AppTypography.price(
             fontSize: 11,
             color: AppColors.textSecondary,

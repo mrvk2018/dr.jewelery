@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Luxury palette for the Sunlight jewelry storefront.
+/// Luxury palette for the Dr. Jewelry storefront.
 abstract final class AppColors {
   static const Color primary = Color(0xFF111111);
   static const Color accent = Color(0xFFD4AF37);

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/app_language.dart';
+import '../../../../core/utils/won_format.dart';
 import '../../../../core/l10n/support_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -17,10 +19,14 @@ class ProfileGuestView extends StatelessWidget {
     super.key,
     required this.onGoogleSignIn,
     required this.onAppleSignIn,
+    required this.onLanguageTap,
+    required this.onSecretAdminTap,
   });
 
   final VoidCallback onGoogleSignIn;
   final VoidCallback onAppleSignIn;
+  final VoidCallback onLanguageTap;
+  final VoidCallback onSecretAdminTap;
 
   bool get _showAppleSignIn {
     return defaultTargetPlatform == TargetPlatform.iOS ||
@@ -49,18 +55,22 @@ class ProfileGuestView extends StatelessWidget {
           ),
           child: Column(
             children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.background,
-                  border: Border.all(color: AppColors.accent, width: 1.5),
-                ),
-                child: const Icon(
-                  Icons.person_outline_rounded,
-                  size: 36,
-                  color: AppColors.accent,
+              GestureDetector(
+                key: const Key('profile_secret_avatar'),
+                onTap: onSecretAdminTap,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.background,
+                    border: Border.all(color: AppColors.accent, width: 1.5),
+                  ),
+                  child: const Icon(
+                    Icons.person_outline_rounded,
+                    size: 36,
+                    color: AppColors.accent,
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -85,6 +95,10 @@ class ProfileGuestView extends StatelessWidget {
               FeedbackButton(
                 language: LocaleScope.of(context).language,
               ),
+              const SizedBox(height: 8),
+              ProfileLanguageTile(onTap: onLanguageTap),
+              const SizedBox(height: 8),
+              ProfileVersionLabel(onSecretTap: onSecretAdminTap),
             ],
           ),
         ),
@@ -101,19 +115,23 @@ class ProfileAuthenticatedView extends StatelessWidget {
     required this.orders,
     required this.onLogout,
     required this.onOpenAdminPanel,
+    required this.onLanguageTap,
+    required this.onSecretAdminTap,
   });
 
   final UserProfile user;
   final List<OrderItem> orders;
   final VoidCallback onLogout;
   final VoidCallback onOpenAdminPanel;
+  final VoidCallback onLanguageTap;
+  final VoidCallback onSecretAdminTap;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _ProfileHeader(user: user),
+        _ProfileHeader(user: user, onSecretAdminTap: onSecretAdminTap),
         const SizedBox(height: 16),
         _BonusBalanceCard(balance: user.bonusBalance),
         const SizedBox(height: 16),
@@ -123,7 +141,7 @@ class ProfileAuthenticatedView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'История заказов',
+          'Мои заказы',
           style: AppTypography.heading(fontSize: 20),
         ),
         const SizedBox(height: 12),
@@ -147,6 +165,8 @@ class ProfileAuthenticatedView extends StatelessWidget {
               child: _OrderHistoryTile(order: order),
             ),
           ),
+        ProfileLanguageTile(onTap: onLanguageTap),
+        const SizedBox(height: 8),
         if (user.isAdmin) ...[
           const SizedBox(height: 8),
           SizedBox(
@@ -203,18 +223,24 @@ class ProfileAuthenticatedView extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Выйти'),
+            child: Text(user.isAdmin ? 'Выйти из админки' : 'Выйти'),
           ),
         ),
+        const SizedBox(height: 8),
+        ProfileVersionLabel(onSecretTap: onSecretAdminTap),
       ],
     );
   }
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.user});
+  const _ProfileHeader({
+    required this.user,
+    required this.onSecretAdminTap,
+  });
 
   final UserProfile user;
+  final VoidCallback onSecretAdminTap;
 
   @override
   Widget build(BuildContext context) {
@@ -227,15 +253,19 @@ class _ProfileHeader extends StatelessWidget {
 
     return Row(
       children: [
-        CircleAvatar(
-          radius: 28,
-          backgroundColor: AppColors.primary,
-          child: Text(
-            initials.toUpperCase(),
-            style: AppTypography.caption(
-              color: AppColors.accent,
-              fontWeight: FontWeight.w700,
-            ).copyWith(fontSize: 18),
+        GestureDetector(
+          key: const Key('profile_secret_avatar'),
+          onTap: onSecretAdminTap,
+          child: CircleAvatar(
+            radius: 28,
+            backgroundColor: AppColors.primary,
+            child: Text(
+              initials.toUpperCase(),
+              style: AppTypography.caption(
+                color: AppColors.accent,
+                fontWeight: FontWeight.w700,
+              ).copyWith(fontSize: 18),
+            ),
           ),
         ),
         const SizedBox(width: 14),
@@ -342,7 +372,7 @@ class _OrderHistoryTile extends StatelessWidget {
                 style: AppTypography.productMeta(),
               ),
               Text(
-                '${order.amount} ₽',
+                formatWon(order.amount),
                 style: AppTypography.price(
                   fontSize: 14,
                   color: AppColors.textPrimary,
@@ -375,6 +405,69 @@ class _StatusChip extends StatelessWidget {
           color: AppColors.primary,
           fontWeight: FontWeight.w600,
         ).copyWith(fontSize: 11),
+      ),
+    );
+  }
+}
+
+class ProfileLanguageTile extends StatelessWidget {
+  const ProfileLanguageTile({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  String _title(AppLanguage language) {
+    return switch (language) {
+      AppLanguage.ru => 'Язык приложения',
+      AppLanguage.kk => 'Қосымша тілі',
+      AppLanguage.ko => '앱 언어',
+      AppLanguage.en => 'App language',
+      AppLanguage.uz => 'Ilova tili',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final language = LocaleScope.of(context).language;
+    return Material(
+      color: AppColors.cardBackground,
+      borderRadius: BorderRadius.circular(12),
+      child: ListTile(
+        onTap: onTap,
+        leading: const Icon(Icons.language_rounded, color: AppColors.accent),
+        title: Text(_title(language), style: AppTypography.productName()),
+        subtitle: Text(
+          '${language.flagEmoji}  ${language.label}',
+          style: AppTypography.productMeta(),
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: AppColors.border),
+        ),
+      ),
+    );
+  }
+}
+
+class ProfileVersionLabel extends StatelessWidget {
+  const ProfileVersionLabel({super.key, required this.onSecretTap});
+
+  final VoidCallback onSecretTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onSecretTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'Dr. Jewelry  ·  v1.0.0',
+          textAlign: TextAlign.center,
+          style: AppTypography.caption(
+            color: AppColors.textSecondary.withValues(alpha: 0.55),
+          ).copyWith(fontSize: 11),
+        ),
       ),
     );
   }

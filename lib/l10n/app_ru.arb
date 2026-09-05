@@ -1,17 +1,25 @@
 {
   "@@locale": "ru",
   "appTitle": "Dr. Jewelry",
+  "home": "Главная",
   "catalog": "Каталог",
   "cart": "Корзина",
+  "favorites": "Избранное",
+  "favoritesEmptyTitle": "Пока нет избранного",
+  "favoritesEmptySubtitle": "Нажмите на сердце на карточке украшения — и оно появится здесь",
   "profile": "Профиль",
+  "support": "Поддержка",
   "addToCart": "В корзину",
+  "outOfStock": "Нет в наличии",
+  "continueOnboarding": "Продолжить",
   "translateAllLanguages": "Перевести на все языки (AI)",
   "translating": "Переводим...",
   "translationDone": "Переводы заполнены — проверьте и при необходимости отредактируйте",
   "productNameRu": "Название (RU)",
   "productDescriptionRu": "Описание (RU)",
-  "translationsTitle": "Переводы (KO / EN / UZ)",
+  "translationsTitle": "Переводы (KO / EN / UZ / KK)",
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
-  "languageUz": "O'zbekcha (UZ)"
+  "languageUz": "O'zbekcha (UZ)",
+  "languageKk": "Қазақша (KK)"
 }

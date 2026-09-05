@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// Поддерживаемые языки приложения (ISO-коды локалей Flutter).
 enum AppLanguage {
   ru('ru', 'Русский', 'RU', '🇷🇺'),
+  kk('kk', 'Қазақша', 'KK', '🇰🇿'),
   ko('ko', '한국어', 'KO', '🇰🇷'),
   en('en', 'English', 'EN', '🇬🇧'),
   uz('uz', 'O\'zbekcha', 'UZ', '🇺🇿');

@@ -13,10 +13,14 @@ class CartItemTile extends StatelessWidget {
     super.key,
     required this.item,
     required this.onRemove,
+    required this.onIncrement,
+    required this.onDecrement,
   });
 
   final CartItem item;
   final VoidCallback onRemove;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
 
   static const _icons = [
     Icons.diamond_outlined,
@@ -78,12 +82,19 @@ class CartItemTile extends StatelessWidget {
                 ],
                 const SizedBox(height: 6),
                 Text(
-                  formatRubPrice(product.salePrice),
+                  formatWon(product.salePrice),
                   style: AppTypography.price(
                     fontSize: 16,
                     color: AppColors.saleRed,
                     fontWeight: FontWeight.w700,
                   ),
+                ),
+                const SizedBox(height: 8),
+                _CartQtyStepper(
+                  quantity: item.quantity,
+                  canIncrement: item.quantity < product.stockQuantity,
+                  onIncrement: onIncrement,
+                  onDecrement: onDecrement,
                 ),
               ],
             ),
@@ -100,6 +111,81 @@ class CartItemTile extends StatelessWidget {
 }
 
 /// Блок промокода и списания бонусов.
+class _CartQtyStepper extends StatelessWidget {
+  const _CartQtyStepper({
+    required this.quantity,
+    required this.canIncrement,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  final int quantity;
+  final bool canIncrement;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _QtyIconButton(
+            icon: Icons.remove_rounded,
+            onTap: onDecrement,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              '$quantity',
+              style: AppTypography.caption(fontWeight: FontWeight.w700)
+                  .copyWith(fontSize: 13),
+            ),
+          ),
+          _QtyIconButton(
+            icon: Icons.add_rounded,
+            onTap: canIncrement ? onIncrement : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QtyIconButton extends StatelessWidget {
+  const _QtyIconButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: Icon(
+          icon,
+          size: 16,
+          color: enabled ? AppColors.textPrimary : AppColors.border,
+        ),
+      ),
+    );
+  }
+}
+
 class CartLoyaltySection extends StatelessWidget {
   const CartLoyaltySection({
     super.key,
@@ -168,7 +254,7 @@ class CartLoyaltySection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Списать бонусные рубли',
+                      'Списать бонусы (₩)',
                       style: AppTypography.caption(fontWeight: FontWeight.w600)
                           .copyWith(fontSize: 14),
                     ),
@@ -231,18 +317,18 @@ class CartSummarySection extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _SummaryRow(label: 'Стоимость', value: formatRubPrice(subtotal)),
+          _SummaryRow(label: 'Стоимость', value: formatWon(subtotal)),
           const SizedBox(height: 8),
           _SummaryRow(
             label: 'Скидка',
-            value: '- ${formatRubPrice(discount)}',
+            value: '- ${formatWon(discount)}',
             valueColor: AppColors.saleRed,
           ),
           if (promoDiscount > 0) ...[
             const SizedBox(height: 8),
             _SummaryRow(
               label: 'Промокод',
-              value: '- ${formatRubPrice(promoDiscount)}',
+              value: '- ${formatWon(promoDiscount)}',
               valueColor: AppColors.accent,
             ),
           ],
@@ -250,7 +336,7 @@ class CartSummarySection extends StatelessWidget {
             const SizedBox(height: 8),
             _SummaryRow(
               label: 'Списано бонусов',
-              value: '- ${formatRubPrice(bonusDeduction)}',
+              value: '- ${formatWon(bonusDeduction)}',
               valueColor: AppColors.accent,
             ),
           ],
@@ -260,7 +346,7 @@ class CartSummarySection extends StatelessWidget {
           ),
           _SummaryRow(
             label: 'Итого к оплате',
-            value: formatRubPrice(total),
+            value: formatWon(total),
             isTotal: true,
           ),
         ],

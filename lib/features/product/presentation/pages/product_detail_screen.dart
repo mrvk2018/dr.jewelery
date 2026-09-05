@@ -4,7 +4,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
+import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
+import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../widgets/product_gallery.dart';
 import '../widgets/product_installment_banner.dart';
 import '../widgets/product_size_selector.dart';
@@ -23,7 +25,6 @@ class ProductDetailScreen extends StatefulWidget {
 }
 
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
-  bool _isFavorite = false;
   double? _selectedSize;
 
   ProductItem get product => widget.product;
@@ -41,6 +42,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _addToCart() {
+    if (product.isOutOfStock) return;
     if (_requiresSize && _selectedSize == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Выберите размер изделия')),
@@ -69,6 +71,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final languageCode = LocaleScope.of(context).languageCode;
+    final favorites = FavoritesScope.of(context);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -77,7 +80,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           style: AppTypography.heading(fontSize: 18),
         ),
       ),
-      bottomNavigationBar: _AddToCartBar(onPressed: _addToCart),
+      bottomNavigationBar: _AddToCartBar(
+        onPressed: product.isOutOfStock ? null : _addToCart,
+        isOutOfStock: product.isOutOfStock,
+      ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,8 +91,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             const SizedBox(height: 8),
             ProductGallery(
               product: product,
-              isFavorite: _isFavorite,
-              onFavoriteToggle: () => setState(() => _isFavorite = !_isFavorite),
+              isFavorite: favorites.isFavorite(product),
+              onFavoriteToggle: () => favorites.toggleFavorite(product),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -150,7 +156,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   _SpecRow(label: 'Вставка', value: product.insert),
                   _SpecRow(
                     label: 'Артикул',
-                    value: 'SL-${product.id.padLeft(4, '0')}',
+                    value: product.sku,
+                  ),
+                  _SpecRow(
+                    label: 'Остаток',
+                    value: product.isOutOfStock
+                        ? '0'
+                        : '${product.stockQuantity}',
                   ),
                   const SizedBox(height: 80),
                 ],
@@ -165,7 +177,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String _buildDescription(ProductItem product, String languageCode) {
     final localized = product.localizedDescription(languageCode);
     if (localized.isNotEmpty) return localized;
-    return 'Изысканное украшение из коллекции Sunlight. '
+    return 'Изысканное украшение из коллекции Dr. Jewelry. '
         '${product.localizedName(languageCode)} выполнено из ${product.metal.toLowerCase()} '
         'с ${product.insert == 'Без вставок' ? 'лаконичным дизайном без вставок' : 'вставкой: ${product.insert.toLowerCase()}'}.' 
         ' Идеально подходит для особых моментов и ежедневного образа.';
@@ -189,7 +201,7 @@ class _DetailPriceRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          formatRubPrice(salePrice),
+          formatWon(salePrice),
           style: AppTypography.price(
             fontSize: 28,
             color: AppColors.saleRed,
@@ -198,7 +210,7 @@ class _DetailPriceRow extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Text(
-          formatRubPrice(oldPrice),
+          formatWon(oldPrice),
           style: AppTypography.price(
             fontSize: 16,
             color: AppColors.textSecondary,
@@ -256,9 +268,13 @@ class _SpecRow extends StatelessWidget {
 }
 
 class _AddToCartBar extends StatelessWidget {
-  const _AddToCartBar({required this.onPressed});
+  const _AddToCartBar({
+    required this.onPressed,
+    required this.isOutOfStock,
+  });
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool isOutOfStock;
 
   @override
   Widget build(BuildContext context) {
@@ -273,22 +289,24 @@ class _AddToCartBar extends StatelessWidget {
         child: SizedBox(
           height: 48,
           width: double.infinity,
-          child: ElevatedButton(
-            onPressed: onPressed,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.textOnPrimary,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              textStyle: AppTypography.caption(
-                color: AppColors.textOnPrimary,
-                fontWeight: FontWeight.w700,
-              ).copyWith(fontSize: 15),
-            ),
-            child: const Text('Добавить в корзину'),
-          ),
+          child: isOutOfStock
+              ? const OutOfStockPlaque(height: 48)
+              : ElevatedButton(
+                  onPressed: onPressed,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.textOnPrimary,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    textStyle: AppTypography.caption(
+                      color: AppColors.textOnPrimary,
+                      fontWeight: FontWeight.w700,
+                    ).copyWith(fontSize: 15),
+                  ),
+                  child: const Text('Добавить в корзину'),
+                ),
         ),
       ),
     );

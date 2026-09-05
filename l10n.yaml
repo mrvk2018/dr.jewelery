@@ -3,3 +3,9 @@ template-arb-file: app_ru.arb
 output-localization-file: app_localizations.dart
 output-class: AppLocalizations
 nullable-getter: false
+preferred-supported-locales:
+  - ru
+  - kk
+  - ko
+  - en
+  - uz

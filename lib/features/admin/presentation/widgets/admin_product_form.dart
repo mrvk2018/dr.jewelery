@@ -33,9 +33,11 @@ class _AdminProductFormState extends State<AdminProductForm> {
   final _priceController = TextEditingController();
   final _discountController = TextEditingController();
 
+  final _nameKkController = TextEditingController();
   final _nameKoController = TextEditingController();
   final _nameEnController = TextEditingController();
   final _nameUzController = TextEditingController();
+  final _descriptionKkController = TextEditingController();
   final _descriptionKoController = TextEditingController();
   final _descriptionEnController = TextEditingController();
   final _descriptionUzController = TextEditingController();
@@ -48,9 +50,11 @@ class _AdminProductFormState extends State<AdminProductForm> {
     _descriptionRuController.dispose();
     _priceController.dispose();
     _discountController.dispose();
+    _nameKkController.dispose();
     _nameKoController.dispose();
     _nameEnController.dispose();
     _nameUzController.dispose();
+    _descriptionKkController.dispose();
     _descriptionKoController.dispose();
     _descriptionEnController.dispose();
     _descriptionUzController.dispose();
@@ -75,9 +79,12 @@ class _AdminProductFormState extends State<AdminProductForm> {
 
       if (!mounted) return;
       setState(() {
+        _nameKkController.text = result.names[AppLocaleCodes.kk] ?? '';
         _nameKoController.text = result.names[AppLocaleCodes.ko] ?? '';
         _nameEnController.text = result.names[AppLocaleCodes.en] ?? '';
         _nameUzController.text = result.names[AppLocaleCodes.uz] ?? '';
+        _descriptionKkController.text =
+            result.descriptions[AppLocaleCodes.kk] ?? '';
         _descriptionKoController.text =
             result.descriptions[AppLocaleCodes.ko] ?? '';
         _descriptionEnController.text =
@@ -112,6 +119,7 @@ class _AdminProductFormState extends State<AdminProductForm> {
 
     final nameMap = {
       AppLocaleCodes.ru: ruName,
+      AppLocaleCodes.kk: _nameKkController.text.trim(),
       AppLocaleCodes.ko: _nameKoController.text.trim(),
       AppLocaleCodes.en: _nameEnController.text.trim(),
       AppLocaleCodes.uz: _nameUzController.text.trim(),
@@ -119,13 +127,17 @@ class _AdminProductFormState extends State<AdminProductForm> {
 
     final descriptionMap = {
       AppLocaleCodes.ru: ruDescription,
+      AppLocaleCodes.kk: _descriptionKkController.text.trim(),
       AppLocaleCodes.ko: _descriptionKoController.text.trim(),
       AppLocaleCodes.en: _descriptionEnController.text.trim(),
       AppLocaleCodes.uz: _descriptionUzController.text.trim(),
     }..removeWhere((_, value) => value.isEmpty);
 
+    final stamp = DateTime.now().millisecondsSinceEpoch;
     final item = ProductItem(
-      id: 'adm-${DateTime.now().millisecondsSinceEpoch}',
+      id: 'adm-$stamp',
+      sku: 'DJ-ADM-$stamp',
+      stockQuantity: 5,
       name: nameMap,
       description: descriptionMap,
       metal: 'Белое золото',
@@ -145,9 +157,11 @@ class _AdminProductFormState extends State<AdminProductForm> {
     _descriptionRuController.clear();
     _priceController.clear();
     _discountController.clear();
+    _nameKkController.clear();
     _nameKoController.clear();
     _nameEnController.clear();
     _nameUzController.clear();
+    _descriptionKkController.clear();
     _descriptionKoController.clear();
     _descriptionEnController.clear();
     _descriptionUzController.clear();
@@ -174,7 +188,7 @@ class _AdminProductFormState extends State<AdminProductForm> {
         _AdminFormField(
           controller: _descriptionRuController,
           label: l10n.productDescriptionRu,
-          hint: 'Изысканное украшение из коллекции Sunlight',
+          hint: 'Изысканное украшение из коллекции Dr. Jewelry',
           maxLines: 3,
         ),
         const SizedBox(height: 12),
@@ -217,6 +231,19 @@ class _AdminProductFormState extends State<AdminProductForm> {
                   .copyWith(fontSize: 14),
             ),
             children: [
+              _AdminFormField(
+                controller: _nameKkController,
+                label: '${l10n.languageKk} · Атауы',
+                hint: 'Сақина ...',
+              ),
+              const SizedBox(height: 12),
+              _AdminFormField(
+                controller: _descriptionKkController,
+                label: '${l10n.languageKk} · Сипаттамасы',
+                hint: 'Премиум зергерлік бұйым ...',
+                maxLines: 2,
+              ),
+              const SizedBox(height: 12),
               _AdminFormField(
                 controller: _nameKoController,
                 label: '${l10n.languageKo} · Название',
@@ -264,8 +291,8 @@ class _AdminProductFormState extends State<AdminProductForm> {
             Expanded(
               child: _AdminFormField(
                 controller: _priceController,
-                label: 'Цена',
-                hint: '14990',
+                label: 'Цена (₩ / KRW)',
+                hint: '890000',
                 keyboardType: TextInputType.number,
               ),
             ),

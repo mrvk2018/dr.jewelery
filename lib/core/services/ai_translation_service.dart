@@ -24,7 +24,7 @@ Future<AiTranslationResult> translateProductFromRussian({
   final names = demoLocalizedName(ruName);
   final descriptions = demoLocalizedDescription(
     ruDescription.isEmpty
-        ? 'Изысканное украшение из коллекции Sunlight.'
+        ? 'Изысканное украшение из коллекции Dr. Jewelry.'
         : ruDescription,
   );
 

@@ -9,6 +9,7 @@ import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/feedback_scope.dart';
 import '../../../catalog/domain/models/catalog_constants.dart';
 import '../../../profile/domain/models/order_item.dart';
+import '../widgets/admin_integrations_section.dart';
 import '../widgets/admin_product_form.dart';
 /// Админ-панель владельца: заказы, товары и обратная связь.
 class AdminPanelScreen extends StatefulWidget {
@@ -29,7 +30,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _orders = List<OrderItem>.from(demoAdminOrders);
   }
   @override
@@ -118,6 +119,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ),
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           labelColor: AppColors.primary,
           unselectedLabelColor: AppColors.textSecondary,
           indicatorColor: AppColors.accent,
@@ -125,6 +128,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Tab(text: 'Заказы'),
             Tab(text: 'Товары'),
             Tab(text: 'Обратная связь'),
+            Tab(text: 'Интеграции'),
           ],
         ),
       ),
@@ -157,6 +161,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               );
             },
           ),
+          const AdminIntegrationsSection(),
         ],
       ),
     );
@@ -213,7 +218,7 @@ class _OrdersTab extends StatelessWidget {
                 children: [
                   Text(order.dateLabel, style: AppTypography.productMeta()),
                   Text(
-                    '${order.amount} ₽',
+                    formatWon(order.amount),
                     style: AppTypography.price(
                       fontSize: 14,
                       color: AppColors.textPrimary,
@@ -321,7 +326,7 @@ class _ProductsTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${product.category} · ${product.salePrice} ₽ · -${product.discountPercent}%',
+                          '${product.category} · ${formatWon(product.salePrice)} · -${product.discountPercent}%',
                           style: AppTypography.productMeta(),
                         ),
                         if (product.name.containsKey(AppLocaleCodes.ko))
@@ -457,6 +462,7 @@ class _LanguageBadge extends StatelessWidget {
       'ru' => (AppColors.accent.withValues(alpha: 0.18), AppColors.primary),
       'ko' => (const Color(0xFF0046FF).withValues(alpha: 0.15), const Color(0xFF0046FF)),
       'en' => (AppColors.textSecondary.withValues(alpha: 0.15), AppColors.textSecondary),
+      'kk' => (const Color(0xFF00AFCA).withValues(alpha: 0.18), const Color(0xFF00AFCA)),
       'uz' => (const Color(0xFF009178).withValues(alpha: 0.15), const Color(0xFF009178)),
       _ => (AppColors.border.withValues(alpha: 0.5), AppColors.textPrimary),
     };

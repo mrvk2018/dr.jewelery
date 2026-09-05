@@ -1,17 +1,25 @@
 {
   "@@locale": "ko",
   "appTitle": "Dr. Jewelry",
+  "home": "홈",
   "catalog": "카탈로그",
   "cart": "장바구니",
+  "favorites": "찜",
+  "favoritesEmptyTitle": "찜한 상품이 없습니다",
+  "favoritesEmptySubtitle": "상품 카드의 하트를 누르면 여기에 표시됩니다",
   "profile": "프로필",
+  "support": "고객센터",
   "addToCart": "장바구니에 담기",
+  "outOfStock": "품절",
+  "continueOnboarding": "계속",
   "translateAllLanguages": "모든 언어로 번역 (AI)",
   "translating": "번역 중...",
   "translationDone": "번역이 완료되었습니다 — 확인 후 수정하세요",
   "productNameRu": "이름 (RU)",
   "productDescriptionRu": "설명 (RU)",
-  "translationsTitle": "번역 (KO / EN / UZ)",
+  "translationsTitle": "번역 (KO / EN / UZ / KK)",
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
-  "languageUz": "O'zbekcha (UZ)"
+  "languageUz": "O'zbekcha (UZ)",
+  "languageKk": "Қазақша (KK)"
 }

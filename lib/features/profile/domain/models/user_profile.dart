@@ -25,6 +25,31 @@ class UserProfile {
 
   bool get isAdmin => role == UserRole.admin;
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'email': email,
+        'bonusBalance': bonusBalance,
+        'role': role.name,
+        'loyaltyCardNumber': loyaltyCardNumber,
+      };
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) {
+    if (json.isEmpty) return UserProfile.demoGuest;
+    final roleName = json['role'] as String? ?? UserRole.guest.name;
+    return UserProfile(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      bonusBalance: json['bonusBalance'] as int? ?? 0,
+      role: UserRole.values.firstWhere(
+        (role) => role.name == roleName,
+        orElse: () => UserRole.guest,
+      ),
+      loyaltyCardNumber: json['loyaltyCardNumber'] as String? ?? '',
+    );
+  }
+
   static const demoGuest = UserProfile(
     id: '',
     name: '',
@@ -38,17 +63,17 @@ class UserProfile {
     id: 'user-001',
     name: 'Анна Иванова',
     email: 'anna.ivanova@example.com',
-    bonusBalance: 4250,
+    bonusBalance: 85000,
     role: UserRole.customer,
-    loyaltyCardNumber: 'SL-8842-9011',
+    loyaltyCardNumber: 'DJ-8842-9011',
   );
 
   static const demoAdmin = UserProfile(
     id: 'admin-001',
-    name: 'Владелец Sunlight',
-    email: 'owner@sunlight.jewelry',
-    bonusBalance: 12800,
+    name: 'Владелец Dr. Jewelry',
+    email: 'owner@dr-jewelry.com',
+    bonusBalance: 250000,
     role: UserRole.admin,
-    loyaltyCardNumber: 'SL-0001-7777',
+    loyaltyCardNumber: 'DJ-0001-7777',
   );
 }

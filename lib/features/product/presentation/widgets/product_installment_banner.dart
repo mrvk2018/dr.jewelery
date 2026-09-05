@@ -4,7 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 
-/// Виджет рассрочки «Долями» в стиле Sunlight.
+/// Виджет рассрочки «Долями» в стиле Dr. Jewelry.
 class ProductInstallmentBanner extends StatelessWidget {
   const ProductInstallmentBanner({
     super.key,
@@ -54,7 +54,7 @@ class ProductInstallmentBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '4 платежа по ${formatRubPrice(payment)}',
+                  '4 платежа по ${formatWon(payment)}',
                   style: AppTypography.productMeta().copyWith(
                     fontSize: 13,
                     color: AppColors.installmentMint,

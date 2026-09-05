@@ -5,7 +5,6 @@ import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../domain/models/payment_models.dart';
 import '../widgets/payment_loading_overlay.dart';
@@ -15,11 +14,11 @@ import 'payment_success_screen.dart';
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({
     super.key,
-    required this.productsTotalRub,
+    required this.productsTotalKrw,
     required this.deliveryFeeKrw,
   });
 
-  final int productsTotalRub;
+  final int productsTotalKrw;
   final int deliveryFeeKrw;
 
   @override
@@ -36,11 +35,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String tr(String key) => paymentTr(key, _language);
 
   String get _totalLabel {
-    final rub = formatRubPrice(widget.productsTotalRub);
+    final products = formatWon(widget.productsTotalKrw);
     if (widget.deliveryFeeKrw > 0) {
-      return '${tr(PaymentStringKeys.totalToPay)}: $rub + ${formatKrw(widget.deliveryFeeKrw)}';
+      return '${tr(PaymentStringKeys.totalToPay)}: $products + ${formatWon(widget.deliveryFeeKrw)}';
     }
-    return '${tr(PaymentStringKeys.totalToPay)}: $rub';
+    return '${tr(PaymentStringKeys.totalToPay)}: $products';
   }
 
   void _selectMethod(PaymentMethodType method) {

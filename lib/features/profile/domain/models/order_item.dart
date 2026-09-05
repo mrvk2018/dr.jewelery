@@ -26,6 +26,30 @@ class OrderItem {
   final OrderStatus status;
   final String dateLabel;
   final String customerName;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'productName': productName,
+        'amount': amount,
+        'status': status.name,
+        'dateLabel': dateLabel,
+        'customerName': customerName,
+      };
+
+  factory OrderItem.fromJson(Map<String, dynamic> json) {
+    final statusName = json['status'] as String? ?? OrderStatus.paid.name;
+    return OrderItem(
+      id: json['id'] as String,
+      productName: json['productName'] as String,
+      amount: json['amount'] as int,
+      status: OrderStatus.values.firstWhere(
+        (status) => status.name == statusName,
+        orElse: () => OrderStatus.paid,
+      ),
+      dateLabel: json['dateLabel'] as String? ?? '',
+      customerName: json['customerName'] as String? ?? '',
+    );
+  }
 }
 
 /// Демонстрационные заказы для профиля и админки.
@@ -33,7 +57,7 @@ const demoProfileOrders = <OrderItem>[
   OrderItem(
     id: 'ORD-1042',
     productName: 'Кольцо из белого золота с бриллиантом',
-    amount: 14990,
+    amount: 890000,
     status: OrderStatus.delivered,
     dateLabel: '28 авг 2026',
     customerName: 'Анна Иванова',
@@ -41,7 +65,7 @@ const demoProfileOrders = <OrderItem>[
   OrderItem(
     id: 'ORD-1087',
     productName: 'Серьги с изумрудом',
-    amount: 22990,
+    amount: 1250000,
     status: OrderStatus.paid,
     dateLabel: '3 сен 2026',
     customerName: 'Анна Иванова',
@@ -52,7 +76,7 @@ const demoAdminOrders = <OrderItem>[
   OrderItem(
     id: 'ORD-1101',
     productName: 'Подвеска «Сердце»',
-    amount: 11990,
+    amount: 320000,
     status: OrderStatus.newOrder,
     dateLabel: '5 сен 2026',
     customerName: 'Мария Петрова',
@@ -60,15 +84,15 @@ const demoAdminOrders = <OrderItem>[
   OrderItem(
     id: 'ORD-1098',
     productName: 'Браслет с фианитами',
-    amount: 4990,
+    amount: 125000,
     status: OrderStatus.paid,
     dateLabel: '4 сен 2026',
     customerName: 'Елена Смирнова',
   ),
   OrderItem(
     id: 'ORD-1091',
-    productName: 'Часы «Sunlight Classic»',
-    amount: 45990,
+    productName: 'Часы «Dr. Jewelry Classic»',
+    amount: 980000,
     status: OrderStatus.delivered,
     dateLabel: '1 сен 2026',
     customerName: 'Олег Кузнецов',

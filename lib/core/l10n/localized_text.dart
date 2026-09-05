@@ -42,6 +42,7 @@ abstract final class LocalizedText {
 Map<String, String> demoLocalizedName(String ru) {
   return {
     AppLocaleCodes.ru: ru,
+    AppLocaleCodes.kk: _demoKkName(ru),
     AppLocaleCodes.ko: _demoKoName(ru),
     AppLocaleCodes.en: _demoEnName(ru),
     AppLocaleCodes.uz: _demoUzName(ru),
@@ -51,6 +52,7 @@ Map<String, String> demoLocalizedName(String ru) {
 Map<String, String> demoLocalizedDescription(String ru) {
   return {
     AppLocaleCodes.ru: ru,
+    AppLocaleCodes.kk: 'Премиум зергерлік бұйым: $ru',
     AppLocaleCodes.ko: '프리미엄 주얼리 컬렉션: $ru',
     AppLocaleCodes.en: 'Premium jewelry piece: $ru',
     AppLocaleCodes.uz: 'Premium zargarlik buyumi: $ru',
@@ -75,7 +77,7 @@ String _demoEnName(String ru) {
     'Браслет с фианитами' => 'Phianite bracelet',
     'Подвеска «Сердце»' => 'Heart pendant',
     'Обручальное кольцо классическое' => 'Classic wedding band',
-    'Часы «Sunlight Classic»' => 'Sunlight Classic watch',
+    'Часы «Dr. Jewelry Classic»' => 'Dr. Jewelry Classic watch',
     'Кольцо с топазом' => 'Topaz ring',
     _ => ru,
   };
@@ -87,5 +89,14 @@ String _demoUzName(String ru) {
   if (ru.contains('Подвеска')) return ru.replaceAll('Подвеска', 'Osma');
   if (ru.contains('Браслет')) return ru.replaceAll('Браслет', 'Bilaguzuk');
   if (ru.contains('Часы')) return ru.replaceAll('Часы', 'Soat');
+  return ru;
+}
+
+String _demoKkName(String ru) {
+  if (ru.contains('Кольцо')) return ru.replaceAll('Кольцо', 'Сақина');
+  if (ru.contains('Серьги')) return ru.replaceAll('Серьги', 'Сырға');
+  if (ru.contains('Подвеска')) return ru.replaceAll('Подвеска', 'Салпыншақ');
+  if (ru.contains('Браслет')) return ru.replaceAll('Браслет', 'Білезік');
+  if (ru.contains('Часы')) return ru.replaceAll('Часы', 'Сағат');
   return ru;
 }

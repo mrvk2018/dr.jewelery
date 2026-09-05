@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import '../../core/services/database_service.dart';
 import '../models/product_item.dart';
 
 /// Позиция в корзине с выбранным размером.
@@ -20,12 +23,29 @@ class CartItem {
 
   String get cartKey =>
       '${product.id}_${selectedSize?.toString() ?? 'no_size'}';
+
+  Map<String, dynamic> toJson() => {
+        'product': product.toJson(),
+        'selectedSize': selectedSize,
+        'quantity': quantity,
+      };
+
+  factory CartItem.fromJson(Map<String, dynamic> json) {
+    return CartItem(
+      product: ProductItem.fromJson(
+        Map<String, dynamic>.from(json['product'] as Map),
+      ),
+      selectedSize: (json['selectedSize'] as num?)?.toDouble(),
+      quantity: json['quantity'] as int? ?? 1,
+    );
+  }
 }
 
-/// Глобальное состояние корзины приложения.
+/// Глобальное состояние корзины с автосохранением в локальную базу.
 class CartController extends ChangeNotifier {
-  CartController({this.availableBonuses = 4250});
+  CartController(this._database, {this.availableBonuses = 85000});
 
+  final DatabaseService _database;
   final List<CartItem> _items = [];
   String promoCode = '';
   bool useBonuses = false;
@@ -45,7 +65,7 @@ class CartController extends ChangeNotifier {
   int get promoDiscount {
     final code = promoCode.trim().toUpperCase();
     if (code.isEmpty) return 0;
-    if (code == 'SUNLIGHT' || code == 'VIP') {
+    if (code == 'DRJEWELRY' || code == 'VIP') {
       return (saleSubtotal * 0.05).round();
     }
     return 0;
@@ -65,45 +85,113 @@ class CartController extends ChangeNotifier {
     return result < 0 ? 0 : result;
   }
 
+  Future<void> load() async {
+    final snapshot = await _database.loadCartSnapshot();
+    if (snapshot == null) return;
+
+    final rawItems = snapshot['items'];
+    _items
+      ..clear()
+      ..addAll(
+        (rawItems is List ? rawItems : const [])
+            .whereType<Map>()
+            .map((item) => CartItem.fromJson(Map<String, dynamic>.from(item)))
+            .where((item) => item.product.stockQuantity > 0)
+            .map(_clampToStock),
+      );
+    promoCode = snapshot['promoCode'] as String? ?? '';
+    useBonuses = snapshot['useBonuses'] as bool? ?? false;
+    availableBonuses = snapshot['availableBonuses'] as int? ?? availableBonuses;
+    notifyListeners();
+  }
+
   void addProduct({
     required ProductItem product,
     double? selectedSize,
   }) {
+    if (product.stockQuantity <= 0) return;
     final key = '${product.id}_${selectedSize?.toString() ?? 'no_size'}';
     final existing = _items.where((item) => item.cartKey == key).firstOrNull;
     if (existing != null) {
+      if (existing.quantity >= product.stockQuantity) return;
       existing.quantity++;
     } else {
       _items.add(
         CartItem(product: product, selectedSize: selectedSize),
       );
     }
-    notifyListeners();
+    _notifyAndPersist();
+  }
+
+  void incrementQuantity(String cartKey) {
+    final item = _items.where((entry) => entry.cartKey == cartKey).firstOrNull;
+    if (item == null) return;
+    if (item.quantity >= item.product.stockQuantity) return;
+    item.quantity++;
+    _notifyAndPersist();
+  }
+
+  void decrementQuantity(String cartKey) {
+    final item = _items.where((entry) => entry.cartKey == cartKey).firstOrNull;
+    if (item == null) return;
+    if (item.quantity <= 1) {
+      removeItem(cartKey);
+      return;
+    }
+    item.quantity--;
+    _notifyAndPersist();
+  }
+
+  CartItem _clampToStock(CartItem item) {
+    final maxQty = item.product.stockQuantity;
+    if (item.quantity > maxQty) {
+      item.quantity = maxQty;
+    }
+    if (item.quantity < 1) {
+      item.quantity = 1;
+    }
+    return item;
   }
 
   void removeItem(String cartKey) {
     _items.removeWhere((item) => item.cartKey == cartKey);
-    notifyListeners();
+    _notifyAndPersist();
   }
 
   void setPromoCode(String value) {
     promoCode = value;
-    notifyListeners();
+    _notifyAndPersist();
   }
 
   void setUseBonuses(bool value) {
     useBonuses = value;
-    notifyListeners();
+    _notifyAndPersist();
   }
 
   void setAvailableBonuses(int value) {
     availableBonuses = value;
-    notifyListeners();
+    _notifyAndPersist();
   }
 
   void clear() {
     _items.clear();
+    promoCode = '';
+    useBonuses = false;
+    _notifyAndPersist();
+  }
+
+  void _notifyAndPersist() {
     notifyListeners();
+    unawaited(_persist());
+  }
+
+  Future<void> _persist() {
+    return _database.saveCartSnapshot({
+      'items': _items.map((item) => item.toJson()).toList(),
+      'promoCode': promoCode,
+      'useBonuses': useBonuses,
+      'availableBonuses': availableBonuses,
+    });
   }
 }
 

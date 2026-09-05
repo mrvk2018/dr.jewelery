@@ -22,7 +22,7 @@ class FeedbackController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final loaded = await _database.loadFeedback();
+      final loaded = await _database.getFeedback(UserRole.guest);
       _messages
         ..clear()
         ..addAll(loaded);
@@ -45,7 +45,7 @@ class FeedbackController extends ChangeNotifier {
 
     _messages.insert(0, item);
     notifyListeners();
-    await _database.saveFeedback(item);
+    await _database.insertFeedback(item);
   }
 
   void removeMessage(
@@ -56,6 +56,6 @@ class FeedbackController extends ChangeNotifier {
     _messages.removeWhere((item) => item.id == id);
     if (_messages.length == before) return;
     notifyListeners();
-    unawaited(_database.deleteFeedback(id, actorRole: actorRole));
+    unawaited(_database.deleteFeedback(id, actorRole));
   }
 }

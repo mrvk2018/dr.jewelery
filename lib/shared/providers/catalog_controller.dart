@@ -23,7 +23,7 @@ class CatalogController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final loaded = await _database.loadProducts();
+      final loaded = await _database.getProducts();
       _products
         ..clear()
         ..addAll(loaded);
@@ -39,7 +39,7 @@ class CatalogController extends ChangeNotifier {
   }) {
     _products.insert(0, item);
     notifyListeners();
-    unawaited(_database.saveProduct(item, actorRole: actorRole));
+    unawaited(_database.saveProduct(item, actorRole));
   }
 
   void removeProduct(
@@ -50,6 +50,16 @@ class CatalogController extends ChangeNotifier {
     _products.removeWhere((product) => product.id == id);
     if (_products.length == before) return;
     notifyListeners();
-    unawaited(_database.deleteProduct(id, actorRole: actorRole));
+    unawaited(_database.deleteProduct(id, actorRole));
+  }
+
+  /// Обновление остатка с кассы (POS) по артикулу SKU.
+  Future<void> updateProductStock(String sku, int newQuantity) async {
+    await _database.updateProductStock(sku, newQuantity);
+    final index = _products.indexWhere((product) => product.sku == sku);
+    if (index < 0) return;
+    final quantity = newQuantity < 0 ? 0 : newQuantity;
+    _products[index] = _products[index].copyWith(stockQuantity: quantity);
+    notifyListeners();
   }
 }

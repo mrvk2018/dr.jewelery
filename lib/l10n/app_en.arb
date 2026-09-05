@@ -1,17 +1,25 @@
 {
   "@@locale": "en",
   "appTitle": "Dr. Jewelry",
+  "home": "Home",
   "catalog": "Catalog",
   "cart": "Cart",
+  "favorites": "Favorites",
+  "favoritesEmptyTitle": "No favorites yet",
+  "favoritesEmptySubtitle": "Tap the heart on a jewelry card and it will appear here",
   "profile": "Profile",
+  "support": "Support",
   "addToCart": "Add to cart",
+  "outOfStock": "Out of stock",
+  "continueOnboarding": "Continue",
   "translateAllLanguages": "Translate to all languages (AI)",
   "translating": "Translating...",
   "translationDone": "Translations filled — review and edit if needed",
   "productNameRu": "Name (RU)",
   "productDescriptionRu": "Description (RU)",
-  "translationsTitle": "Translations (KO / EN / UZ)",
+  "translationsTitle": "Translations (KO / EN / UZ / KK)",
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
-  "languageUz": "O'zbekcha (UZ)"
+  "languageUz": "O'zbekcha (UZ)",
+  "languageKk": "Қазақша (KK)"
 }

@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
+import 'app_localizations_kk.dart';
 import 'app_localizations_ko.dart';
 import 'app_localizations_ru.dart';
 import 'app_localizations_uz.dart';
@@ -96,9 +97,10 @@ abstract class AppLocalizations {
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
-    Locale('en'),
-    Locale('ko'),
     Locale('ru'),
+    Locale('kk'),
+    Locale('ko'),
+    Locale('en'),
     Locale('uz'),
   ];
 
@@ -107,6 +109,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Dr. Jewelry'**
   String get appTitle;
+
+  /// No description provided for @home.
+  ///
+  /// In ru, this message translates to:
+  /// **'Главная'**
+  String get home;
 
   /// No description provided for @catalog.
   ///
@@ -120,17 +128,53 @@ abstract class AppLocalizations {
   /// **'Корзина'**
   String get cart;
 
+  /// No description provided for @favorites.
+  ///
+  /// In ru, this message translates to:
+  /// **'Избранное'**
+  String get favorites;
+
+  /// No description provided for @favoritesEmptyTitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'Пока нет избранного'**
+  String get favoritesEmptyTitle;
+
+  /// No description provided for @favoritesEmptySubtitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'Нажмите на сердце на карточке украшения — и оно появится здесь'**
+  String get favoritesEmptySubtitle;
+
   /// No description provided for @profile.
   ///
   /// In ru, this message translates to:
   /// **'Профиль'**
   String get profile;
 
+  /// No description provided for @support.
+  ///
+  /// In ru, this message translates to:
+  /// **'Поддержка'**
+  String get support;
+
   /// No description provided for @addToCart.
   ///
   /// In ru, this message translates to:
   /// **'В корзину'**
   String get addToCart;
+
+  /// No description provided for @outOfStock.
+  ///
+  /// In ru, this message translates to:
+  /// **'Нет в наличии'**
+  String get outOfStock;
+
+  /// No description provided for @continueOnboarding.
+  ///
+  /// In ru, this message translates to:
+  /// **'Продолжить'**
+  String get continueOnboarding;
 
   /// No description provided for @translateAllLanguages.
   ///
@@ -165,7 +209,7 @@ abstract class AppLocalizations {
   /// No description provided for @translationsTitle.
   ///
   /// In ru, this message translates to:
-  /// **'Переводы (KO / EN / UZ)'**
+  /// **'Переводы (KO / EN / UZ / KK)'**
   String get translationsTitle;
 
   /// No description provided for @languageKo.
@@ -185,6 +229,12 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'O\'zbekcha (UZ)'**
   String get languageUz;
+
+  /// No description provided for @languageKk.
+  ///
+  /// In ru, this message translates to:
+  /// **'Қазақша (KK)'**
+  String get languageKk;
 }
 
 class _AppLocalizationsDelegate
@@ -198,7 +248,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'ko', 'ru', 'uz'].contains(locale.languageCode);
+      <String>['en', 'kk', 'ko', 'ru', 'uz'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -209,6 +259,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   switch (locale.languageCode) {
     case 'en':
       return AppLocalizationsEn();
+    case 'kk':
+      return AppLocalizationsKk();
     case 'ko':
       return AppLocalizationsKo();
     case 'ru':

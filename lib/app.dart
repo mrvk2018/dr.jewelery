@@ -13,21 +13,31 @@ import 'shared/providers/cart_controller.dart';
 import 'shared/providers/cart_scope.dart';
 import 'shared/providers/catalog_controller.dart';
 import 'shared/providers/catalog_scope.dart';
+import 'shared/providers/favorites_controller.dart';
+import 'shared/providers/favorites_scope.dart';
 import 'shared/providers/feedback_controller.dart';
 import 'shared/providers/feedback_scope.dart';
 import 'shared/providers/locale_provider.dart';
+import 'shared/providers/profile_controller.dart';
+import 'shared/providers/profile_scope.dart';
 
 class JewelrySunlightApp extends StatefulWidget {
   const JewelrySunlightApp({super.key});
+
+  /// Feature Flag: `true` поднимает [CloudDatabaseService] (Supabase/Firebase).
+  /// `false` — рабочий [LocalDatabaseService] (KRW, персистентность, заказы).
+  static const bool useCloudBackend = false;
 
   @override
   State<JewelrySunlightApp> createState() => _JewelrySunlightAppState();
 }
 
 class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
-  late final CartController _cartController = CartController();
+  CartController? _cartController;
   CatalogController? _catalogController;
   FeedbackController? _feedbackController;
+  FavoritesController? _favoritesController;
+  ProfileController? _profileController;
   LocaleProvider? _localeProvider;
   OnboardingStorage? _storage;
   bool _ready = false;
@@ -41,12 +51,23 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
   Future<void> _bootstrap() async {
     final storage = await OnboardingStorage.create();
     final localeProvider = LocaleProvider(storage);
-    final database = await LocalDatabaseService.create();
+    final DatabaseService database = JewelrySunlightApp.useCloudBackend
+        ? CloudDatabaseService(
+            supabaseUrl: 'https://YOUR_PROJECT.supabase.co',
+            anonKey: 'YOUR_SUPABASE_ANON_KEY',
+          )
+        : await LocalDatabaseService.create();
     final catalogController = CatalogController(database);
     final feedbackController = FeedbackController(database);
+    final cartController = CartController(database);
+    final favoritesController = FavoritesController(database);
+    final profileController = ProfileController(database);
     await Future.wait<void>([
       catalogController.load(),
       feedbackController.load(),
+      cartController.load(),
+      favoritesController.load(),
+      profileController.load(),
     ]);
     if (!mounted) return;
     setState(() {
@@ -54,15 +75,20 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
       _localeProvider = localeProvider;
       _catalogController = catalogController;
       _feedbackController = feedbackController;
+      _cartController = cartController;
+      _favoritesController = favoritesController;
+      _profileController = profileController;
       _ready = true;
     });
   }
 
   @override
   void dispose() {
-    _cartController.dispose();
+    _cartController?.dispose();
     _catalogController?.dispose();
     _feedbackController?.dispose();
+    _favoritesController?.dispose();
+    _profileController?.dispose();
     _localeProvider?.dispose();
     super.dispose();
   }
@@ -73,7 +99,10 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
         _storage == null ||
         _localeProvider == null ||
         _catalogController == null ||
-        _feedbackController == null) {
+        _feedbackController == null ||
+        _cartController == null ||
+        _favoritesController == null ||
+        _profileController == null) {
       return const MaterialApp(
         home: Scaffold(
           body: Center(child: CircularProgressIndicator()),
@@ -86,27 +115,33 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
       child: CatalogScope(
         controller: _catalogController!,
         child: CartScope(
-          controller: _cartController,
-          child: LocaleScope(
-            provider: _localeProvider!,
-            child: ListenableBuilder(
-              listenable: _localeProvider!,
-              builder: (context, _) {
-                return MaterialApp(
-                  title: AppConstants.appName,
-                  debugShowCheckedModeBanner: false,
-                  theme: AppTheme.light,
-                  locale: _localeProvider!.locale,
-                  supportedLocales: AppLanguage.supportedLocales,
-                  localizationsDelegates: const [
-                    AppLocalizations.delegate,
-                    GlobalMaterialLocalizations.delegate,
-                    GlobalWidgetsLocalizations.delegate,
-                    GlobalCupertinoLocalizations.delegate,
-                  ],
-                  home: _AppRootGate(storage: _storage!),
-                );
-              },
+          controller: _cartController!,
+          child: FavoritesScope(
+            controller: _favoritesController!,
+            child: ProfileScope(
+              controller: _profileController!,
+              child: LocaleScope(
+                provider: _localeProvider!,
+                child: ListenableBuilder(
+                  listenable: _localeProvider!,
+                  builder: (context, _) {
+                    return MaterialApp(
+                      title: AppConstants.appName,
+                      debugShowCheckedModeBanner: false,
+                      theme: AppTheme.light,
+                      locale: _localeProvider!.locale,
+                      supportedLocales: AppLanguage.supportedLocales,
+                      localizationsDelegates: const [
+                        AppLocalizations.delegate,
+                        GlobalMaterialLocalizations.delegate,
+                        GlobalWidgetsLocalizations.delegate,
+                        GlobalCupertinoLocalizations.delegate,
+                      ],
+                      home: _AppRootGate(storage: _storage!),
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),

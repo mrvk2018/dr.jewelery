@@ -1,17 +1,25 @@
 {
   "@@locale": "uz",
   "appTitle": "Dr. Jewelry",
+  "home": "Bosh sahifa",
   "catalog": "Katalog",
   "cart": "Savat",
+  "favorites": "Sevimlilar",
+  "favoritesEmptyTitle": "Sevimlilar hali yo'q",
+  "favoritesEmptySubtitle": "Taqinchoq kartasidagi yurakchani bosing — u shu yerda paydo bo'ladi",
   "profile": "Profil",
+  "support": "Yordam",
   "addToCart": "Savatga qo'shish",
+  "outOfStock": "Mavjud emas",
+  "continueOnboarding": "Davom etish",
   "translateAllLanguages": "Barcha tillarga tarjima qilish (AI)",
   "translating": "Tarjima qilinmoqda...",
   "translationDone": "Tarjimalar to'ldirildi — tekshiring va tahrirlang",
   "productNameRu": "Nomi (RU)",
   "productDescriptionRu": "Tavsif (RU)",
-  "translationsTitle": "Tarjimalar (KO / EN / UZ)",
+  "translationsTitle": "Tarjimalar (KO / EN / UZ / KK)",
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
-  "languageUz": "O'zbekcha (UZ)"
+  "languageUz": "O'zbekcha (UZ)",
+  "languageKk": "Қазақша (KK)"
 }

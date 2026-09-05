@@ -12,16 +12,38 @@ class AppLocalizationsRu extends AppLocalizations {
   String get appTitle => 'Dr. Jewelry';
 
   @override
+  String get home => 'Главная';
+
+  @override
   String get catalog => 'Каталог';
 
   @override
   String get cart => 'Корзина';
 
   @override
+  String get favorites => 'Избранное';
+
+  @override
+  String get favoritesEmptyTitle => 'Пока нет избранного';
+
+  @override
+  String get favoritesEmptySubtitle =>
+      'Нажмите на сердце на карточке украшения — и оно появится здесь';
+
+  @override
   String get profile => 'Профиль';
 
   @override
+  String get support => 'Поддержка';
+
+  @override
   String get addToCart => 'В корзину';
+
+  @override
+  String get outOfStock => 'Нет в наличии';
+
+  @override
+  String get continueOnboarding => 'Продолжить';
 
   @override
   String get translateAllLanguages => 'Перевести на все языки (AI)';
@@ -40,7 +62,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String get productDescriptionRu => 'Описание (RU)';
 
   @override
-  String get translationsTitle => 'Переводы (KO / EN / UZ)';
+  String get translationsTitle => 'Переводы (KO / EN / UZ / KK)';
 
   @override
   String get languageKo => '한국어 (KO)';
@@ -50,4 +72,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get languageUz => 'O\'zbekcha (UZ)';
+
+  @override
+  String get languageKk => 'Қазақша (KK)';
 }

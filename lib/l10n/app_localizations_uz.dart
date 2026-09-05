@@ -12,16 +12,38 @@ class AppLocalizationsUz extends AppLocalizations {
   String get appTitle => 'Dr. Jewelry';
 
   @override
+  String get home => 'Bosh sahifa';
+
+  @override
   String get catalog => 'Katalog';
 
   @override
   String get cart => 'Savat';
 
   @override
+  String get favorites => 'Sevimlilar';
+
+  @override
+  String get favoritesEmptyTitle => 'Sevimlilar hali yo\'q';
+
+  @override
+  String get favoritesEmptySubtitle =>
+      'Taqinchoq kartasidagi yurakchani bosing — u shu yerda paydo bo\'ladi';
+
+  @override
   String get profile => 'Profil';
 
   @override
+  String get support => 'Yordam';
+
+  @override
   String get addToCart => 'Savatga qo\'shish';
+
+  @override
+  String get outOfStock => 'Mavjud emas';
+
+  @override
+  String get continueOnboarding => 'Davom etish';
 
   @override
   String get translateAllLanguages => 'Barcha tillarga tarjima qilish (AI)';
@@ -40,7 +62,7 @@ class AppLocalizationsUz extends AppLocalizations {
   String get productDescriptionRu => 'Tavsif (RU)';
 
   @override
-  String get translationsTitle => 'Tarjimalar (KO / EN / UZ)';
+  String get translationsTitle => 'Tarjimalar (KO / EN / UZ / KK)';
 
   @override
   String get languageKo => '한국어 (KO)';
@@ -50,4 +72,7 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get languageUz => 'O\'zbekcha (UZ)';
+
+  @override
+  String get languageKk => 'Қазақша (KK)';
 }

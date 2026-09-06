@@ -25,7 +25,9 @@ class ProductItem {
   final String sku;
   /// Текущий остаток на складе / в кассе.
   final int stockQuantity;
+  /// Полные названия на ru/kk/ko/en/uz — не пословный перевод.
   final Map<String, String> name;
+  /// Полные описания на ru/kk/ko/en/uz.
   final Map<String, String> description;
   final String metal;
   final int salePrice;
@@ -37,6 +39,9 @@ class ProductItem {
   final List<double> availableSizes;
 
   bool get isOutOfStock => stockQuantity <= 0;
+
+  Map<String, String> get nameTranslations => name;
+  Map<String, String> get descriptionTranslations => description;
 
   String localizedName(String languageCode) =>
       LocalizedText.resolve(name, languageCode: languageCode);

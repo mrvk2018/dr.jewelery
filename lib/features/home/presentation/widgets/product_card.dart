@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
@@ -150,14 +151,19 @@ class _ProductCardState extends State<ProductCard> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        product.localizedName(languageCode),
+                        product.nameTranslations[languageCode] ??
+                            product.nameTranslations['ru'] ??
+                            '',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.productName(),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        product.metal,
+                        LocalizedText.attribute(
+                          product.metal,
+                          languageCode: languageCode,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTypography.productMeta(),

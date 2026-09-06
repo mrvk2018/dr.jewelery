@@ -67,7 +67,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     final profile = ProfileScope.of(context);
     final languageCode = LocaleScope.of(context).languageCode;
     final names = cart.items
-        .map((item) => item.product.localizedName(languageCode))
+        .map(
+          (item) =>
+              item.product.nameTranslations[languageCode] ??
+              item.product.nameTranslations['ru'] ??
+              '',
+        )
         .join(', ');
     final now = DateTime.now();
     const months = [

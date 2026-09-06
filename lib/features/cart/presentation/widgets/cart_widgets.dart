@@ -68,7 +68,9 @@ class CartItemTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  product.localizedName(languageCode),
+                  product.nameTranslations[languageCode] ??
+                      product.nameTranslations['ru'] ??
+                      '',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.productName(),

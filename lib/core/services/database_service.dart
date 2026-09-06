@@ -12,7 +12,7 @@ export 'device_secrets_store.dart' show IntegrationKeys, DeviceSecretKeys;
 
 /// Ключи коллекций облачного/локального хранилища.
 abstract final class DatabaseCollections {
-  static const products = 'cloud_products_krw_pos_v1';
+  static const products = 'cloud_products_krw_i18n_v2';
   static const feedback = 'cloud_feedback';
   static const cart = 'dj_cart_v1';
   static const favorites = 'dj_favorites_v1';

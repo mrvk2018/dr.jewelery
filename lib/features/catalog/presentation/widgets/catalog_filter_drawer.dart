@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/localized_text.dart';
+import '../../../../shared/providers/locale_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/catalog_constants.dart';
@@ -253,7 +255,10 @@ class _OptionWrap extends StatelessWidget {
       children: [
         for (final option in options)
           _FilterOptionChip(
-            label: option,
+            label: LocalizedText.attribute(
+              option,
+              languageCode: LocaleScope.of(context).languageCode,
+            ),
             isSelected: selected.contains(option),
             onTap: () => onToggle(option),
           ),

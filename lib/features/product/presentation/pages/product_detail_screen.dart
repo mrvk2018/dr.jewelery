@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
@@ -76,7 +77,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          product.category,
+          LocalizedText.attribute(product.category, languageCode: languageCode),
           style: AppTypography.heading(fontSize: 18),
         ),
       ),
@@ -100,12 +101,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    product.localizedName(languageCode),
+                    product.nameTranslations[languageCode] ??
+                        product.nameTranslations['ru'] ??
+                        '',
                     style: AppTypography.heading(fontSize: 24),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '${product.metal} · ${product.insert}',
+                    '${LocalizedText.attribute(product.metal, languageCode: languageCode)} · ${LocalizedText.attribute(product.insert, languageCode: languageCode)}',
                     style: AppTypography.productMeta().copyWith(fontSize: 14),
                   ),
                   const SizedBox(height: 16),
@@ -133,12 +136,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ProductInstallmentBanner(product: product),
                   const SizedBox(height: 20),
                   Text(
-                    'Описание',
+                    LocalizedText.productDetail(
+                      'description',
+                      languageCode: languageCode,
+                    ),
                     style: AppTypography.heading(fontSize: 18),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _buildDescription(product, languageCode),
+                    product.descriptionTranslations[languageCode] ??
+                        product.descriptionTranslations['ru'] ??
+                        '',
                     style: AppTypography.productMeta().copyWith(
                       fontSize: 14,
                       height: 1.5,
@@ -147,19 +155,55 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Характеристики',
+                    LocalizedText.productDetail(
+                      'specs',
+                      languageCode: languageCode,
+                    ),
                     style: AppTypography.heading(fontSize: 18),
                   ),
                   const SizedBox(height: 8),
-                  _SpecRow(label: 'Категория', value: product.category),
-                  _SpecRow(label: 'Металл', value: product.metal),
-                  _SpecRow(label: 'Вставка', value: product.insert),
                   _SpecRow(
-                    label: 'Артикул',
+                    label: LocalizedText.productDetail(
+                      'category',
+                      languageCode: languageCode,
+                    ),
+                    value: LocalizedText.attribute(
+                      product.category,
+                      languageCode: languageCode,
+                    ),
+                  ),
+                  _SpecRow(
+                    label: LocalizedText.productDetail(
+                      'metal',
+                      languageCode: languageCode,
+                    ),
+                    value: LocalizedText.attribute(
+                      product.metal,
+                      languageCode: languageCode,
+                    ),
+                  ),
+                  _SpecRow(
+                    label: LocalizedText.productDetail(
+                      'insert',
+                      languageCode: languageCode,
+                    ),
+                    value: LocalizedText.attribute(
+                      product.insert,
+                      languageCode: languageCode,
+                    ),
+                  ),
+                  _SpecRow(
+                    label: LocalizedText.productDetail(
+                      'sku',
+                      languageCode: languageCode,
+                    ),
                     value: product.sku,
                   ),
                   _SpecRow(
-                    label: 'Остаток',
+                    label: LocalizedText.productDetail(
+                      'stock',
+                      languageCode: languageCode,
+                    ),
                     value: product.isOutOfStock
                         ? '0'
                         : '${product.stockQuantity}',
@@ -172,15 +216,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       ),
     );
-  }
-
-  String _buildDescription(ProductItem product, String languageCode) {
-    final localized = product.localizedDescription(languageCode);
-    if (localized.isNotEmpty) return localized;
-    return 'Изысканное украшение из коллекции Dr. Jewelry. '
-        '${product.localizedName(languageCode)} выполнено из ${product.metal.toLowerCase()} '
-        'с ${product.insert == 'Без вставок' ? 'лаконичным дизайном без вставок' : 'вставкой: ${product.insert.toLowerCase()}'}.' 
-        ' Идеально подходит для особых моментов и ежедневного образа.';
   }
 }
 

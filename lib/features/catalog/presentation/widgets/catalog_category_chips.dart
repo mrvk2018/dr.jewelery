@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/l10n/localized_text.dart';
+import '../../../../shared/providers/locale_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/catalog_constants.dart';
@@ -38,7 +40,10 @@ class CatalogCategoryChips extends StatelessWidget {
           final icon = _categoryIcons[category] ?? Icons.category_outlined;
 
           return _CategoryChip(
-            label: category,
+            label: LocalizedText.attribute(
+              category,
+              languageCode: LocaleScope.of(context).languageCode,
+            ),
             icon: icon,
             isSelected: isSelected,
             onTap: () => onCategorySelected(isSelected ? null : category),

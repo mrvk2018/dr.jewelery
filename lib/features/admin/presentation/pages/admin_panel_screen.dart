@@ -319,7 +319,7 @@ class _ProductsTab extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          product.localizedName(AppLocaleCodes.ru),
+                          product.nameTranslations[AppLocaleCodes.ru] ?? '',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: AppTypography.productName(),
@@ -329,16 +329,22 @@ class _ProductsTab extends StatelessWidget {
                           '${product.category} · ${formatWon(product.salePrice)} · -${product.discountPercent}%',
                           style: AppTypography.productMeta(),
                         ),
-                        if (product.name.containsKey(AppLocaleCodes.ko))
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'KO: ${product.localizedName(AppLocaleCodes.ko)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTypography.productMeta(),
+                        for (final code in const [
+                          AppLocaleCodes.kk,
+                          AppLocaleCodes.ko,
+                          AppLocaleCodes.en,
+                          AppLocaleCodes.uz,
+                        ])
+                          if ((product.nameTranslations[code] ?? '').isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                '${code.toUpperCase()}: ${product.nameTranslations[code]}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.productMeta(),
+                              ),
                             ),
-                          ),
                       ],
                     ),
                   ),

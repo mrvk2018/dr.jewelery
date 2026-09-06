@@ -1,4 +1,7 @@
 import 'app_locale_codes.dart';
+import 'catalog_copy.dart';
+
+export 'catalog_copy.dart';
 
 /// Утилиты для работы с Map локализованных текстов.
 abstract final class LocalizedText {
@@ -31,6 +34,19 @@ abstract final class LocalizedText {
     return names;
   }
 
+  /// Целая строка атрибута каталога (металл, категория, вставка).
+  static String attribute(String value, {required String languageCode}) {
+    final map = catalogAttributeTranslations[value];
+    if (map == null) return value;
+    return resolve(map, languageCode: languageCode);
+  }
+
+  static String productDetail(String key, {required String languageCode}) {
+    final map = productDetailCopy[key];
+    if (map == null) return key;
+    return resolve(map, languageCode: languageCode);
+  }
+
   static bool containsQuery(Map<String, String> values, String query) {
     final normalized = query.trim().toLowerCase();
     if (normalized.isEmpty) return true;
@@ -38,65 +54,15 @@ abstract final class LocalizedText {
   }
 }
 
-/// Демо-переводы для каталога (до подключения реального AI).
+/// Полные фразы каталога на 5 языках. Без пословного replace.
 Map<String, String> demoLocalizedName(String ru) {
-  return {
-    AppLocaleCodes.ru: ru,
-    AppLocaleCodes.kk: _demoKkName(ru),
-    AppLocaleCodes.ko: _demoKoName(ru),
-    AppLocaleCodes.en: _demoEnName(ru),
-    AppLocaleCodes.uz: _demoUzName(ru),
-  };
+  final full = catalogNameTranslations[ru];
+  if (full != null) return Map<String, String>.from(full);
+  return {for (final code in AppLocaleCodes.all) code: ru};
 }
 
 Map<String, String> demoLocalizedDescription(String ru) {
-  return {
-    AppLocaleCodes.ru: ru,
-    AppLocaleCodes.kk: 'Премиум зергерлік бұйым: $ru',
-    AppLocaleCodes.ko: '프리미엄 주얼리 컬렉션: $ru',
-    AppLocaleCodes.en: 'Premium jewelry piece: $ru',
-    AppLocaleCodes.uz: 'Premium zargarlik buyumi: $ru',
-  };
-}
-
-String _demoKoName(String ru) {
-  if (ru.contains('Кольцо')) return ru.replaceAll('Кольцо', '반지');
-  if (ru.contains('Серьги')) return ru.replaceAll('Серьги', '귀걸이');
-  if (ru.contains('Подвеска')) return ru.replaceAll('Подвеска', '펜던트');
-  if (ru.contains('Браслет')) return ru.replaceAll('Браслет', '팔찌');
-  if (ru.contains('Часы')) return ru.replaceAll('Часы', '시계');
-  return '[$ru]';
-}
-
-String _demoEnName(String ru) {
-  return switch (ru) {
-    'Кольцо из белого золота с бриллиантом' =>
-      'White gold diamond ring',
-    'Серьги с изумрудом' => 'Emerald earrings',
-    'Подвеска «Капля» с сапфиром' => 'Sapphire teardrop pendant',
-    'Браслет с фианитами' => 'Phianite bracelet',
-    'Подвеска «Сердце»' => 'Heart pendant',
-    'Обручальное кольцо классическое' => 'Classic wedding band',
-    'Часы «Dr. Jewelry Classic»' => 'Dr. Jewelry Classic watch',
-    'Кольцо с топазом' => 'Topaz ring',
-    _ => ru,
-  };
-}
-
-String _demoUzName(String ru) {
-  if (ru.contains('Кольцо')) return ru.replaceAll('Кольцо', 'Uzuk');
-  if (ru.contains('Серьги')) return ru.replaceAll('Серьги', 'Sirg\'a');
-  if (ru.contains('Подвеска')) return ru.replaceAll('Подвеска', 'Osma');
-  if (ru.contains('Браслет')) return ru.replaceAll('Браслет', 'Bilaguzuk');
-  if (ru.contains('Часы')) return ru.replaceAll('Часы', 'Soat');
-  return ru;
-}
-
-String _demoKkName(String ru) {
-  if (ru.contains('Кольцо')) return ru.replaceAll('Кольцо', 'Сақина');
-  if (ru.contains('Серьги')) return ru.replaceAll('Серьги', 'Сырға');
-  if (ru.contains('Подвеска')) return ru.replaceAll('Подвеска', 'Салпыншақ');
-  if (ru.contains('Браслет')) return ru.replaceAll('Браслет', 'Білезік');
-  if (ru.contains('Часы')) return ru.replaceAll('Часы', 'Сағат');
-  return ru;
+  final full = catalogDescriptionTranslations[ru];
+  if (full != null) return Map<String, String>.from(full);
+  return {for (final code in AppLocaleCodes.all) code: ru};
 }

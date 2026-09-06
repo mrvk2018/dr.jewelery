@@ -1,0 +1,276 @@
+import 'app_locale_codes.dart';
+
+/// Полные названия каталога целиком (не пословный replace).
+const catalogNameTranslations = <String, Map<String, String>>{
+  'Кольцо из белого золота с бриллиантом': {
+    AppLocaleCodes.ru: 'Кольцо из белого золота с бриллиантом',
+    AppLocaleCodes.kk: 'Ақ алтыннан жасалған бриллиант сақина',
+    AppLocaleCodes.ko: '화이트골드 다이아몬드 반지',
+    AppLocaleCodes.en: 'White gold diamond ring',
+    AppLocaleCodes.uz: 'Oq oltindan yasalgan brilliant uzuk',
+  },
+  'Серьги с изумрудом': {
+    AppLocaleCodes.ru: 'Серьги с изумрудом',
+    AppLocaleCodes.kk: 'Зүбаржат сырға',
+    AppLocaleCodes.ko: '에메랄드 귀걸이',
+    AppLocaleCodes.en: 'Emerald earrings',
+    AppLocaleCodes.uz: 'Zumrad sirg\'alar',
+  },
+  'Подвеска «Капля» с сапфиром': {
+    AppLocaleCodes.ru: 'Подвеска «Капля» с сапфиром',
+    AppLocaleCodes.kk: 'Сапфирлі «Тамшы» салпыншақ',
+    AppLocaleCodes.ko: '사파이어 물방울 펜던트',
+    AppLocaleCodes.en: 'Sapphire teardrop pendant',
+    AppLocaleCodes.uz: 'Safirli «Tomchi» osma',
+  },
+  'Браслет с фианитами': {
+    AppLocaleCodes.ru: 'Браслет с фианитами',
+    AppLocaleCodes.kk: 'Фианитті білезік',
+    AppLocaleCodes.ko: '큐빅 지르코니아 팔찌',
+    AppLocaleCodes.en: 'Cubic zirconia bracelet',
+    AppLocaleCodes.uz: 'Fianitli bilaguzuk',
+  },
+  'Подвеска «Сердце»': {
+    AppLocaleCodes.ru: 'Подвеска «Сердце»',
+    AppLocaleCodes.kk: '«Жүрек» салпыншақ',
+    AppLocaleCodes.ko: '하트 펜던트',
+    AppLocaleCodes.en: 'Heart pendant',
+    AppLocaleCodes.uz: '«Yurak» osma',
+  },
+  'Обручальное кольцо классическое': {
+    AppLocaleCodes.ru: 'Обручальное кольцо классическое',
+    AppLocaleCodes.kk: 'Классикалық неке сақинасы',
+    AppLocaleCodes.ko: '클래식 웨딩밴드',
+    AppLocaleCodes.en: 'Classic wedding band',
+    AppLocaleCodes.uz: 'Klassik nikoh uzugi',
+  },
+  'Часы «Dr. Jewelry Classic»': {
+    AppLocaleCodes.ru: 'Часы «Dr. Jewelry Classic»',
+    AppLocaleCodes.kk: '«Dr. Jewelry Classic» сағаты',
+    AppLocaleCodes.ko: 'Dr. Jewelry Classic 워치',
+    AppLocaleCodes.en: 'Dr. Jewelry Classic watch',
+    AppLocaleCodes.uz: '«Dr. Jewelry Classic» soati',
+  },
+  'Кольцо с топазом': {
+    AppLocaleCodes.ru: 'Кольцо с топазом',
+    AppLocaleCodes.kk: 'Топаз сақина',
+    AppLocaleCodes.ko: '토파즈 반지',
+    AppLocaleCodes.en: 'Topaz ring',
+    AppLocaleCodes.uz: 'Topaz uzuk',
+  },
+};
+
+/// Полные описания каталога целиком.
+const catalogDescriptionTranslations = <String, Map<String, String>>{
+  'Изысканное кольцо с бриллиантом огранки brilliant.': {
+    AppLocaleCodes.ru: 'Изысканное кольцо с бриллиантом огранки brilliant.',
+    AppLocaleCodes.kk: 'Brilliant кесілген бриллианты бар талғампаз сақина.',
+    AppLocaleCodes.ko: '브릴리언트 컷 다이아몬드가 세팅된 우아한 반지입니다.',
+    AppLocaleCodes.en: 'An exquisite ring set with a brilliant-cut diamond.',
+    AppLocaleCodes.uz: 'Brilliant qirrali brilliantli nafis uzuk.',
+  },
+  'Элегантные серьги с натуральным изумрудом.': {
+    AppLocaleCodes.ru: 'Элегантные серьги с натуральным изумрудом.',
+    AppLocaleCodes.kk: 'Табиғи зүбаржаты бар әсем сырға.',
+    AppLocaleCodes.ko: '천연 에메랄드가 세팅된 우아한 귀걸이입니다.',
+    AppLocaleCodes.en: 'Elegant earrings set with a natural emerald.',
+    AppLocaleCodes.uz: 'Tabiiy zumradli nafis sirg\'alar.',
+  },
+  'Подвеска каплевидной формы с сапфировой вставкой.': {
+    AppLocaleCodes.ru: 'Подвеска каплевидной формы с сапфировой вставкой.',
+    AppLocaleCodes.kk: 'Сапфирлі тамшы пішінді салпыншақ.',
+    AppLocaleCodes.ko: '사파이어가 세팅된 물방울 펜던트입니다.',
+    AppLocaleCodes.en: 'A teardrop pendant set with a sapphire.',
+    AppLocaleCodes.uz: 'Safir qo\'shimchali tomchi shaklidagi osma.',
+  },
+  'Изящный браслет с фианитами по всему периметру.': {
+    AppLocaleCodes.ru: 'Изящный браслет с фианитами по всему периметру.',
+    AppLocaleCodes.kk: 'Бүкіл периметрі фианитпен көмкерілген нәзік білезік.',
+    AppLocaleCodes.ko: '둘레 전체에 큐빅이 세팅된 섬세한 팔찌입니다.',
+    AppLocaleCodes.en: 'A delicate bracelet lined with cubic zirconia.',
+    AppLocaleCodes.uz: 'Perimetri bo\'ylab fianitli nafis bilaguzuk.',
+  },
+  'Романтичная подвеска в форме сердца.': {
+    AppLocaleCodes.ru: 'Романтичная подвеска в форме сердца.',
+    AppLocaleCodes.kk: 'Жүрек пішінді романтикалық салпыншақ.',
+    AppLocaleCodes.ko: '하트 모양의 로맨틱한 펜던트입니다.',
+    AppLocaleCodes.en: 'A romantic heart-shaped pendant.',
+    AppLocaleCodes.uz: 'Yurak shaklidagi romantik osma.',
+  },
+  'Классическое обручальное кольцо премиального качества.': {
+    AppLocaleCodes.ru: 'Классическое обручальное кольцо премиального качества.',
+    AppLocaleCodes.kk: 'Премиум сапалы классикалық неке сақинасы.',
+    AppLocaleCodes.ko: '프리미엄 클래식 웨딩밴드입니다.',
+    AppLocaleCodes.en: 'A premium classic wedding band.',
+    AppLocaleCodes.uz: 'Premium sifatli klassik nikoh uzugi.',
+  },
+  'Премиальные часы коллекции Dr. Jewelry Classic.': {
+    AppLocaleCodes.ru: 'Премиальные часы коллекции Dr. Jewelry Classic.',
+    AppLocaleCodes.kk: 'Dr. Jewelry Classic топтамасының премиум сағаты.',
+    AppLocaleCodes.ko: 'Dr. Jewelry Classic 컬렉션의 프리미엄 워치입니다.',
+    AppLocaleCodes.en: 'A premium watch from the Dr. Jewelry Classic collection.',
+    AppLocaleCodes.uz: 'Dr. Jewelry Classic kolleksiyasining premium soati.',
+  },
+  'Кольцо с яркой топазовой вставкой.': {
+    AppLocaleCodes.ru: 'Кольцо с яркой топазовой вставкой.',
+    AppLocaleCodes.kk: 'Жарқын топаз қондырмалы сақина.',
+    AppLocaleCodes.ko: '선명한 토파즈가 세팅된 반지입니다.',
+    AppLocaleCodes.en: 'A ring set with a vivid topaz.',
+    AppLocaleCodes.uz: 'Yorqin topaz qo\'shimchali uzuk.',
+  },
+};
+
+/// Металл, категория, вставка — целые строки, не склейка.
+const catalogAttributeTranslations = <String, Map<String, String>>{
+  'Кольца': {
+    AppLocaleCodes.ru: 'Кольца',
+    AppLocaleCodes.kk: 'Сақиналар',
+    AppLocaleCodes.ko: '반지',
+    AppLocaleCodes.en: 'Rings',
+    AppLocaleCodes.uz: 'Uzuklar',
+  },
+  'Серьги': {
+    AppLocaleCodes.ru: 'Серьги',
+    AppLocaleCodes.kk: 'Сырғалар',
+    AppLocaleCodes.ko: '귀걸이',
+    AppLocaleCodes.en: 'Earrings',
+    AppLocaleCodes.uz: 'Sirg\'alar',
+  },
+  'Подвески': {
+    AppLocaleCodes.ru: 'Подвески',
+    AppLocaleCodes.kk: 'Салпыншақтар',
+    AppLocaleCodes.ko: '펜던트',
+    AppLocaleCodes.en: 'Pendants',
+    AppLocaleCodes.uz: 'Osmalar',
+  },
+  'Браслеты': {
+    AppLocaleCodes.ru: 'Браслеты',
+    AppLocaleCodes.kk: 'Білезіктер',
+    AppLocaleCodes.ko: '팔찌',
+    AppLocaleCodes.en: 'Bracelets',
+    AppLocaleCodes.uz: 'Bilaguzuklar',
+  },
+  'Часы': {
+    AppLocaleCodes.ru: 'Часы',
+    AppLocaleCodes.kk: 'Сағаттар',
+    AppLocaleCodes.ko: '시계',
+    AppLocaleCodes.en: 'Watches',
+    AppLocaleCodes.uz: 'Soatlar',
+  },
+  'Белое золото': {
+    AppLocaleCodes.ru: 'Белое золото',
+    AppLocaleCodes.kk: 'Ақ алтын',
+    AppLocaleCodes.ko: '화이트골드',
+    AppLocaleCodes.en: 'White gold',
+    AppLocaleCodes.uz: 'Oq oltin',
+  },
+  'Красное золото': {
+    AppLocaleCodes.ru: 'Красное золото',
+    AppLocaleCodes.kk: 'Қызыл алтын',
+    AppLocaleCodes.ko: '레드골드',
+    AppLocaleCodes.en: 'Rose gold',
+    AppLocaleCodes.uz: 'Qizil oltin',
+  },
+  'Серебро': {
+    AppLocaleCodes.ru: 'Серебро',
+    AppLocaleCodes.kk: 'Күміс',
+    AppLocaleCodes.ko: '실버',
+    AppLocaleCodes.en: 'Silver',
+    AppLocaleCodes.uz: 'Kumush',
+  },
+  'Платина': {
+    AppLocaleCodes.ru: 'Платина',
+    AppLocaleCodes.kk: 'Платина',
+    AppLocaleCodes.ko: '플래티넘',
+    AppLocaleCodes.en: 'Platinum',
+    AppLocaleCodes.uz: 'Platina',
+  },
+  'Бриллиант': {
+    AppLocaleCodes.ru: 'Бриллиант',
+    AppLocaleCodes.kk: 'Бриллиант',
+    AppLocaleCodes.ko: '다이아몬드',
+    AppLocaleCodes.en: 'Diamond',
+    AppLocaleCodes.uz: 'Brilliant',
+  },
+  'Изумруд': {
+    AppLocaleCodes.ru: 'Изумруд',
+    AppLocaleCodes.kk: 'Зүбаржат',
+    AppLocaleCodes.ko: '에메랄드',
+    AppLocaleCodes.en: 'Emerald',
+    AppLocaleCodes.uz: 'Zumrad',
+  },
+  'Сапфир': {
+    AppLocaleCodes.ru: 'Сапфир',
+    AppLocaleCodes.kk: 'Сапфир',
+    AppLocaleCodes.ko: '사파이어',
+    AppLocaleCodes.en: 'Sapphire',
+    AppLocaleCodes.uz: 'Safir',
+  },
+  'Топаз': {
+    AppLocaleCodes.ru: 'Топаз',
+    AppLocaleCodes.kk: 'Топаз',
+    AppLocaleCodes.ko: '토파즈',
+    AppLocaleCodes.en: 'Topaz',
+    AppLocaleCodes.uz: 'Topaz',
+  },
+  'Без вставок': {
+    AppLocaleCodes.ru: 'Без вставок',
+    AppLocaleCodes.kk: 'Қондырмасыз',
+    AppLocaleCodes.ko: '스톤 없음',
+    AppLocaleCodes.en: 'No stones',
+    AppLocaleCodes.uz: 'Toshqosimchasiz',
+  },
+};
+
+const productDetailCopy = <String, Map<String, String>>{
+  'description': {
+    AppLocaleCodes.ru: 'Описание',
+    AppLocaleCodes.kk: 'Сипаттама',
+    AppLocaleCodes.ko: '설명',
+    AppLocaleCodes.en: 'Description',
+    AppLocaleCodes.uz: 'Tavsif',
+  },
+  'specs': {
+    AppLocaleCodes.ru: 'Характеристики',
+    AppLocaleCodes.kk: 'Сипаттамалары',
+    AppLocaleCodes.ko: '사양',
+    AppLocaleCodes.en: 'Specifications',
+    AppLocaleCodes.uz: 'Xususiyatlar',
+  },
+  'category': {
+    AppLocaleCodes.ru: 'Категория',
+    AppLocaleCodes.kk: 'Санат',
+    AppLocaleCodes.ko: '카테고리',
+    AppLocaleCodes.en: 'Category',
+    AppLocaleCodes.uz: 'Turkum',
+  },
+  'metal': {
+    AppLocaleCodes.ru: 'Металл',
+    AppLocaleCodes.kk: 'Металл',
+    AppLocaleCodes.ko: '메탈',
+    AppLocaleCodes.en: 'Metal',
+    AppLocaleCodes.uz: 'Metall',
+  },
+  'insert': {
+    AppLocaleCodes.ru: 'Вставка',
+    AppLocaleCodes.kk: 'Қондырма',
+    AppLocaleCodes.ko: '스톤',
+    AppLocaleCodes.en: 'Stone',
+    AppLocaleCodes.uz: 'Tosh',
+  },
+  'sku': {
+    AppLocaleCodes.ru: 'Артикул',
+    AppLocaleCodes.kk: 'Артикул',
+    AppLocaleCodes.ko: 'SKU',
+    AppLocaleCodes.en: 'SKU',
+    AppLocaleCodes.uz: 'Artikul',
+  },
+  'stock': {
+    AppLocaleCodes.ru: 'Остаток',
+    AppLocaleCodes.kk: 'Қалдық',
+    AppLocaleCodes.ko: '재고',
+    AppLocaleCodes.en: 'Stock',
+    AppLocaleCodes.uz: 'Qoldiq',
+  },
+};
+

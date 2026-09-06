@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
 import '../../../../core/services/admin_auth_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../l10n/app_localizations.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../admin/presentation/pages/admin_owner_init_page.dart';
@@ -178,7 +178,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
-            title: Text(AppLocalizations.of(context).profile),
+            title: Text(context.l10n.profile),
             centerTitle: false,
             titleTextStyle: AppTypography.heading(fontSize: 24),
           ),

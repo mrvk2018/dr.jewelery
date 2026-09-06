@@ -1,5 +1,3 @@
-import 'app_language.dart';
-
 export 'app_language.dart';
 
 /// Ключи строк онбординга.
@@ -197,8 +195,8 @@ const onboardingLocalizations = <String, Map<String, String>>{
 };
 
 /// Возвращает локализованную строку онбординга.
-String onboardingTr(String key, AppLanguage language) {
-  return onboardingLocalizations[key]?[language.code] ??
+String onboardingTr(String key, String languageCode) {
+  return onboardingLocalizations[key]?[languageCode] ??
       onboardingLocalizations[key]?['en'] ??
       key;
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/onboarding_localizations.dart';
 import '../../../../core/services/onboarding_storage.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -35,9 +36,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  AppLanguage get _language => LocaleScope.of(context).language;
+  AppLanguage get _language => context.appLanguage;
 
-  String tr(String key) => onboardingTr(key, _language);
+  String tr(String key) => onboardingTr(key, context.langCode);
 
   Future<void> _selectLanguage(AppLanguage language) async {
     await LocaleScope.of(context).setLanguage(language);

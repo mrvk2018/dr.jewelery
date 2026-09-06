@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_controller.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../../product/presentation/widgets/product_size_selector.dart';
 
 /// Карточка товара в корзине.
@@ -36,7 +36,7 @@ class CartItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final product = item.product;
     final icon = _icons[product.iconIndex % _icons.length];
-    final languageCode = LocaleScope.of(context).languageCode;
+    final languageCode = context.langCode;
 
     return Container(
       padding: const EdgeInsets.all(12),

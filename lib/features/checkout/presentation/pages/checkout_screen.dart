@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../payment/presentation/pages/payment_screen.dart';
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/services/korean_address_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../domain/models/delivery_method.dart';
 
 /// Экран оформления заказа с корейской логистикой (PIPA / Daum Postcode).
@@ -34,9 +34,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isSearchingAddress = false;
   String? _validationMessage;
 
-  AppLanguage get _language => LocaleScope.of(context).language;
-
-  String tr(String key) => checkoutTr(key, _language);
+  String tr(String key) => checkoutTr(key, context.langCode);
 
   int get _deliveryFee => _deliveryMethod.feeKrw;
 

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../domain/models/payment_models.dart';
 import '../widgets/payment_loading_overlay.dart';
 import 'payment_success_screen.dart';
@@ -30,9 +30,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   KoreanBank? _selectedBank;
   String? _validationMessage;
 
-  AppLanguage get _language => LocaleScope.of(context).language;
-
-  String tr(String key) => paymentTr(key, _language);
+  String tr(String key) => paymentTr(key, context.langCode);
 
   String get _totalLabel {
     final products = formatWon(widget.productsTotalKrw);
@@ -186,7 +184,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               title: tr(PaymentStringKeys.appCard),
               subtitle: tr(PaymentStringKeys.appCardSubtitle),
               selectedBank: _selectedBank,
-              languageCode: _language.code,
+              languageCode: context.langCode,
               onTap: () => _selectMethod(PaymentMethodType.appCard),
               onBankSelected: _selectBank,
               selectBankLabel: tr(PaymentStringKeys.selectBank),

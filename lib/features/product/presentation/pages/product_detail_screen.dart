@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../widgets/product_gallery.dart';
 import '../widgets/product_installment_banner.dart';
@@ -71,7 +71,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final languageCode = LocaleScope.of(context).languageCode;
+    final languageCode = context.langCode;
     final favorites = FavoritesScope.of(context);
     return Scaffold(
       backgroundColor: AppColors.background,

@@ -133,9 +133,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     ),
                   ),
                 ),
-                SliverToBoxAdapter(
-                  child: CatalogProductGrid(products: products),
-                ),
+                CatalogProductGrid(products: products),
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
               ],
             ),

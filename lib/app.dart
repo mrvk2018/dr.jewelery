@@ -124,7 +124,8 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
                 provider: _localeProvider!,
                 child: ListenableBuilder(
                   listenable: _localeProvider!,
-                  builder: (context, _) {
+                  child: _AppRootGate(storage: _storage!),
+                  builder: (context, child) {
                     return MaterialApp(
                       title: AppConstants.appName,
                       debugShowCheckedModeBanner: false,
@@ -137,7 +138,7 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
                         GlobalWidgetsLocalizations.delegate,
                         GlobalCupertinoLocalizations.delegate,
                       ],
-                      home: _AppRootGate(storage: _storage!),
+                      home: child,
                     );
                   },
                 ),

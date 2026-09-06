@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/cart_scope.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../profile/domain/models/order_item.dart';
 import '../../../shell/presentation/pages/main_screen.dart';
@@ -29,9 +29,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   late final Animation<double> _scale;
   late final Animation<double> _fade;
 
-  AppLanguage get _language => LocaleScope.of(context).language;
-
-  String tr(String key) => paymentTr(key, _language);
+  String tr(String key) => paymentTr(key, context.langCode);
 
   @override
   void initState() {
@@ -65,7 +63,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     if (cart.items.isEmpty) return;
 
     final profile = ProfileScope.of(context);
-    final languageCode = LocaleScope.of(context).languageCode;
+    final languageCode = context.langCode;
     final names = cart.items
         .map(
           (item) =>

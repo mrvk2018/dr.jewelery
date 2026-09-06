@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../../core/services/ai_translation_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../l10n/app_localizations.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../catalog/domain/models/catalog_constants.dart';
 /// Форма добавления товара с AI-переводом и ручной правкой.
@@ -95,7 +95,7 @@ class _AdminProductFormState extends State<AdminProductForm> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context).translationDone),
+          content: Text(context.l10n.translationDone),
         ),
       );
     } finally {
@@ -169,7 +169,7 @@ class _AdminProductFormState extends State<AdminProductForm> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = context.l10n;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

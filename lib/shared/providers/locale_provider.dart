@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/app_language.dart';
@@ -17,8 +19,12 @@ class LocaleProvider extends ChangeNotifier {
   Future<void> setLanguage(AppLanguage language) async {
     if (_language == language) return;
     _language = language;
-    await _storage.saveLanguage(language);
     notifyListeners();
+    unawaited(
+      _storage.saveLanguage(language).catchError((Object error, StackTrace _) {
+        debugPrint('Locale persist failed: $error');
+      }),
+    );
   }
 
   Future<void> setLanguageCode(String code) async {

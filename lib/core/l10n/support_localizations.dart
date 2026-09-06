@@ -1,5 +1,3 @@
-import 'app_language.dart';
-
 /// Ключи строк обратной связи.
 abstract final class SupportStringKeys {
   static const feedbackButton = 'feedback_button';
@@ -60,8 +58,8 @@ const supportLocalizations = <String, Map<String, String>>{
   },
 };
 
-String supportTr(String key, AppLanguage language) {
-  return supportLocalizations[key]?[language.code] ??
+String supportTr(String key, String languageCode) {
+  return supportLocalizations[key]?[languageCode] ??
       supportLocalizations[key]?['en'] ??
       key;
 }

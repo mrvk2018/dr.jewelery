@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/extensions/context_extensions.dart';
 import '../../core/l10n/stock_localizations.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
-import '../providers/locale_provider.dart';
 
 /// Люксовая плашка «Нет в наличии» вместо кнопки покупки.
 class OutOfStockPlaque extends StatelessWidget {
@@ -16,8 +16,7 @@ class OutOfStockPlaque extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final language = LocaleScope.of(context).language;
-    final label = outOfStockLabel(language);
+    final label = outOfStockLabelForCode(context.langCode);
 
     return Container(
       height: height,

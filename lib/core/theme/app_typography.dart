@@ -5,6 +5,57 @@ import 'app_colors.dart';
 
 /// Premium typography: serif headings, sans-serif body and prices.
 abstract final class AppTypography {
+  static final TextStyle _inter = GoogleFonts.inter();
+  static final TextStyle _playfair = GoogleFonts.playfairDisplay();
+
+  /// Название товара в карточке каталога (закэшировано).
+  static final TextStyle productTitle = _inter.copyWith(
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+    color: AppColors.textPrimary,
+    height: 1.25,
+  );
+
+  /// Металл / характеристика изделия (закэшировано).
+  static final TextStyle productMetaStyle = _inter.copyWith(
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textSecondary,
+    height: 1.2,
+  );
+
+  static final TextStyle productPrice = _inter.copyWith(
+    fontSize: 15,
+    fontWeight: FontWeight.w700,
+    color: AppColors.saleRed,
+    letterSpacing: 0.25,
+  );
+
+  static final TextStyle productOldPrice = _inter.copyWith(
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textSecondary,
+    letterSpacing: 0.25,
+    decoration: TextDecoration.lineThrough,
+    decorationColor: AppColors.textSecondary,
+  );
+
+  static final TextStyle productCartButton = _inter.copyWith(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textOnPrimary,
+    letterSpacing: 0.1,
+    height: 1.2,
+  );
+
+  static final TextStyle productDiscountBadge = _inter.copyWith(
+    fontSize: 10,
+    fontWeight: FontWeight.w700,
+    color: AppColors.textOnPrimary,
+    letterSpacing: 0.1,
+    height: 1.2,
+  );
+
   static TextTheme textTheme() {
     final headingFont = GoogleFonts.playfairDisplayTextTheme();
     final bodyFont = GoogleFonts.interTextTheme();
@@ -84,7 +135,7 @@ abstract final class AppTypography {
     FontWeight fontWeight = FontWeight.w600,
     TextDecoration? decoration,
   }) {
-    return GoogleFonts.inter(
+    return _inter.copyWith(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? AppColors.accent,
@@ -95,28 +146,14 @@ abstract final class AppTypography {
   }
 
   /// Название товара в карточке каталога.
-  static TextStyle productName() {
-    return GoogleFonts.inter(
-      fontSize: 13,
-      fontWeight: FontWeight.w500,
-      color: AppColors.textPrimary,
-      height: 1.25,
-    );
-  }
+  static TextStyle productName() => productTitle;
 
   /// Металл / характеристика изделия.
-  static TextStyle productMeta() {
-    return GoogleFonts.inter(
-      fontSize: 11,
-      fontWeight: FontWeight.w400,
-      color: AppColors.textSecondary,
-      height: 1.2,
-    );
-  }
+  static TextStyle productMeta() => productMetaStyle;
 
   /// Serif style for hero and section headings.
   static TextStyle heading({double fontSize = 32, Color? color}) {
-    return GoogleFonts.playfairDisplay(
+    return _playfair.copyWith(
       fontSize: fontSize,
       fontWeight: FontWeight.w600,
       color: color ?? AppColors.textPrimary,
@@ -126,7 +163,7 @@ abstract final class AppTypography {
 
   /// Компактная подпись под историями и мелкими блоками.
   static TextStyle caption({Color? color, FontWeight fontWeight = FontWeight.w500}) {
-    return GoogleFonts.inter(
+    return _inter.copyWith(
       fontSize: 11,
       fontWeight: fontWeight,
       color: color ?? AppColors.textPrimary,
@@ -137,7 +174,7 @@ abstract final class AppTypography {
 
   /// Крупный акцентный заголовок для промо-баннеров.
   static TextStyle bannerTitle({Color? color}) {
-    return GoogleFonts.playfairDisplay(
+    return _playfair.copyWith(
       fontSize: 22,
       fontWeight: FontWeight.w700,
       color: color ?? AppColors.textOnPrimary,
@@ -148,7 +185,7 @@ abstract final class AppTypography {
 
   /// Таймер и числовые блоки акций.
   static TextStyle countdown({Color? color, double fontSize = 13}) {
-    return GoogleFonts.inter(
+    return _inter.copyWith(
       fontSize: fontSize,
       fontWeight: FontWeight.w600,
       color: color ?? AppColors.textOnPrimary,
@@ -158,7 +195,7 @@ abstract final class AppTypography {
 
   /// Подписи нижней навигации.
   static TextStyle navLabel({required bool isActive}) {
-    return GoogleFonts.inter(
+    return _inter.copyWith(
       fontSize: 10,
       fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
       letterSpacing: 0.2,

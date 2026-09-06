@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../../../product/presentation/pages/product_detail_screen.dart';
 
@@ -78,7 +78,10 @@ class _ProductCardState extends State<ProductCard> {
   Widget build(BuildContext context) {
     final product = widget.product;
     final icon = _placeholderIcons[product.iconIndex % _placeholderIcons.length];
-    final languageCode = LocaleScope.of(context).languageCode;
+    final currentLang = context.langCode;
+    final displayName = product.nameTranslations[currentLang] ??
+        product.nameTranslations['ru'] ??
+        '';
     final favorites = FavoritesScope.of(context);
     final isFavorite = favorites.isFavorite(product);
 
@@ -151,22 +154,20 @@ class _ProductCardState extends State<ProductCard> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        product.nameTranslations[languageCode] ??
-                            product.nameTranslations['ru'] ??
-                            '',
+                        displayName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.productName(),
+                        style: AppTypography.productTitle,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         LocalizedText.attribute(
                           product.metal,
-                          languageCode: languageCode,
+                          languageCode: currentLang,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: AppTypography.productMeta(),
+                        style: AppTypography.productMetaStyle,
                       ),
                       const Spacer(),
                       SizedBox(
@@ -184,10 +185,7 @@ class _ProductCardState extends State<ProductCard> {
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  textStyle: AppTypography.caption(
-                                    color: AppColors.textOnPrimary,
-                                    fontWeight: FontWeight.w600,
-                                  ).copyWith(fontSize: 12),
+                                  textStyle: AppTypography.productCartButton,
                                 ),
                                 child: const Text('В корзину'),
                               ),
@@ -219,10 +217,7 @@ class _DiscountBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: AppTypography.caption(
-          color: AppColors.textOnPrimary,
-          fontWeight: FontWeight.w700,
-        ).copyWith(fontSize: 10),
+        style: AppTypography.productDiscountBadge,
       ),
     );
   }
@@ -278,20 +273,11 @@ class _PriceRow extends StatelessWidget {
       children: [
         Text(
           formatWon(salePrice),
-          style: AppTypography.price(
-            fontSize: 15,
-            color: AppColors.saleRed,
-            fontWeight: FontWeight.w700,
-          ),
+          style: AppTypography.productPrice,
         ),
         Text(
           formatWon(oldPrice),
-          style: AppTypography.price(
-            fontSize: 11,
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w400,
-            decoration: TextDecoration.lineThrough,
-          ),
+          style: AppTypography.productOldPrice,
         ),
       ],
     );

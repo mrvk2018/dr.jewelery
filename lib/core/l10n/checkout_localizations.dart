@@ -1,5 +1,4 @@
 import '../utils/won_format.dart';
-import 'app_language.dart';
 
 export '../utils/won_format.dart';
 
@@ -244,8 +243,8 @@ const checkoutLocalizations = <String, Map<String, String>>{
   },
 };
 
-String checkoutTr(String key, AppLanguage language) {
-  return checkoutLocalizations[key]?[language.code] ??
+String checkoutTr(String key, String languageCode) {
+  return checkoutLocalizations[key]?[languageCode] ??
       checkoutLocalizations[key]?['en'] ??
       key;
 }

@@ -36,7 +36,7 @@ class _FeedbackBottomSheetState extends State<FeedbackBottomSheet> {
   final TextEditingController _controller = TextEditingController();
   bool _isSending = false;
 
-  String tr(String key) => supportTr(key, widget.language);
+  String tr(String key) => supportTr(key, widget.language.code);
 
   @override
   void dispose() {
@@ -213,7 +213,7 @@ class FeedbackButton extends StatelessWidget {
       ),
       icon: const Icon(Icons.support_agent_outlined, size: 18),
       label: Text(
-        supportTr(SupportStringKeys.feedbackButton, language),
+        supportTr(SupportStringKeys.feedbackButton, language.code),
         style: AppTypography.caption(
           color: AppColors.textSecondary,
           fontWeight: FontWeight.w600,

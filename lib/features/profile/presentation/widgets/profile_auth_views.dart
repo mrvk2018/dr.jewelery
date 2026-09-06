@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../../../core/l10n/support_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../support/presentation/widgets/feedback_bottom_sheet.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../domain/models/order_item.dart';
 import '../../domain/models/user_profile.dart';
 import 'loyalty_qr_card.dart';
@@ -93,7 +93,7 @@ class ProfileGuestView extends StatelessWidget {
               ],
               const SizedBox(height: 16),
               FeedbackButton(
-                language: LocaleScope.of(context).language,
+                language: context.appLanguage,
               ),
               const SizedBox(height: 8),
               ProfileLanguageTile(onTap: onLanguageTap),
@@ -193,13 +193,13 @@ class ProfileAuthenticatedView extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: () => FeedbackBottomSheet.show(
               context,
-              language: LocaleScope.of(context).language,
+              language: context.appLanguage,
             ),
             icon: const Icon(Icons.support_agent_outlined, size: 20),
             label: Text(
               supportTr(
                 SupportStringKeys.feedbackButton,
-                LocaleScope.of(context).language,
+                context.langCode,
               ),
             ),
             style: OutlinedButton.styleFrom(
@@ -427,7 +427,7 @@ class ProfileLanguageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final language = LocaleScope.of(context).language;
+    final language = context.appLanguage;
     return Material(
       color: AppColors.cardBackground,
       borderRadius: BorderRadius.circular(12),

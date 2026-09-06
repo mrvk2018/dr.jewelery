@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../l10n/app_localizations.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
 import '../../../home/presentation/widgets/product_card.dart';
@@ -13,7 +13,7 @@ class FavoritesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+    final l10n = context.l10n;
     final favorites = FavoritesScope.of(context);
     final catalog = CatalogScope.of(context);
 

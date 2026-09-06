@@ -1,5 +1,3 @@
-import 'app_language.dart';
-
 export 'app_language.dart';
 
 /// Ключи строк экрана оплаты.
@@ -249,8 +247,8 @@ const paymentLocalizations = <String, Map<String, String>>{
   },
 };
 
-String paymentTr(String key, AppLanguage language) {
-  return paymentLocalizations[key]?[language.code] ??
+String paymentTr(String key, String languageCode) {
+  return paymentLocalizations[key]?[languageCode] ??
       paymentLocalizations[key]?['en'] ??
       key;
 }

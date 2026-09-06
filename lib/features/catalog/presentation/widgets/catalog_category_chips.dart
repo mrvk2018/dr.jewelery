@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/localized_text.dart';
-import '../../../../shared/providers/locale_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/catalog_constants.dart';
@@ -27,6 +27,8 @@ class CatalogCategoryChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentLang = context.langCode;
+
     return SizedBox(
       height: 44,
       child: ListView.separated(
@@ -42,7 +44,7 @@ class CatalogCategoryChips extends StatelessWidget {
           return _CategoryChip(
             label: LocalizedText.attribute(
               category,
-              languageCode: LocaleScope.of(context).languageCode,
+              languageCode: currentLang,
             ),
             icon: icon,
             isSelected: isSelected,

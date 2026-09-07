@@ -1,33 +1,35 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/story_item.dart';
 
 /// Горизонтальный блок «Истории» с круглыми аватарками и золотой рамкой.
 class HomeStoriesSection extends StatelessWidget {
-  const HomeStoriesSection({
-    super.key,
-    this.stories = _defaultStories,
-  });
+  const HomeStoriesSection({super.key});
 
-  final List<StoryItem> stories;
+  static List<StoryItem> storiesFor(BuildContext context) {
+    final l10n = context.l10n;
 
-  static const List<StoryItem> _defaultStories = [
-    StoryItem(
-      title: 'Скидки\n-70%',
-      icon: Icons.local_offer_outlined,
-      isHighlighted: true,
-    ),
-    StoryItem(title: 'Кольца', icon: Icons.diamond_outlined),
-    StoryItem(title: 'Новинки', icon: Icons.auto_awesome_outlined),
-    StoryItem(title: 'Серьги', icon: Icons.blur_circular_outlined),
-    StoryItem(title: 'Цепи', icon: Icons.link_rounded),
-    StoryItem(title: 'Подарки', icon: Icons.card_giftcard_outlined),
-  ];
+    return [
+      StoryItem(
+        title: l10n.homeStoryDiscounts,
+        icon: Icons.local_offer_outlined,
+        isHighlighted: true,
+      ),
+      StoryItem(title: l10n.homeStoryRings, icon: Icons.diamond_outlined),
+      StoryItem(title: l10n.homeStoryNew, icon: Icons.auto_awesome_outlined),
+      StoryItem(title: l10n.homeStoryEarrings, icon: Icons.blur_circular_outlined),
+      StoryItem(title: l10n.homeStoryChains, icon: Icons.link_rounded),
+      StoryItem(title: l10n.homeStoryGifts, icon: Icons.card_giftcard_outlined),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final stories = storiesFor(context);
+
     return SizedBox(
       height: 108,
       child: ListView.separated(

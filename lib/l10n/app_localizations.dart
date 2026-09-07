@@ -110,6 +110,12 @@ abstract class AppLocalizations {
   /// **'Dr. Jewelry'**
   String get appTitle;
 
+  /// No description provided for @appTagline.
+  ///
+  /// In ru, this message translates to:
+  /// **'Вечная элегантность, созданная для вас'**
+  String get appTagline;
+
   /// No description provided for @home.
   ///
   /// In ru, this message translates to:
@@ -235,6 +241,72 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Қазақша (KK)'**
   String get languageKk;
+
+  /// No description provided for @homeRecommendedTitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'Рекомендуем для вас'**
+  String get homeRecommendedTitle;
+
+  /// No description provided for @homePromoTitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'ГРАНДИОЗНАЯ\nРАСПРОДАЖА'**
+  String get homePromoTitle;
+
+  /// No description provided for @homePromoSubtitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'Эксклюзивные украшения по особым ценам'**
+  String get homePromoSubtitle;
+
+  /// No description provided for @homePromoBadge.
+  ///
+  /// In ru, this message translates to:
+  /// **'LIMITED OFFER'**
+  String get homePromoBadge;
+
+  /// No description provided for @homePromoCountdownPrefix.
+  ///
+  /// In ru, this message translates to:
+  /// **'До конца осталось'**
+  String get homePromoCountdownPrefix;
+
+  /// No description provided for @homeStoryDiscounts.
+  ///
+  /// In ru, this message translates to:
+  /// **'Скидки\n-70%'**
+  String get homeStoryDiscounts;
+
+  /// No description provided for @homeStoryRings.
+  ///
+  /// In ru, this message translates to:
+  /// **'Кольца'**
+  String get homeStoryRings;
+
+  /// No description provided for @homeStoryNew.
+  ///
+  /// In ru, this message translates to:
+  /// **'Новинки'**
+  String get homeStoryNew;
+
+  /// No description provided for @homeStoryEarrings.
+  ///
+  /// In ru, this message translates to:
+  /// **'Серьги'**
+  String get homeStoryEarrings;
+
+  /// No description provided for @homeStoryChains.
+  ///
+  /// In ru, this message translates to:
+  /// **'Цепи'**
+  String get homeStoryChains;
+
+  /// No description provided for @homeStoryGifts.
+  ///
+  /// In ru, this message translates to:
+  /// **'Подарки'**
+  String get homeStoryGifts;
 }
 
 class _AppLocalizationsDelegate

@@ -1,6 +1,7 @@
 {
   "@@locale": "en",
   "appTitle": "Dr. Jewelry",
+  "appTagline": "Eternal elegance, crafted for you",
   "home": "Home",
   "catalog": "Catalog",
   "cart": "Cart",
@@ -21,5 +22,16 @@
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
   "languageUz": "O'zbekcha (UZ)",
-  "languageKk": "Қазақша (KK)"
+  "languageKk": "Қазақша (KK)",
+  "homeRecommendedTitle": "Recommended for you",
+  "homePromoTitle": "GRAND\nSALE",
+  "homePromoSubtitle": "Exclusive jewelry at special prices",
+  "homePromoBadge": "LIMITED OFFER",
+  "homePromoCountdownPrefix": "Time remaining",
+  "homeStoryDiscounts": "Discounts\n-70%",
+  "homeStoryRings": "Rings",
+  "homeStoryNew": "New In",
+  "homeStoryEarrings": "Earrings",
+  "homeStoryChains": "Chains",
+  "homeStoryGifts": "Gifts"
 }

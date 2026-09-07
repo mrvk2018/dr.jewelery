@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../widgets/home_promo_banner.dart';
@@ -61,15 +62,15 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             SliverToBoxAdapter(child: _HomeHeader()),
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            const SliverToBoxAdapter(child: HomeStoriesSection()),
+            SliverToBoxAdapter(child: HomeStoriesSection()),
             const SliverToBoxAdapter(child: SizedBox(height: 20)),
             SliverToBoxAdapter(
               child: HomePromoBanner(
-                countdownText: buildPromoCountdownLabel(_remaining),
+                countdownText: buildPromoCountdownLabel(context, _remaining),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            const SliverToBoxAdapter(child: HomeRecommendedTitle()),
+            SliverToBoxAdapter(child: HomeRecommendedTitle()),
             const HomeRecommendedGrid(),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
@@ -97,7 +98,7 @@ class _HomeHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  AppConstants.appTagline,
+                  context.l10n.appTagline,
                   style: AppTypography.caption(color: AppColors.textSecondary)
                       .copyWith(fontSize: 12),
                 ),

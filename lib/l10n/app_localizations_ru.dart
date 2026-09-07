@@ -12,6 +12,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get appTitle => 'Dr. Jewelry';
 
   @override
+  String get appTagline => 'Вечная элегантность, созданная для вас';
+
+  @override
   String get home => 'Главная';
 
   @override
@@ -75,4 +78,37 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get languageKk => 'Қазақша (KK)';
+
+  @override
+  String get homeRecommendedTitle => 'Рекомендуем для вас';
+
+  @override
+  String get homePromoTitle => 'ГРАНДИОЗНАЯ\nРАСПРОДАЖА';
+
+  @override
+  String get homePromoSubtitle => 'Эксклюзивные украшения по особым ценам';
+
+  @override
+  String get homePromoBadge => 'LIMITED OFFER';
+
+  @override
+  String get homePromoCountdownPrefix => 'До конца осталось';
+
+  @override
+  String get homeStoryDiscounts => 'Скидки\n-70%';
+
+  @override
+  String get homeStoryRings => 'Кольца';
+
+  @override
+  String get homeStoryNew => 'Новинки';
+
+  @override
+  String get homeStoryEarrings => 'Серьги';
+
+  @override
+  String get homeStoryChains => 'Цепи';
+
+  @override
+  String get homeStoryGifts => 'Подарки';
 }

@@ -12,6 +12,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appTitle => 'Dr. Jewelry';
 
   @override
+  String get appTagline => '당신만을 위한 영원한 우아함';
+
+  @override
   String get home => '홈';
 
   @override
@@ -73,4 +76,37 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get languageKk => 'Қазақша (KK)';
+
+  @override
+  String get homeRecommendedTitle => '추천 상품';
+
+  @override
+  String get homePromoTitle => '역대급\n메가 세일';
+
+  @override
+  String get homePromoSubtitle => '특별한 가격의 단독 주얼리 컬렉션';
+
+  @override
+  String get homePromoBadge => '한정 수량';
+
+  @override
+  String get homePromoCountdownPrefix => '마감까지 남은 시간';
+
+  @override
+  String get homeStoryDiscounts => '70%\n특가 세일';
+
+  @override
+  String get homeStoryRings => '반지';
+
+  @override
+  String get homeStoryNew => '신상품';
+
+  @override
+  String get homeStoryEarrings => '귀걸이';
+
+  @override
+  String get homeStoryChains => '체인 목걸이';
+
+  @override
+  String get homeStoryGifts => '선물 추천';
 }

@@ -1,6 +1,7 @@
 {
   "@@locale": "uz",
   "appTitle": "Dr. Jewelry",
+  "appTagline": "Siz uchun yaratilgan abadiy nafislik",
   "home": "Bosh sahifa",
   "catalog": "Katalog",
   "cart": "Savat",
@@ -21,5 +22,16 @@
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
   "languageUz": "O'zbekcha (UZ)",
-  "languageKk": "Қазақша (KK)"
+  "languageKk": "Қазақша (KK)",
+  "homeRecommendedTitle": "Siz uchun tavsiyalar",
+  "homePromoTitle": "ULKAN\nCHEGIRMALAR",
+  "homePromoSubtitle": "Maxsus narxlardagi eksklyuziv taqinchoqlar",
+  "homePromoBadge": "CHEKLANGAN TAKLIF",
+  "homePromoCountdownPrefix": "Tugashiga qoldi",
+  "homeStoryDiscounts": "Chegirmalar\n-70%",
+  "homeStoryRings": "Uzuklar",
+  "homeStoryNew": "Yyangiliklar",
+  "homeStoryEarrings": "Sirg'alar",
+  "homeStoryChains": "Zanjirlar",
+  "homeStoryGifts": "Sog'liqlar"
 }

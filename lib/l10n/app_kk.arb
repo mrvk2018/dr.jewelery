@@ -1,6 +1,7 @@
 {
   "@@locale": "kk",
   "appTitle": "Dr. Jewelry",
+  "appTagline": "Сіз үшін жасалған мәңгілік талғампаздық",
   "home": "Басты бет",
   "catalog": "Каталог",
   "cart": "Себет",
@@ -21,5 +22,16 @@
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
   "languageUz": "O'zbekcha (UZ)",
-  "languageKk": "Қазақша (KK)"
+  "languageKk": "Қазақша (KK)",
+  "homeRecommendedTitle": "Сізге ұсынамыз",
+  "homePromoTitle": "ҮЛКЕН\nЖЕҢІЛДІКТЕР",
+  "homePromoSubtitle": "Ерекше бағамен эксклюзивті әшекейлер",
+  "homePromoBadge": "ШЕКТЕУЛІҰСЫНЫС",
+  "homePromoCountdownPrefix": "Аяқталуына қалды",
+  "homeStoryDiscounts": "Жеңілдіктер\n-70%",
+  "homeStoryRings": "Жүзіктер",
+  "homeStoryNew": "Жаңалықтар",
+  "homeStoryEarrings": "Сырғалар",
+  "homeStoryChains": "Шынжырлар",
+  "homeStoryGifts": "Сыйлықтар"
 }

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/constants/app_constants.dart';
-import 'core/l10n/app_language.dart';
 import 'core/services/database_service.dart';
 import 'core/services/onboarding_storage.dart';
 import 'core/theme/app_theme.dart';
@@ -124,21 +122,19 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
                 provider: _localeProvider!,
                 child: ListenableBuilder(
                   listenable: _localeProvider!,
-                  child: _AppRootGate(storage: _storage!),
-                  builder: (context, child) {
+                  builder: (context, _) {
                     return MaterialApp(
                       title: AppConstants.appName,
                       debugShowCheckedModeBanner: false,
                       theme: AppTheme.light,
                       locale: _localeProvider!.locale,
-                      supportedLocales: AppLanguage.supportedLocales,
-                      localizationsDelegates: const [
-                        AppLocalizations.delegate,
-                        GlobalMaterialLocalizations.delegate,
-                        GlobalWidgetsLocalizations.delegate,
-                        GlobalCupertinoLocalizations.delegate,
-                      ],
-                      home: child,
+                      supportedLocales: AppLocalizations.supportedLocales,
+                      localizationsDelegates:
+                          AppLocalizations.localizationsDelegates,
+                      home: _AppRootGate(
+                        key: const ValueKey<String>('app-root-gate'),
+                        storage: _storage!,
+                      ),
                     );
                   },
                 ),
@@ -152,7 +148,7 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
 }
 
 class _AppRootGate extends StatefulWidget {
-  const _AppRootGate({required this.storage});
+  const _AppRootGate({super.key, required this.storage});
 
   final OnboardingStorage storage;
 
@@ -177,6 +173,8 @@ class _AppRootGateState extends State<_AppRootGate> {
         onComplete: _completeOnboarding,
       );
     }
-    return const MainScreen();
+    return MainScreen(
+      key: ValueKey<String>(LocaleScope.of(context).languageCode),
+    );
   }
 }

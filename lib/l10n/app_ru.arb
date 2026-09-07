@@ -1,6 +1,7 @@
 {
   "@@locale": "ru",
   "appTitle": "Dr. Jewelry",
+  "appTagline": "Вечная элегантность, созданная для вас",
   "home": "Главная",
   "catalog": "Каталог",
   "cart": "Корзина",
@@ -21,5 +22,16 @@
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
   "languageUz": "O'zbekcha (UZ)",
-  "languageKk": "Қазақша (KK)"
+  "languageKk": "Қазақша (KK)",
+  "homeRecommendedTitle": "Рекомендуем для вас",
+  "homePromoTitle": "ГРАНДИОЗНАЯ\nРАСПРОДАЖА",
+  "homePromoSubtitle": "Эксклюзивные украшения по особым ценам",
+  "homePromoBadge": "LIMITED OFFER",
+  "homePromoCountdownPrefix": "До конца осталось",
+  "homeStoryDiscounts": "Скидки\n-70%",
+  "homeStoryRings": "Кольца",
+  "homeStoryNew": "Новинки",
+  "homeStoryEarrings": "Серьги",
+  "homeStoryChains": "Цепи",
+  "homeStoryGifts": "Подарки"
 }

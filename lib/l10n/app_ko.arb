@@ -1,6 +1,7 @@
 {
   "@@locale": "ko",
   "appTitle": "Dr. Jewelry",
+  "appTagline": "당신만을 위한 영원한 우아함",
   "home": "홈",
   "catalog": "카탈로그",
   "cart": "장바구니",
@@ -21,5 +22,16 @@
   "languageKo": "한국어 (KO)",
   "languageEn": "English (EN)",
   "languageUz": "O'zbekcha (UZ)",
-  "languageKk": "Қазақша (KK)"
+  "languageKk": "Қазақша (KK)",
+  "homeRecommendedTitle": "추천 상품",
+  "homePromoTitle": "역대급\n메가 세일",
+  "homePromoSubtitle": "특별한 가격의 단독 주얼리 컬렉션",
+  "homePromoBadge": "한정 수량",
+  "homePromoCountdownPrefix": "마감까지 남은 시간",
+  "homeStoryDiscounts": "70%\n특가 세일",
+  "homeStoryRings": "반지",
+  "homeStoryNew": "신상품",
+  "homeStoryEarrings": "귀걸이",
+  "homeStoryChains": "체인 목걸이",
+  "homeStoryGifts": "선물 추천"
 }

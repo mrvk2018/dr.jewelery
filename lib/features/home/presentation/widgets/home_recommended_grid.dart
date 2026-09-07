@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../catalog/presentation/widgets/catalog_product_grid.dart';
@@ -57,7 +58,7 @@ class HomeRecommendedTitle extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
-          'Рекомендуем для вас',
+          context.l10n.homeRecommendedTitle,
           style: AppTypography.heading(fontSize: 22),
         ),
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 
@@ -8,16 +9,14 @@ class HomePromoBanner extends StatelessWidget {
   const HomePromoBanner({
     super.key,
     required this.countdownText,
-    this.title = 'ГРАНДИОЗНАЯ\nРАСПРОДАЖА',
-    this.subtitle = 'Эксклюзивные украшения по особым ценам',
   });
 
-  final String title;
-  final String subtitle;
   final String countdownText;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Container(
@@ -69,7 +68,7 @@ class HomePromoBanner extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      'LIMITED OFFER',
+                      l10n.homePromoBadge,
                       style: AppTypography.caption(
                         color: AppColors.accent,
                         fontWeight: FontWeight.w700,
@@ -78,12 +77,12 @@ class HomePromoBanner extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    title,
+                    l10n.homePromoTitle,
                     style: AppTypography.bannerTitle(),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    subtitle,
+                    l10n.homePromoSubtitle,
                     style: AppTypography.caption(
                       color: AppColors.textOnPrimary.withValues(alpha: 0.75),
                     ).copyWith(fontSize: 13),
@@ -142,6 +141,6 @@ String formatCountdown(Duration duration) {
 }
 
 /// Текст таймера для промо-баннера.
-String buildPromoCountdownLabel(Duration remaining) {
-  return 'До конца осталось ${formatCountdown(remaining)}';
+String buildPromoCountdownLabel(BuildContext context, Duration remaining) {
+  return '${context.l10n.homePromoCountdownPrefix} ${formatCountdown(remaining)}';
 }

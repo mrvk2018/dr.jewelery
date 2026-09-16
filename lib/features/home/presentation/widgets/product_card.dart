@@ -8,6 +8,7 @@ import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/widgets/out_of_stock_plaque.dart';
+import '../../../../shared/widgets/product_image.dart';
 import '../../../product/presentation/pages/product_detail_screen.dart';
 
 /// Карточка товара для сетки рекомендаций на главном экране.
@@ -30,15 +31,21 @@ class ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<ProductCard> {
-  static const _placeholderIcons = [
-    Icons.diamond_outlined,
-    Icons.blur_circular_outlined,
-    Icons.link_rounded,
-    Icons.watch_outlined,
-    Icons.favorite_border_rounded,
-    Icons.circle_outlined,
-    Icons.watch_rounded,
-  ];
+  static String? _sizeWeightLabel(ProductItem product) {
+    final parts = <String>[];
+    if (product.availableSizes.isNotEmpty) {
+      parts.add(product.availableSizes.first.toString());
+    }
+    final grams = product.weightGrams;
+    if (grams != null) {
+      final rounded = grams == grams.roundToDouble()
+          ? grams.toInt().toString()
+          : grams.toString();
+      parts.add('$rounded г');
+    }
+    if (parts.isEmpty) return null;
+    return parts.join(' · ');
+  }
 
   void _openDetail() {
     if (widget.onTap != null) {
@@ -77,7 +84,6 @@ class _ProductCardState extends State<ProductCard> {
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final icon = _placeholderIcons[product.iconIndex % _placeholderIcons.length];
     final currentLang = context.langCode;
     final displayName = product.nameTranslations[currentLang] ??
         product.nameTranslations['ru'] ??
@@ -112,14 +118,7 @@ class _ProductCardState extends State<ProductCard> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ColoredBox(
-                      color: AppColors.cardBackground,
-                      child: Icon(
-                        icon,
-                        size: 48,
-                        color: AppColors.accent.withValues(alpha: 0.55),
-                      ),
-                    ),
+                    ProductImage(product: product),
                     Positioned(
                       top: 8,
                       left: 8,
@@ -144,7 +143,7 @@ class _ProductCardState extends State<ProductCard> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -152,29 +151,50 @@ class _ProductCardState extends State<ProductCard> {
                         salePrice: product.salePrice,
                         oldPrice: product.oldPrice,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.productTitle,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        LocalizedText.attribute(
-                          product.metal,
-                          languageCode: currentLang,
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.productTitle,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Flexible(
+                              child: Text(
+                                LocalizedText.attribute(
+                                  product.metal,
+                                  languageCode: currentLang,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.productMetaStyle,
+                              ),
+                            ),
+                            if (_sizeWeightLabel(product) != null) ...[
+                              const SizedBox(height: 2),
+                              Flexible(
+                                child: Text(
+                                  _sizeWeightLabel(product)!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTypography.productMetaStyle,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTypography.productMetaStyle,
                       ),
-                      const Spacer(),
                       SizedBox(
                         width: double.infinity,
-                        height: 36,
+                        height: 34,
                         child: product.isOutOfStock
-                            ? const OutOfStockPlaque()
+                            ? const OutOfStockPlaque(height: 34)
                             : ElevatedButton(
                                 onPressed: _handleAddToCart,
                                 style: ElevatedButton.styleFrom(

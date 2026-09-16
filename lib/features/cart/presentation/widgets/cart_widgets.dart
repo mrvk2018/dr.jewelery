@@ -4,6 +4,7 @@ import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
+import '../../../../shared/widgets/product_image.dart';
 import '../../../../shared/providers/cart_controller.dart';
 import '../../../product/presentation/widgets/product_size_selector.dart';
 
@@ -22,20 +23,9 @@ class CartItemTile extends StatelessWidget {
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
 
-  static const _icons = [
-    Icons.diamond_outlined,
-    Icons.blur_circular_outlined,
-    Icons.link_rounded,
-    Icons.watch_outlined,
-    Icons.favorite_border_rounded,
-    Icons.circle_outlined,
-    Icons.watch_rounded,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final product = item.product;
-    final icon = _icons[product.iconIndex % _icons.length];
     final languageCode = context.langCode;
 
     return Container(
@@ -48,18 +38,15 @@ class CartItemTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Icon(
-              icon,
-              size: 36,
-              color: AppColors.accent.withValues(alpha: 0.55),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 80,
+              height: 80,
+              child: ProductImage(
+                product: product,
+                placeholderIconSize: 36,
+              ),
             ),
           ),
           const SizedBox(width: 12),

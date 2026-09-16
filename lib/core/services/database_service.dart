@@ -1,7 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../constants/supabase_config.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 import '../../shared/models/feedback_item.dart';
@@ -22,6 +27,41 @@ abstract final class DatabaseCollections {
   static const adminDeviceClaimed = DeviceSecretKeys.adminDeviceClaimed;
   static const posApiKey = DeviceSecretKeys.posApiKey;
   static const tossApiKey = DeviceSecretKeys.tossApiKey;
+}
+
+/// Supabase Storage для фото товаров (админ-панель).
+abstract final class ProductImageStorage {
+  static const bucket = 'product-images';
+  static const folder = 'products';
+}
+
+/// Имена Postgres RPC / Edge-моста к MSSQL DrJaw (анти-дубль перед оплатой).
+abstract final class SkladAvailabilityRpc {
+  static const checkAvailability = 'check_sklad_availability';
+  static const reserveForCheckout = 'reserve_product_for_checkout';
+  static const skuParam = 'p_sku';
+}
+
+bool _parseSkladAvailabilityRpcResult(dynamic result) {
+  if (result is bool) return result;
+  if (result is Map) {
+    final dynamic available =
+        result['available'] ?? result['is_available'] ?? result['success'];
+    if (available is bool) return available;
+  }
+  return false;
+}
+
+Future<bool> _invokeSkladAvailabilityRpc(
+  SupabaseClient client,
+  String rpcName,
+  String sku,
+) async {
+  final result = await client.rpc(
+    rpcName,
+    params: {SkladAvailabilityRpc.skuParam: sku},
+  );
+  return _parseSkladAvailabilityRpcResult(result);
 }
 
 /// Отказ в записи: роль не соответствует требованиям бэкенда / RLS.
@@ -103,6 +143,75 @@ abstract class DatabaseService {
   Future<IntegrationKeys> loadIntegrationKeys();
 
   Future<void> saveIntegrationKeys(IntegrationKeys keys);
+
+  /// Выбор фото из галереи (сжатие ~85%, maxWidth 1080). `null` — отмена или ошибка.
+  Future<File?> pickProductImageFromGallery();
+
+  /// Загрузка в бакет [ProductImageStorage.bucket]/[ProductImageStorage.folder].
+  /// Возвращает публичный URL или `null` при ошибке.
+  Future<String?> uploadProductImageToStorage(File file);
+
+  /// Точечная проверка «живого» наличия на складе (MSSQL через Supabase RPC).
+  /// `true` — статус «В наличии»; `false` — продано/недоступно или ошибка моста.
+  Future<bool> checkSkladAvailability(String sku);
+
+  /// Бронирование SKU на время оплаты (`products.status = reserved` на сервере).
+  Future<bool> reserveProductForCheckout(String sku);
+}
+
+Future<File?> _pickProductImageFromGalleryImpl() async {
+  if (kIsWeb) {
+    debugPrint('pickProductImageFromGallery: галерея недоступна на web');
+    return null;
+  }
+
+  try {
+    final picker = ImagePicker();
+    final xFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 1080,
+    );
+    if (xFile == null) return null;
+    return File(xFile.path);
+  } catch (error, stackTrace) {
+    debugPrint('pickProductImageFromGallery failed: $error');
+    debugPrint('$stackTrace');
+    return null;
+  }
+}
+
+Future<String?> _uploadProductImageToStorageImpl(
+  SupabaseClient client,
+  File file,
+) async {
+  try {
+    if (!await file.exists()) {
+      debugPrint('uploadProductImageToStorage: файл не найден');
+      return null;
+    }
+
+    final objectPath =
+        '${ProductImageStorage.folder}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final bytes = await file.readAsBytes();
+
+    await client.storage.from(ProductImageStorage.bucket).uploadBinary(
+          objectPath,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            upsert: false,
+          ),
+        );
+
+    return client.storage
+        .from(ProductImageStorage.bucket)
+        .getPublicUrl(objectPath);
+  } catch (error, stackTrace) {
+    debugPrint('uploadProductImageToStorage failed: $error');
+    debugPrint('$stackTrace');
+    return null;
+  }
 }
 
 /// Локальная постоянная реализация (SharedPreferences + JSON, KRW).
@@ -346,6 +455,76 @@ class LocalDatabaseService implements DatabaseService {
   Future<void> saveIntegrationKeys(IntegrationKeys keys) {
     return _secrets.saveIntegrationKeys(keys);
   }
+
+  @override
+  Future<File?> pickProductImageFromGallery() =>
+      _pickProductImageFromGalleryImpl();
+
+  @override
+  Future<String?> uploadProductImageToStorage(File file) {
+    try {
+      return _uploadProductImageToStorageImpl(Supabase.instance.client, file);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'LocalDatabaseService.uploadProductImageToStorage failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return Future<String?>.value(null);
+    }
+  }
+
+  Future<bool> _localStockAvailable(String sku) async {
+    final products = await getProducts();
+    for (final product in products) {
+      if (product.sku == sku) {
+        return product.stockQuantity > 0;
+      }
+    }
+    return false;
+  }
+
+  Future<bool> _localReserveSku(String sku) async {
+    final products = await getProducts();
+    final index = products.indexWhere((product) => product.sku == sku);
+    if (index < 0) return false;
+    if (products[index].stockQuantity <= 0) return false;
+    products[index] = products[index].copyWith(stockQuantity: 0);
+    await _writeProducts(products);
+    return true;
+  }
+
+  @override
+  Future<bool> checkSkladAvailability(String sku) async {
+    if (sku.trim().isEmpty) return false;
+    try {
+      return await _invokeSkladAvailabilityRpc(
+        Supabase.instance.client,
+        SkladAvailabilityRpc.checkAvailability,
+        sku,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('LocalDatabaseService.checkSkladAvailability RPC: $error');
+      debugPrint('$stackTrace');
+      return _localStockAvailable(sku);
+    }
+  }
+
+  @override
+  Future<bool> reserveProductForCheckout(String sku) async {
+    if (sku.trim().isEmpty) return false;
+    try {
+      final reserved = await _invokeSkladAvailabilityRpc(
+        Supabase.instance.client,
+        SkladAvailabilityRpc.reserveForCheckout,
+        sku,
+      );
+      if (reserved) return true;
+    } catch (error, stackTrace) {
+      debugPrint('LocalDatabaseService.reserveProductForCheckout RPC: $error');
+      debugPrint('$stackTrace');
+    }
+    return _localReserveSku(sku);
+  }
 }
 
 /// Каркас облачного хранилища (Supabase / Firebase).
@@ -354,14 +533,16 @@ class LocalDatabaseService implements DatabaseService {
 /// Каждый метод описывает целевой SDK-вызов и политику RLS.
 class CloudDatabaseService implements DatabaseService {
   CloudDatabaseService({
-    this.supabaseUrl = 'https://YOUR_PROJECT.supabase.co',
-    this.anonKey = 'YOUR_SUPABASE_ANON_KEY',
+    this.supabaseUrl = SupabaseConfig.projectUrl,
+    this.anonKey = SupabaseConfig.anonKey,
     this.firebaseProjectId = 'dr-jewelry',
   });
 
   final String supabaseUrl;
   final String anonKey;
   final String firebaseProjectId;
+
+  SupabaseClient get _supabaseClient => Supabase.instance.client;
 
   void _assertAdminWrite(UserRole actorRole, {required String action}) {
     if (actorRole != UserRole.admin) {
@@ -379,18 +560,46 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  /// Строка Supabase (snake_case) → JSON для [ProductItem.fromJson].
+  static Map<String, dynamic> _productRowToClientJson(
+    Map<String, dynamic> row,
+  ) {
+    return {
+      'id': row['id'],
+      'sku': row['sku'],
+      'stockQuantity': row['stock_quantity'],
+      'name': row['name'],
+      'description': row['description'],
+      'metal': row['metal'],
+      'salePrice': row['sale_price'],
+      'oldPrice': row['old_price'],
+      'discountPercent': row['discount_percent'],
+      'category': row['category'],
+      'insert': row['insert'],
+      'iconIndex': row['icon_index'],
+      'availableSizes': row['available_sizes'],
+      'imageUrl': row['image_url'],
+      'weightGrams': row['weight_grams'],
+    };
+  }
+
   @override
   Future<List<ProductItem>> getProducts() async {
-    // TODO: Публичная витрина — SELECT без auth.
-    // Supabase:
-    //   final rows = await Supabase.instance.client.from('products').select();
-    //   return rows.map(ProductItem.fromJson).toList();
-    // Firebase:
-    //   final snap = await FirebaseFirestore.instance.collection('products').get();
-    // RLS: allow SELECT to anon/authenticated. Цены только KRW (int).
-    throw UnimplementedError(
-      'CloudDatabaseService.getProducts: подключите Supabase/Firebase SDK',
-    );
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .select()
+          .range(0, 4999);
+      return rows
+          .map((row) => Map<String, dynamic>.from(row))
+          .map(_productRowToClientJson)
+          .map(ProductItem.fromJson)
+          .toList();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getProducts failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
   }
 
   @override
@@ -431,165 +640,155 @@ class CloudDatabaseService implements DatabaseService {
 
   @override
   Future<void> updateProductStock(String sku, int newQuantity) async {
-    // TODO: Realtime-синхронизация остатков с POS-терминалом магазина.
-    // Касса шлёт webhook / пишет в `products.stock_quantity` по SKU/штрихкоду.
-    // Supabase:
-    //   await Supabase.instance.client
-    //       .from('products')
-    //       .update({'stock_quantity': newQuantity})
-    //       .eq('sku', sku);
-    //   Затем Realtime subscribe:
-    //   Supabase.instance.client
-    //       .from('products')
-    //       .stream(primaryKey: ['sku'])
-    //       .listen((rows) => catalog.applyStockSnapshot(rows));
-    // Firebase:
-    //   await FirebaseFirestore.instance
-    //       .collection('products')
-    //       .where('sku', isEqualTo: sku)
-    //       .get()
-    //       .then((snap) => snap.docs.first.reference
-    //           .update({'stockQuantity': newQuantity}));
-    // RLS: UPDATE stock разрешён service_role / POS-интеграции, не клиенту.
-    throw UnimplementedError(
-      'CloudDatabaseService.updateProductStock: подключите POS + Supabase/Firebase',
+    // --- Складской sync (Node.js/Python): НЕ вызывать из Flutter-клиента ---
+    //
+    // Supabase JS (только на сервере, env SUPABASE_SERVICE_ROLE_KEY):
+    //   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    //   await supabase
+    //     .from('products')
+    //     .update({ stock_quantity: Math.max(0, newQuantity) })
+    //     .eq('sku', sku);
+    //
+    // Supabase REST (PostgREST), тот же эффект:
+    //   PATCH {SUPABASE_URL}/rest/v1/products?sku=eq.{sku}
+    //   Headers:
+    //     apikey: {SERVICE_ROLE_KEY}
+    //     Authorization: Bearer {SERVICE_ROLE_KEY}
+    //     Content-Type: application/json
+    //     Prefer: return=minimal
+    //   Body: {"stock_quantity": 4}
+    //
+    // RLS: у anon/authenticated UPDATE запрещён; service_role обходит RLS.
+    // Поток: [SQL склад] → sync-скрипт → Supabase products → Flutter getProducts().
+    //
+    // Клиентское приложение не имеет права менять остатки (.cursorrules).
+    throw SecurityException(
+      'Отказано в updateProductStock: изменение остатков по sku="$sku" '
+      'запрещено на мобильном клиенте. Используйте серверный sync с service_role.',
     );
   }
 
   @override
   Future<List<FeedbackItem>> getFeedback(UserRole actorRole) async {
-    // SECURITY / RLS: SELECT из `feedback` только admin.
-    // Гость и клиент не читают чужие обращения.
-    _assertAdminRead(actorRole, action: 'getFeedback');
+    // MVP: инбокс на устройстве (как Local), пока нет Supabase `feedback`.
+    // TODO: для admin — SELECT из Supabase с RLS admin-only.
+    final raw = (await _localPrefs()).getString(DatabaseCollections.feedback);
+    if (raw == null || raw.isEmpty) return [];
 
-    // TODO: Supabase
-    //   final rows = await Supabase.instance.client
-    //       .from('feedback')
-    //       .select()
-    //       .order('created_at', ascending: false);
-    //   RLS: CREATE POLICY feedback_read_admin ON feedback
-    //        FOR SELECT USING (auth.jwt() ->> 'role' = 'admin');
-    // TODO: Firebase
-    //   allow read: if request.auth.token.role == 'admin';
-    throw UnimplementedError(
-      'CloudDatabaseService.getFeedback: подключите Supabase/Firebase SDK',
-    );
+    final decoded = jsonDecode(raw) as List<dynamic>;
+    return decoded
+        .whereType<Map>()
+        .map((item) => FeedbackItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
   }
 
   @override
   Future<void> insertFeedback(FeedbackItem feedback) async {
-    // SECURITY: insert-only без авторизации (анонимный клиент / гость).
-    // Не проверяем UserRole — обращение уходит с витрины и из поддержки.
-    // RLS INSERT: WITH CHECK (true) для anon; UPDATE/DELETE запрещены.
-    // Защита от спама — rate limit / captcha на Edge Function, не роль.
-
-    // TODO: Supabase
-    //   await Supabase.instance.client.from('feedback').insert(feedback.toJson());
-    //   CREATE POLICY feedback_insert_anon ON feedback
-    //        FOR INSERT TO anon, authenticated WITH CHECK (true);
-    // TODO: Firebase
-    //   await FirebaseFirestore.instance.collection('feedback').add(...);
-    //   allow create: if true;
-    //   allow update, delete: if request.auth.token.role == 'admin';
-    throw UnimplementedError(
-      'CloudDatabaseService.insertFeedback: подключите Supabase/Firebase SDK',
-    );
+    final messages = await getFeedback(UserRole.guest);
+    messages.removeWhere((existing) => existing.id == feedback.id);
+    messages.insert(0, feedback);
+    await _writeCloudFeedback(messages);
   }
 
   @override
   Future<void> deleteFeedback(String id, UserRole actorRole) async {
-    // SECURITY / RLS: удаление обращения только admin.
     _assertAdminWrite(actorRole, action: 'deleteFeedback');
-
-    // TODO: Supabase
-    //   await Supabase.instance.client.from('feedback').delete().eq('id', id);
-    // TODO: Firebase
-    //   await FirebaseFirestore.instance.collection('feedback').doc(id).delete();
-    throw UnimplementedError(
-      'CloudDatabaseService.deleteFeedback: подключите Supabase/Firebase SDK',
-    );
+    final messages = await getFeedback(UserRole.guest);
+    messages.removeWhere((item) => item.id == id);
+    await _writeCloudFeedback(messages);
   }
 
   @override
   Future<List<OrderItem>> getOrders(String userId) async {
-    // TODO: Заказы текущего пользователя (или все — если JWT role = admin).
-    // Supabase:
-    //   var query = Supabase.instance.client.from('orders').select();
-    //   if (jwt.role != 'admin') query = query.eq('user_id', userId);
-    //   RLS: пользователь читает только свои строки
-    //        USING (auth.uid()::text = user_id OR jwt.role = 'admin');
-    // Firebase:
-    //   allow read: if request.auth.uid == resource.data.user_id
-    //               || request.auth.token.role == 'admin';
-    throw UnimplementedError(
-      'CloudDatabaseService.getOrders: подключите Supabase/Firebase SDK',
-    );
+    final maps = _readCloudOrderMaps(await _localPrefs());
+    final orders = maps.map(OrderItem.fromJson).toList();
+    if (userId.isEmpty) return orders;
+    return orders;
   }
 
   @override
   Future<void> createOrder(OrderItem order) async {
-    // TODO: INSERT после успешной оплаты (сумма уже в KRW).
-    // Supabase:
-    //   await Supabase.instance.client.from('orders').insert({
-    //     ...order.toJson(),
-    //     'user_id': Supabase.instance.client.auth.currentUser?.id,
-    //   });
-    // RLS: WITH CHECK (auth.uid()::text = user_id);
-    // Firebase:
-    //   allow create: if request.auth.uid == request.resource.data.user_id;
-    throw UnimplementedError(
-      'CloudDatabaseService.createOrder: подключите Supabase/Firebase SDK',
-    );
+    final orders = await getOrders('');
+    orders.removeWhere((existing) => existing.id == order.id);
+    orders.insert(0, order);
+    await _writeCloudOrders(orders);
   }
 
   @override
   Future<Map<String, dynamic>?> loadCartSnapshot() async {
-    // TODO: Корзина в `carts` по auth.uid() либо в local cache до логина.
-    //   await Supabase.instance.client.from('carts').select().eq('user_id', uid).maybeSingle();
-    throw UnimplementedError(
-      'CloudDatabaseService.loadCartSnapshot: подключите Supabase/Firebase SDK',
-    );
+    final raw = (await _localPrefs()).getString(DatabaseCollections.cart);
+    if (raw == null || raw.isEmpty) return null;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return null;
+    return Map<String, dynamic>.from(decoded);
   }
 
   @override
   Future<void> saveCartSnapshot(Map<String, dynamic> snapshot) async {
-    // TODO: upsert `carts` WHERE user_id = auth.uid().
-    throw UnimplementedError(
-      'CloudDatabaseService.saveCartSnapshot: подключите Supabase/Firebase SDK',
-    );
+    final prefs = await _localPrefs();
+    await prefs.setString(DatabaseCollections.cart, jsonEncode(snapshot));
   }
 
   @override
   Future<List<String>> loadFavoriteIds() async {
-    // TODO: SELECT product_id FROM favorites WHERE user_id = auth.uid();
-    throw UnimplementedError(
-      'CloudDatabaseService.loadFavoriteIds: подключите Supabase/Firebase SDK',
-    );
+    final raw = (await _localPrefs()).getString(DatabaseCollections.favorites);
+    if (raw == null || raw.isEmpty) return [];
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return [];
+    return decoded.map((id) => id.toString()).toList();
   }
 
   @override
   Future<void> saveFavoriteIds(List<String> ids) async {
-    // TODO: заменить набор favorites пользователя (transaction / upsert).
-    throw UnimplementedError(
-      'CloudDatabaseService.saveFavoriteIds: подключите Supabase/Firebase SDK',
-    );
+    final prefs = await _localPrefs();
+    await prefs.setString(DatabaseCollections.favorites, jsonEncode(ids));
   }
 
   @override
   Future<Map<String, dynamic>?> loadProfileSession() async {
-    // TODO: сессия живёт в Auth SDK (Supabase Auth / Firebase Auth), не в таблице.
-    //   final user = Supabase.instance.client.auth.currentUser;
-    throw UnimplementedError(
-      'CloudDatabaseService.loadProfileSession: подключите Auth SDK',
-    );
+    final raw =
+        (await _localPrefs()).getString(DatabaseCollections.profileSession);
+    if (raw == null || raw.isEmpty) return null;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return null;
+    return Map<String, dynamic>.from(decoded);
   }
 
   @override
   Future<void> saveProfileSession(Map<String, dynamic> session) async {
-    // TODO: профильные поля — таблица `profiles` (name, bonuses, loyalty_card).
-    // Роль admin назначается только через dashboard / custom claim, не с клиента.
-    throw UnimplementedError(
-      'CloudDatabaseService.saveProfileSession: подключите Auth SDK',
+    final prefs = await _localPrefs();
+    await prefs.setString(
+      DatabaseCollections.profileSession,
+      jsonEncode(session),
+    );
+  }
+
+  Future<SharedPreferences> _localPrefs() => SharedPreferences.getInstance();
+
+  List<Map<String, dynamic>> _readCloudOrderMaps(SharedPreferences prefs) {
+    final raw = prefs.getString(DatabaseCollections.orders);
+    if (raw == null || raw.isEmpty) return [];
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return [];
+    return decoded
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  Future<void> _writeCloudFeedback(List<FeedbackItem> messages) async {
+    final prefs = await _localPrefs();
+    await prefs.setString(
+      DatabaseCollections.feedback,
+      jsonEncode(messages.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  Future<void> _writeCloudOrders(List<OrderItem> orders) async {
+    final prefs = await _localPrefs();
+    await prefs.setString(
+      DatabaseCollections.orders,
+      jsonEncode(orders.map((item) => item.toJson()).toList()),
     );
   }
 
@@ -624,5 +823,56 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<void> saveIntegrationKeys(IntegrationKeys keys) async {
     await (await _deviceSecrets()).saveIntegrationKeys(keys);
+  }
+
+  @override
+  Future<File?> pickProductImageFromGallery() =>
+      _pickProductImageFromGalleryImpl();
+
+  @override
+  Future<String?> uploadProductImageToStorage(File file) {
+    try {
+      return _uploadProductImageToStorageImpl(_supabaseClient, file);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.uploadProductImageToStorage failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return Future<String?>.value(null);
+    }
+  }
+
+  @override
+  Future<bool> checkSkladAvailability(String sku) async {
+    if (sku.trim().isEmpty) return false;
+    try {
+      return await _invokeSkladAvailabilityRpc(
+        _supabaseClient,
+        SkladAvailabilityRpc.checkAvailability,
+        sku,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.checkSkladAvailability failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> reserveProductForCheckout(String sku) async {
+    if (sku.trim().isEmpty) return false;
+    try {
+      return await _invokeSkladAvailabilityRpc(
+        _supabaseClient,
+        SkladAvailabilityRpc.reserveForCheckout,
+        sku,
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.reserveProductForCheckout failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return false;
+    }
   }
 }

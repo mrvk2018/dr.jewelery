@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants/app_constants.dart';
+import 'core/constants/supabase_config.dart';
 import 'core/services/database_service.dart';
 import 'core/services/onboarding_storage.dart';
 import 'core/theme/app_theme.dart';
@@ -24,7 +25,7 @@ class JewelrySunlightApp extends StatefulWidget {
 
   /// Feature Flag: `true` поднимает [CloudDatabaseService] (Supabase/Firebase).
   /// `false` — рабочий [LocalDatabaseService] (KRW, персистентность, заказы).
-  static const bool useCloudBackend = false;
+  static const bool useCloudBackend = true;
 
   @override
   State<JewelrySunlightApp> createState() => _JewelrySunlightAppState();
@@ -51,8 +52,8 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
     final localeProvider = LocaleProvider(storage);
     final DatabaseService database = JewelrySunlightApp.useCloudBackend
         ? CloudDatabaseService(
-            supabaseUrl: 'https://YOUR_PROJECT.supabase.co',
-            anonKey: 'YOUR_SUPABASE_ANON_KEY',
+            supabaseUrl: SupabaseConfig.projectUrl,
+            anonKey: SupabaseConfig.anonKey,
           )
         : await LocalDatabaseService.create();
     final catalogController = CatalogController(database);

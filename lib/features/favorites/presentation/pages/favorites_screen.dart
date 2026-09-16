@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
+import '../../../catalog/presentation/widgets/catalog_product_grid.dart';
 import '../../../home/presentation/widgets/product_card.dart';
 
 /// Вкладка избранного: сетка товаров или пустое состояние.
@@ -38,12 +39,7 @@ class FavoritesScreen extends StatelessWidget {
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: products.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.58,
-                  ),
+                  gridDelegate: ProductGridLayout.delegate,
                   itemBuilder: (context, index) {
                     return ProductCard(product: products[index]);
                   },

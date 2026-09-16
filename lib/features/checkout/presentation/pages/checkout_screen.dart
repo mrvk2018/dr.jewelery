@@ -9,6 +9,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../domain/models/delivery_method.dart';
+import '../../domain/models/shipping_address.dart';
 
 /// Экран оформления заказа с корейской логистикой (PIPA / Daum Postcode).
 class CheckoutScreen extends StatefulWidget {
@@ -66,10 +67,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  ShippingAddress _collectShippingAddress() {
+    return ShippingAddress(
+      postalCode: _postalCodeController.text.trim(),
+      roadAddress: _roadAddressController.text.trim(),
+      detailAddress: _detailAddressController.text.trim(),
+      recipientName: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+      deliveryMethod: _deliveryMethod.name,
+    );
+  }
+
   String? _validateForm() {
     final postalCode = _postalCodeController.text.trim();
     if (!RegExp(r'^\d{5}$').hasMatch(postalCode)) {
       return tr(CheckoutStringKeys.errorPostalCode);
+    }
+    if (_roadAddressController.text.trim().isEmpty) {
+      return tr(CheckoutStringKeys.errorRoadAddress);
     }
     if (_detailAddressController.text.trim().isEmpty) {
       return tr(CheckoutStringKeys.errorDetailAddress);
@@ -91,11 +106,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     setState(() => _validationMessage = null);
+    final shipping = _collectShippingAddress();
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PaymentScreen(
           productsTotalKrw: widget.productsTotal,
           deliveryFeeKrw: _deliveryFee,
+          shippingAddress: shipping,
         ),
       ),
     );

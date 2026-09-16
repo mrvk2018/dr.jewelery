@@ -214,7 +214,7 @@ class _LanguageStep extends StatelessWidget {
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.55,
+                  childAspectRatio: 1.15,
                   physics: const NeverScrollableScrollPhysics(),
                   children: [
                     for (final lang in AppLanguage.values)
@@ -264,15 +264,16 @@ class _LanguageTile extends StatelessWidget {
               width: isSelected ? 1.5 : 1,
             ),
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 language.flagEmoji,
-                style: const TextStyle(fontSize: 32),
+                style: const TextStyle(fontSize: 28),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               Text(
                 language.label,
                 maxLines: 1,
@@ -282,15 +283,18 @@ class _LanguageTile extends StatelessWidget {
                   color: isSelected
                       ? AppColors.textOnPrimary
                       : AppColors.textPrimary,
-                ).copyWith(fontSize: 16),
+                ).copyWith(fontSize: 15, height: 1.2),
               ),
+              const SizedBox(height: 2),
               Text(
                 language.shortCode,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption(
                   color: isSelected
                       ? AppColors.accent
                       : AppColors.textSecondary,
-                ).copyWith(fontSize: 11),
+                ).copyWith(fontSize: 11, height: 1.2),
               ),
             ],
           ),

@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../checkout/domain/models/shipping_address.dart';
 import '../../../../core/extensions/context_extensions.dart';
+import '../../../../core/services/payment_service.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../shared/providers/cart_scope.dart';
+import '../../../../shared/providers/catalog_scope.dart';
 import '../../domain/models/payment_models.dart';
 import '../widgets/payment_loading_overlay.dart';
 import 'payment_success_screen.dart';
+import 'toss_web_view_page.dart';
 
 /// Экран оплаты с корейскими способами (App Card, KakaoPay, TossPay, перевод).
 class PaymentScreen extends StatefulWidget {
@@ -16,10 +22,12 @@ class PaymentScreen extends StatefulWidget {
     super.key,
     required this.productsTotalKrw,
     required this.deliveryFeeKrw,
+    required this.shippingAddress,
   });
 
   final int productsTotalKrw;
   final int deliveryFeeKrw;
+  final ShippingAddress shippingAddress;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -29,6 +37,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   PaymentMethodType? _selectedMethod;
   KoreanBank? _selectedBank;
   String? _validationMessage;
+  bool _isConfirmingPayment = false;
 
   String tr(String key) => paymentTr(key, context.langCode);
 
@@ -68,17 +77,61 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return null;
   }
 
+  Future<void> _showRetailSoldDialog() {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(tr(PaymentStringKeys.soldOutTitle)),
+        content: Text(tr(PaymentStringKeys.soldOutMessage)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(tr(PaymentStringKeys.soldOutOk)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Анти-дубль: MSSQL через Supabase RPC, затем `reserved` перед Toss.
+  Future<bool> _verifySkladAndReserveCart() async {
+    final cart = CartScope.of(context);
+    final database = CatalogScope.of(context).database;
+    final skus = cart.items.map((item) => item.product.sku).toSet();
+
+    if (skus.isEmpty) return true;
+
+    for (final sku in skus) {
+      final available = await database.checkSkladAvailability(sku);
+      if (!available) return false;
+    }
+
+    for (final sku in skus) {
+      final reserved = await database.reserveProductForCheckout(sku);
+      if (!reserved) return false;
+    }
+
+    await CatalogScope.of(context).load();
+    return true;
+  }
+
   Future<void> _confirmPayment() async {
+    if (_isConfirmingPayment) return;
+
     final error = _validateSelection();
     if (error != null) {
       setState(() => _validationMessage = error);
       return;
     }
 
-    setState(() => _validationMessage = null);
+    setState(() {
+      _validationMessage = null;
+      _isConfirmingPayment = true;
+    });
 
     if (_selectedMethod == PaymentMethodType.bankTransfer) {
       if (!mounted) return;
+      setState(() => _isConfirmingPayment = false);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => PaymentSuccessScreen(
@@ -89,26 +142,114 @@ class _PaymentScreenState extends State<PaymentScreen> {
       return;
     }
 
-    final loadingMessage = switch (_selectedMethod!) {
-      PaymentMethodType.appCard => tr(_selectedBank!.loadingKey),
-      PaymentMethodType.kakaoPay => tr(PaymentStringKeys.loadingKakao),
-      PaymentMethodType.tossPay => tr(PaymentStringKeys.loadingToss),
-      PaymentMethodType.bankTransfer => '',
-    };
-
-    PaymentLoadingOverlay.show(context, message: loadingMessage);
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) return;
-    Navigator.of(context).pop();
-
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => const PaymentSuccessScreen(
-          status: OrderPaymentStatus.paid,
-        ),
-      ),
+    PaymentLoadingOverlay.show(
+      context,
+      message: tr(PaymentStringKeys.loadingSkladCheck),
     );
+
+    try {
+      final skladOk = await _verifySkladAndReserveCart();
+      if (!mounted) return;
+
+      if (!skladOk) {
+        Navigator.of(context).pop();
+        setState(() => _isConfirmingPayment = false);
+        await _showRetailSoldDialog();
+        return;
+      }
+
+      PaymentLoadingOverlay.show(
+        context,
+        message: switch (_selectedMethod!) {
+          PaymentMethodType.appCard => tr(_selectedBank!.loadingKey),
+          PaymentMethodType.kakaoPay => tr(PaymentStringKeys.loadingKakao),
+          PaymentMethodType.tossPay => tr(PaymentStringKeys.loadingToss),
+          PaymentMethodType.bankTransfer => '',
+        },
+      );
+
+      final total = widget.productsTotalKrw + widget.deliveryFeeKrw;
+
+      final orderId = await paymentService.createOrderDraft(
+        amount: total,
+        shippingAddress: widget.shippingAddress.toJson(),
+      );
+
+      final initialized = await paymentService.initializeTossPayment(
+        orderId: orderId,
+        amount: total,
+        method: _selectedMethod!,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (!initialized) {
+        setState(() {
+          _isConfirmingPayment = false;
+          _validationMessage = tr(PaymentStringKeys.errorSelectMethod);
+        });
+        return;
+      }
+
+      setState(() => _isConfirmingPayment = false);
+
+      final launchConfig = paymentService.lastTossLaunchConfig!;
+      final webViewResult = await Navigator.of(context).push<TossPaymentWebViewResult>(
+        MaterialPageRoute<TossPaymentWebViewResult>(
+          builder: (_) => TossWebViewPage(
+            initialUrl: launchConfig.widgetUrl,
+            successRedirectUrl: paymentService.successRedirectUrl,
+            failRedirectUrl: paymentService.failRedirectUrl,
+          ),
+        ),
+      );
+
+      if (!mounted) return;
+
+      switch (webViewResult) {
+        case TossPaymentWebViewResult.success:
+          final cart = CartScope.of(context);
+          await retailNotificationService.sendWhatsAppOrderNotification(
+            orderId: orderId,
+            cartItems: cart.items,
+            totalAmountKrw: total,
+          );
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => PaymentSuccessScreen(
+                status: OrderPaymentStatus.paid,
+                orderId: orderId,
+              ),
+            ),
+          );
+        case TossPaymentWebViewResult.failed:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr(PaymentStringKeys.paymentFailed)),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+        case TossPaymentWebViewResult.cancelled:
+        case null:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(tr(PaymentStringKeys.paymentCancelled)),
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      setState(() {
+        _isConfirmingPayment = false;
+        _validationMessage = tr(PaymentStringKeys.errorSelectMethod);
+      });
+    }
   }
 
   void _copyBankDetails() {
@@ -143,6 +284,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         onConfirm: _confirmPayment,
         bottomInset: bottomInset,
         label: tr(PaymentStringKeys.confirmPay),
+        isBusy: _isConfirmingPayment,
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
@@ -329,7 +471,7 @@ class _AppCardPaymentTile extends StatelessWidget {
                           crossAxisCount: 2,
                           mainAxisSpacing: 10,
                           crossAxisSpacing: 10,
-                          childAspectRatio: 2.4,
+                          childAspectRatio: 2.0,
                         ),
                         itemCount: KoreanBank.values.length,
                         itemBuilder: (context, index) {
@@ -378,7 +520,7 @@ class _BankGridTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -387,10 +529,11 @@ class _BankGridTile extends StatelessWidget {
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: bank.brandColor,
                   borderRadius: BorderRadius.circular(8),
@@ -671,12 +814,14 @@ class _PaymentBottomBar extends StatelessWidget {
     required this.onConfirm,
     required this.bottomInset,
     required this.label,
+    this.isBusy = false,
   });
 
   final String? validationMessage;
   final VoidCallback onConfirm;
   final double bottomInset;
   final String label;
+  final bool isBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -727,7 +872,7 @@ class _PaymentBottomBar extends StatelessWidget {
                   ],
                 ),
                 child: ElevatedButton(
-                  onPressed: onConfirm,
+                  onPressed: isBusy ? null : onConfirm,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: AppColors.accent,

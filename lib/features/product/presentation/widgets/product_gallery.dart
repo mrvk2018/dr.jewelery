@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/models/product_item.dart';
+import '../../../../shared/widgets/product_image.dart';
 
 /// Галерея изображений товара с индикатором страниц и кнопкой «Лайк».
 class ProductGallery extends StatefulWidget {
@@ -42,9 +43,8 @@ class _ProductGalleryState extends State<ProductGallery> {
 
   @override
   Widget build(BuildContext context) {
-    final icon = ProductGallery._placeholderIcons[
-        widget.product.iconIndex % ProductGallery._placeholderIcons.length];
-    const pageCount = 3;
+    final hasPhoto = widget.product.imageUrl?.trim().isNotEmpty ?? false;
+    final pageCount = hasPhoto ? 1 : 3;
 
     return SizedBox(
       height: 360,
@@ -62,13 +62,21 @@ class _ProductGalleryState extends State<ProductGallery> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: Center(
-                  child: Icon(
-                    icon,
-                    size: 120,
-                    color: AppColors.accent.withValues(alpha: 0.45),
-                  ),
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: hasPhoto
+                    ? ProductImage(
+                        product: widget.product,
+                        placeholderIconSize: 120,
+                      )
+                    : Center(
+                        child: Icon(
+                          ProductGallery._placeholderIcons[widget
+                                      .product.iconIndex %
+                                  ProductGallery._placeholderIcons.length],
+                          size: 120,
+                          color: AppColors.accent.withValues(alpha: 0.45),
+                        ),
+                      ),
               );
             },
           ),
@@ -80,29 +88,30 @@ class _ProductGalleryState extends State<ProductGallery> {
               onTap: widget.onFavoriteToggle,
             ),
           ),
-          Positioned(
-            bottom: 16,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(pageCount, (index) {
-                final isActive = index == _currentPage;
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: isActive ? 20 : 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? AppColors.accent
-                        : AppColors.textSecondary.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                );
-              }),
+          if (pageCount > 1)
+            Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(pageCount, (index) {
+                  final isActive = index == _currentPage;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: isActive ? 20 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? AppColors.accent
+                          : AppColors.textSecondary.withValues(alpha: 0.35),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  );
+                }),
+              ),
             ),
-          ),
         ],
       ),
     );

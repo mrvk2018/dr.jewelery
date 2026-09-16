@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/l10n/app_locale_codes.dart';
+import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/feedback_item.dart';
@@ -25,7 +26,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   late List<OrderItem> _orders;
 
   String _selectedCategory = CatalogCategories.rings;
-  String _selectedPhotoLabel = 'Фото не выбрано';
 
   @override
   void initState() {
@@ -41,7 +41,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
 
   void _addProduct(ProductItem item) {
     CatalogScope.of(context).addProduct(item);
-    setState(() => _selectedPhotoLabel = 'Фото не выбрано');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -96,15 +95,6 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     );
   }
 
-  void _pickPhotoPlaceholder() {
-    setState(() {
-      _selectedPhotoLabel = 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Выбор фото будет доступен позже')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final catalog = CatalogScope.of(context);
@@ -141,12 +131,11 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             builder: (context, _) {
               return _ProductsTab(
                 products: catalog.products,
+                database: catalog.database,
                 selectedCategory: _selectedCategory,
-                selectedPhotoLabel: _selectedPhotoLabel,
                 onCategoryChanged: (value) {
                   setState(() => _selectedCategory = value);
                 },
-                onPickPhoto: _pickPhotoPlaceholder,
                 onAddProduct: _addProduct,
                 onDeleteProduct: _deleteProduct,
               );
@@ -270,18 +259,16 @@ class _ProductsTab extends StatelessWidget {
   const _ProductsTab({
     required this.products,
     required this.selectedCategory,
-    required this.selectedPhotoLabel,
+    required this.database,
     required this.onCategoryChanged,
-    required this.onPickPhoto,
     required this.onAddProduct,
     required this.onDeleteProduct,
   });
 
   final List<ProductItem> products;
   final String selectedCategory;
-  final String selectedPhotoLabel;
+  final DatabaseService database;
   final ValueChanged<String> onCategoryChanged;
-  final VoidCallback onPickPhoto;
   final ValueChanged<ProductItem> onAddProduct;
   final ValueChanged<String> onDeleteProduct;
   @override
@@ -290,10 +277,9 @@ class _ProductsTab extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         AdminProductForm(
+          database: database,
           selectedCategory: selectedCategory,
-          selectedPhotoLabel: selectedPhotoLabel,
           onCategoryChanged: onCategoryChanged,
-          onPickPhoto: onPickPhoto,
           onSubmit: onAddProduct,
         ),
         const SizedBox(height: 24),

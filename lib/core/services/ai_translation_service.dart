@@ -1,5 +1,6 @@
+import 'package:translator/translator.dart';
+
 import '../l10n/app_locale_codes.dart';
-import '../l10n/localized_text.dart';
 
 /// Результат AI-перевода названия и описания товара.
 class AiTranslationResult {
@@ -12,29 +13,38 @@ class AiTranslationResult {
   final Map<String, String> descriptions;
 }
 
-/// Заглушка онлайн-переводчика для админ-панели.
-///
-/// В будущем здесь будет вызов реального AI/API перевода.
+final GoogleTranslator _googleTranslator = GoogleTranslator();
+
+/// Переводит название и описание с русского на kk, ko, en, uz через Google Translate.
 Future<AiTranslationResult> translateProductFromRussian({
   required String ruName,
   required String ruDescription,
 }) async {
-  await Future<void>.delayed(const Duration(seconds: 1));
+  final descriptionSource = ruDescription.isEmpty
+      ? 'Изысканное украшение из коллекции Dr. Jewelry.'
+      : ruDescription;
 
-  final names = demoLocalizedName(ruName);
-  final descriptions = demoLocalizedDescription(
-    ruDescription.isEmpty
-        ? 'Изысканное украшение из коллекции Dr. Jewelry.'
-        : ruDescription,
+  final names = <String, String>{};
+  final descriptions = <String, String>{};
+
+  await Future.wait(
+    AppLocaleCodes.translationTargets.map((code) async {
+      names[code] = await _translateFromRussian(ruName, code);
+      descriptions[code] =
+          await _translateFromRussian(descriptionSource, code);
+    }),
   );
 
-  return AiTranslationResult(
-    names: {
-      for (final code in AppLocaleCodes.translationTargets) code: names[code]!,
-    },
-    descriptions: {
-      for (final code in AppLocaleCodes.translationTargets)
-        code: descriptions[code]!,
-    },
+  return AiTranslationResult(names: names, descriptions: descriptions);
+}
+
+Future<String> _translateFromRussian(String text, String targetLanguageCode) async {
+  if (text.trim().isEmpty) return '';
+
+  final result = await _googleTranslator.translate(
+    text,
+    from: AppLocaleCodes.ru,
+    to: targetLanguageCode,
   );
+  return result.text;
 }

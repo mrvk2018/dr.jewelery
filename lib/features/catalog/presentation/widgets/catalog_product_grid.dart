@@ -7,11 +7,12 @@ import '../../../../shared/models/product_item.dart';
 
 /// Общие параметры сетки витрины (каталог / главная).
 abstract final class ProductGridLayout {
+  /// Ширина/высота ячейки. 0.58 не хватало места под блок текста + кнопку в [ProductCard].
   static const delegate = SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: 2,
     crossAxisSpacing: 12,
     mainAxisSpacing: 12,
-    childAspectRatio: 0.58,
+    childAspectRatio: 0.50,
   );
 }
 

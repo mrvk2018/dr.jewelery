@@ -15,9 +15,13 @@ class PaymentSuccessScreen extends StatefulWidget {
   const PaymentSuccessScreen({
     super.key,
     required this.status,
+    this.orderId,
   });
 
   final OrderPaymentStatus status;
+
+  /// Идентификатор заказа с бэкенда / Toss (если уже создан до WebView).
+  final String? orderId;
 
   @override
   State<PaymentSuccessScreen> createState() => _PaymentSuccessScreenState();
@@ -90,7 +94,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
 
     profile.addOrder(
       OrderItem(
-        id: 'ORD-${now.millisecondsSinceEpoch}',
+        id: widget.orderId ?? 'ORD-${now.millisecondsSinceEpoch}',
         productName: names,
         amount: cart.total,
         status: widget.status == OrderPaymentStatus.paid

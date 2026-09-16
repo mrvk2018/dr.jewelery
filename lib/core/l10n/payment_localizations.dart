@@ -31,7 +31,13 @@ abstract final class PaymentStringKeys {
   static const backToHome = 'back_to_home';
   static const errorSelectMethod = 'error_select_method';
   static const errorSelectBank = 'error_select_bank';
+  static const paymentCancelled = 'payment_cancelled';
+  static const paymentFailed = 'payment_failed';
   static const recipientName = 'recipient_name_value';
+  static const loadingSkladCheck = 'loading_sklad_check';
+  static const soldOutTitle = 'sold_out_title';
+  static const soldOutMessage = 'sold_out_message';
+  static const soldOutOk = 'sold_out_ok';
 }
 
 const paymentLocalizations = <String, Map<String, String>>{
@@ -244,6 +250,52 @@ const paymentLocalizations = <String, Map<String, String>>{
     'ko': '앱카드 결제 은행을 선택해 주세요',
     'en': 'Select a bank for App Card payment',
     'uz': 'App Card uchun bankni tanlang',
+  },
+  PaymentStringKeys.paymentCancelled: {
+    'ru': 'Оплата отменена',
+    'kk': 'Төлем тоқтатылды',
+    'ko': '결제가 취소되었습니다',
+    'en': 'Payment cancelled',
+    'uz': 'To\'lov bekor qilindi',
+  },
+  PaymentStringKeys.paymentFailed: {
+    'ru': 'Не удалось завершить оплату',
+    'kk': 'Төлем аяқталмады',
+    'ko': '결제에 실패했습니다',
+    'en': 'Payment failed',
+    'uz': 'To\'lov amalga oshmadi',
+  },
+  PaymentStringKeys.loadingSkladCheck: {
+    'ru': 'Проверка наличия на складе…',
+    'kk': 'Қоймада бар-жоғын тексеру…',
+    'ko': '재고 확인 중…',
+    'en': 'Checking warehouse availability…',
+    'uz': 'Omborda mavjudligini tekshirish…',
+  },
+  PaymentStringKeys.soldOutTitle: {
+    'ru': 'Изделие недоступно',
+    'kk': 'Бұйым қолжетімсіз',
+    'ko': '상품을 구매할 수 없습니다',
+    'en': 'Item unavailable',
+    'uz': 'Mahsulot mavjud emas',
+  },
+  PaymentStringKeys.soldOutMessage: {
+    'ru':
+        'Извините, это уникальное изделие только что было продано в розничном магазине. Выберите другой товар.',
+    'kk':
+        'Кешіріңіз, бұл бірегей бұйым дүкенде сатылып кетті. Басқа тауар таңдаңыз.',
+    'ko': '죄송합니다. 이 제품은 방금 매장에서 판매되었습니다. 다른 상품을 선택해 주세요.',
+    'en':
+        'Sorry, this unique piece was just sold in a retail store. Please choose another item.',
+    'uz':
+        'Kechirasiz, bu noyob buyum do\'konda sotildi. Boshqa mahsulot tanlang.',
+  },
+  PaymentStringKeys.soldOutOk: {
+    'ru': 'Понятно',
+    'kk': 'Түсінікті',
+    'ko': '확인',
+    'en': 'OK',
+    'uz': 'Tushundim',
   },
 };
 

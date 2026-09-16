@@ -12,7 +12,7 @@ class HomeRecommendedGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = CatalogScope.of(context).products;
+    final items = CatalogScope.of(context).recommendedProducts;
     if (items.isEmpty) {
       return SliverToBoxAdapter(
         child: Padding(

@@ -18,6 +18,8 @@ class ProductItem {
     required this.insert,
     this.iconIndex = 0,
     this.availableSizes = const [],
+    this.imageUrl,
+    this.weightGrams,
   });
 
   final String id;
@@ -37,6 +39,10 @@ class ProductItem {
   final String insert;
   final int iconIndex;
   final List<double> availableSizes;
+  /// Публичный URL фото в Supabase Storage (или другом CDN).
+  final String? imageUrl;
+  /// Вес изделия (граммы), sync MSSQL Items.Weight → Supabase.
+  final double? weightGrams;
 
   bool get isOutOfStock => stockQuantity <= 0;
 
@@ -63,6 +69,8 @@ class ProductItem {
         'insert': insert,
         'iconIndex': iconIndex,
         'availableSizes': availableSizes,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        if (weightGrams != null) 'weightGrams': weightGrams,
       };
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
@@ -83,6 +91,9 @@ class ProductItem {
       availableSizes: (json['availableSizes'] as List<dynamic>? ?? const [])
           .map((size) => (size as num).toDouble())
           .toList(),
+      imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
+      weightGrams: (json['weightGrams'] as num?)?.toDouble() ??
+          (json['weight'] as num?)?.toDouble(),
     );
   }
 
@@ -100,6 +111,8 @@ class ProductItem {
     String? insert,
     int? iconIndex,
     List<double>? availableSizes,
+    String? imageUrl,
+    double? weightGrams,
   }) {
     return ProductItem(
       id: id ?? this.id,
@@ -115,6 +128,8 @@ class ProductItem {
       insert: insert ?? this.insert,
       iconIndex: iconIndex ?? this.iconIndex,
       availableSizes: availableSizes ?? this.availableSizes,
+      imageUrl: imageUrl ?? this.imageUrl,
+      weightGrams: weightGrams ?? this.weightGrams,
     );
   }
 }

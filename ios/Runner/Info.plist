@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Нам нужен доступ к галерее для загрузки фотографий ювелирных изделий в админ-панели.</string>
 </dict>
 </plist>

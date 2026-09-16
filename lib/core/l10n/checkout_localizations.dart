@@ -31,6 +31,7 @@ abstract final class CheckoutStringKeys {
   static const deliveryFee = 'delivery_fee';
   static const placeOrder = 'place_order';
   static const errorPostalCode = 'error_postal_code';
+  static const errorRoadAddress = 'error_road_address';
   static const errorDetailAddress = 'error_detail_address';
   static const errorRecipientName = 'error_recipient_name';
   static const errorPhone = 'error_phone';
@@ -212,6 +213,13 @@ const checkoutLocalizations = <String, Map<String, String>>{
     'ko': '올바른 우편번호(5자리)를 입력해 주세요',
     'en': 'Enter a valid 5-digit postal code',
     'uz': 'To\'g\'ri pochta indeksini kiriting (5 raqam)',
+  },
+  CheckoutStringKeys.errorRoadAddress: {
+    'ru': 'Укажите адрес улицы (кнопка «Поиск» или ввод)',
+    'kk': 'Көше мекенжайын көрсетіңіз («Іздеу» батырması)',
+    'ko': '도로명 주소를 입력해 주세요 (주소 검색)',
+    'en': 'Enter road address (use address search)',
+    'uz': 'Ko\'cha manzilini kiriting (qidiruv tugmasi)',
   },
   CheckoutStringKeys.errorDetailAddress: {
     'ru': 'Укажите детальный адрес (квартира, этаж)',

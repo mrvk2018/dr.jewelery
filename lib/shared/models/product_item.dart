@@ -74,19 +74,19 @@ class ProductItem {
       };
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
-    final id = json['id'] as String;
+    final id = json['id']?.toString() ?? '';
     return ProductItem(
       id: id,
       sku: json['sku'] as String? ?? 'DJ-${id.padLeft(4, '0')}',
       stockQuantity: (json['stockQuantity'] as num?)?.toInt() ?? 8,
-      name: Map<String, String>.from(json['name'] as Map),
-      description: Map<String, String>.from(json['description'] as Map),
-      metal: json['metal'] as String,
-      salePrice: json['salePrice'] as int,
-      oldPrice: json['oldPrice'] as int,
-      discountPercent: json['discountPercent'] as int,
-      category: json['category'] as String,
-      insert: json['insert'] as String,
+      name: _localizedMapFromJson(json['name']),
+      description: _localizedMapFromJson(json['description']),
+      metal: json['metal'] as String? ?? '',
+      salePrice: (json['salePrice'] as num?)?.toInt() ?? 0,
+      oldPrice: (json['oldPrice'] as num?)?.toInt() ?? 0,
+      discountPercent: (json['discountPercent'] as num?)?.toInt() ?? 0,
+      category: json['category'] as String? ?? '',
+      insert: json['insert'] as String? ?? '',
       iconIndex: json['iconIndex'] as int? ?? 0,
       availableSizes: (json['availableSizes'] as List<dynamic>? ?? const [])
           .map((size) => (size as num).toDouble())
@@ -94,6 +94,13 @@ class ProductItem {
       imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
       weightGrams: (json['weightGrams'] as num?)?.toDouble() ??
           (json['weight'] as num?)?.toDouble(),
+    );
+  }
+
+  static Map<String, String> _localizedMapFromJson(Object? raw) {
+    if (raw is! Map) return const {};
+    return raw.map(
+      (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
     );
   }
 

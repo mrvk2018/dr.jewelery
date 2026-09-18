@@ -1,45 +1,47 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../shared/models/product_item.dart';
 import '../../shared/providers/cart_controller.dart';
 
-/// WhatsApp-группа розничной сети (5 магазинов), см. `.cursorrules` §3.4.
-abstract final class RetailWhatsAppConfig {
-  static const recipientE164 = '+821023377069';
+/// Telegram-группа розничной сети (5 магазинов).
+abstract final class RetailTelegramConfig {
+  /// Legacy slug Edge Function; доставка — через Telegram Bot API на сервере.
   static const edgeFunctionName = 'send_whatsapp_notification';
+
+  /// Поле legacy payload (чат задаётся `TELEGRAM_CHAT_ID` на сервере).
+  static const legacyRecipientField = '+821023377069';
 }
 
-/// Триггер карточки продажи в WhatsApp через Supabase Edge Function.
+/// Карточка продажи в Telegram через Supabase Edge Function.
 class RetailNotificationService {
   RetailNotificationService({SupabaseClient? client})
       : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
 
-  /// POST к Edge Function [RetailWhatsAppConfig.edgeFunctionName].
+  /// POST к Edge Function [RetailTelegramConfig.edgeFunctionName] → Telegram.
   ///
   /// Возвращает `true`, если HTTP-вызов завершился без ошибки (2xx).
-  Future<bool> sendWhatsAppOrderNotification({
+  Future<bool> sendTelegramOrderNotification({
     required String orderId,
     required List<CartItem> cartItems,
     int? totalAmountKrw,
   }) async {
     if (orderId.trim().isEmpty || cartItems.isEmpty) {
-      debugPrint('sendWhatsAppOrderNotification: пустой orderId или корзина');
+      debugPrint('sendTelegramOrderNotification: пустой orderId или корзина');
       return false;
     }
 
     final payload = <String, dynamic>{
-      'recipient': RetailWhatsAppConfig.recipientE164,
+      'recipient': RetailTelegramConfig.legacyRecipientField,
       'order_id': orderId,
-      if (totalAmountKrw != null) 'total_amount_krw': totalAmountKrw,
+      'total_amount_krw': ?totalAmountKrw,
       'items': cartItems.map(_cartLinePayload).toList(),
     };
 
     try {
       final response = await _client.functions.invoke(
-        RetailWhatsAppConfig.edgeFunctionName,
+        RetailTelegramConfig.edgeFunctionName,
         body: payload,
       );
 
@@ -49,17 +51,17 @@ class RetailNotificationService {
       }
 
       debugPrint(
-        'sendWhatsAppOrderNotification: HTTP $status — ${response.data}',
+        'sendTelegramOrderNotification: HTTP $status — ${response.data}',
       );
       return false;
     } catch (error, stackTrace) {
-      debugPrint('sendWhatsAppOrderNotification failed: $error');
+      debugPrint('sendTelegramOrderNotification failed: $error');
       debugPrint('$stackTrace');
-      return false;
     }
+    return false;
   }
 
-  /// Поля карточки для кассы розницы (§3.4 `.cursorrules`).
+  /// Поля карточки для розницы (SKU, вес, размер, камни, фото).
   static Map<String, dynamic> _cartLinePayload(CartItem line) {
     final product = line.product;
     return {

@@ -11,6 +11,7 @@ import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 import '../../shared/models/feedback_item.dart';
 import '../../shared/models/product_item.dart';
+import '../../shared/models/seller_item.dart';
 import 'device_secrets_store.dart';
 
 export 'device_secrets_store.dart' show IntegrationKeys, DeviceSecretKeys;
@@ -19,6 +20,7 @@ export 'device_secrets_store.dart' show IntegrationKeys, DeviceSecretKeys;
 abstract final class DatabaseCollections {
   static const products = 'cloud_products_krw_i18n_v2';
   static const feedback = 'cloud_feedback';
+  static const sellers = 'cloud_sellers_v1';
   static const cart = 'dj_cart_v1';
   static const favorites = 'dj_favorites_v1';
   static const orders = 'dj_profile_orders_v1';
@@ -39,29 +41,63 @@ abstract final class ProductImageStorage {
 abstract final class SkladAvailabilityRpc {
   static const checkAvailability = 'check_sklad_availability';
   static const reserveForCheckout = 'reserve_product_for_checkout';
+  static const releaseCheckout = 'release_product_checkout';
   static const skuParam = 'p_sku';
+  static const productIdParam = 'p_id';
 }
 
-bool _parseSkladAvailabilityRpcResult(dynamic result) {
+bool _parseSkladAvailabilityCheckResult(dynamic result) {
+  if (result is num) return result.toInt() > 0;
   if (result is bool) return result;
   if (result is Map) {
     final dynamic available =
         result['available'] ?? result['is_available'] ?? result['success'];
     if (available is bool) return available;
+    if (available is num) return available.toInt() > 0;
   }
   return false;
 }
 
-Future<bool> _invokeSkladAvailabilityRpc(
+bool _parseReserveCheckoutResult(dynamic result) {
+  if (result is bool) return result;
+  if (result is Map) {
+    final dynamic ok = result['success'] ?? result['reserved'];
+    if (ok is bool) return ok;
+  }
+  return false;
+}
+
+Future<bool> _invokeCheckSkladAvailabilityRpc(
   SupabaseClient client,
-  String rpcName,
   String sku,
 ) async {
   final result = await client.rpc(
-    rpcName,
+    SkladAvailabilityRpc.checkAvailability,
     params: {SkladAvailabilityRpc.skuParam: sku},
   );
-  return _parseSkladAvailabilityRpcResult(result);
+  return _parseSkladAvailabilityCheckResult(result);
+}
+
+Future<bool> _invokeReserveProductForCheckoutRpc(
+  SupabaseClient client,
+  String productId,
+) async {
+  final result = await client.rpc(
+    SkladAvailabilityRpc.reserveForCheckout,
+    params: {SkladAvailabilityRpc.productIdParam: productId},
+  );
+  return _parseReserveCheckoutResult(result);
+}
+
+Future<bool> _invokeReleaseProductCheckoutRpc(
+  SupabaseClient client,
+  String productId,
+) async {
+  final result = await client.rpc(
+    SkladAvailabilityRpc.releaseCheckout,
+    params: {SkladAvailabilityRpc.productIdParam: productId},
+  );
+  return _parseReserveCheckoutResult(result);
 }
 
 /// Отказ в записи: роль не соответствует требованиям бэкенда / RLS.
@@ -113,6 +149,15 @@ abstract class DatabaseService {
   /// Удаление обращения. Только [UserRole.admin].
   Future<void> deleteFeedback(String id, UserRole actorRole);
 
+  /// Картотека продавцов (промокоды). Только [UserRole.admin].
+  Future<List<SellerItem>> getSellers(UserRole actorRole);
+
+  /// Добавление или обновление продавца. Только [UserRole.admin].
+  Future<void> saveSeller(SellerItem seller, UserRole actorRole);
+
+  /// Удаление продавца по промокоду. Только [UserRole.admin].
+  Future<void> deleteSeller(String promoCode, UserRole actorRole);
+
   /// Заказы пользователя. На облаке: `WHERE user_id = :userId`.
   Future<List<OrderItem>> getOrders(String userId);
 
@@ -156,7 +201,11 @@ abstract class DatabaseService {
   Future<bool> checkSkladAvailability(String sku);
 
   /// Бронирование SKU на время оплаты (`products.status = reserved` на сервере).
-  Future<bool> reserveProductForCheckout(String sku);
+  /// Бронирование строки витрины по [products.id] (MSSQL Items.Id), не по SKU.
+  Future<bool> reserveProductForCheckout(String productId);
+
+  /// Отмена брони после ошибки/отмены Toss (возврат `active` в Supabase).
+  Future<void> releaseProductCheckout(String productId);
 }
 
 Future<File?> _pickProductImageFromGalleryImpl() async {
@@ -321,6 +370,44 @@ class LocalDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<List<SellerItem>> getSellers(UserRole actorRole) async {
+    _assertAdminRead(actorRole, action: 'getSellers');
+    return _readSellers();
+  }
+
+  @override
+  Future<void> saveSeller(SellerItem seller, UserRole actorRole) async {
+    _assertAdminWrite(actorRole, action: 'saveSeller');
+    final sellers = _readSellers();
+    final code = SellerItem.normalizePromoCode(seller.promoCode);
+    final index = sellers.indexWhere((item) => item.promoCode == code);
+    final normalized = seller.copyWith(promoCode: code);
+    if (index >= 0) {
+      sellers[index] = normalized;
+    } else {
+      sellers.insert(0, normalized);
+    }
+    await _writeSellers(sellers);
+  }
+
+  @override
+  Future<void> deleteSeller(String promoCode, UserRole actorRole) async {
+    _assertAdminWrite(actorRole, action: 'deleteSeller');
+    final code = SellerItem.normalizePromoCode(promoCode);
+    final sellers = _readSellers();
+    sellers.removeWhere((item) => item.promoCode == code);
+    await _writeSellers(sellers);
+  }
+
+  void _assertAdminRead(UserRole actorRole, {required String action}) {
+    if (actorRole != UserRole.admin) {
+      throw SecurityException(
+        'Отказано в $action: чтение разрешено только UserRole.admin',
+      );
+    }
+  }
+
+  @override
   Future<List<OrderItem>> getOrders(String userId) async {
     final maps = _readOrderMaps();
     final orders = maps.map(OrderItem.fromJson).toList();
@@ -378,6 +465,23 @@ class LocalDatabaseService implements DatabaseService {
     return _prefs.setString(
       DatabaseCollections.feedback,
       jsonEncode(messages.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  List<SellerItem> _readSellers() {
+    final raw = _prefs.getString(DatabaseCollections.sellers);
+    if (raw == null || raw.isEmpty) return [];
+    final decoded = jsonDecode(raw) as List<dynamic>;
+    return decoded
+        .whereType<Map>()
+        .map((item) => SellerItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<void> _writeSellers(List<SellerItem> sellers) {
+    return _prefs.setString(
+      DatabaseCollections.sellers,
+      jsonEncode(sellers.map((item) => item.toJson()).toList()),
     );
   }
 
@@ -493,13 +597,23 @@ class LocalDatabaseService implements DatabaseService {
     return true;
   }
 
+  Future<void> _localReleaseProductId(String productId) async {
+    final products = await getProducts();
+    final index = products.indexWhere((product) => product.id == productId);
+    if (index < 0) return;
+    final qty = products[index].stockQuantity;
+    products[index] = products[index].copyWith(
+      stockQuantity: qty <= 0 ? 1 : qty,
+    );
+    await _writeProducts(products);
+  }
+
   @override
   Future<bool> checkSkladAvailability(String sku) async {
     if (sku.trim().isEmpty) return false;
     try {
-      return await _invokeSkladAvailabilityRpc(
+      return await _invokeCheckSkladAvailabilityRpc(
         Supabase.instance.client,
-        SkladAvailabilityRpc.checkAvailability,
         sku,
       );
     } catch (error, stackTrace) {
@@ -510,20 +624,38 @@ class LocalDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<bool> reserveProductForCheckout(String sku) async {
-    if (sku.trim().isEmpty) return false;
+  Future<bool> reserveProductForCheckout(String productId) async {
+    if (productId.trim().isEmpty) return false;
     try {
-      final reserved = await _invokeSkladAvailabilityRpc(
+      final reserved = await _invokeReserveProductForCheckoutRpc(
         Supabase.instance.client,
-        SkladAvailabilityRpc.reserveForCheckout,
-        sku,
+        productId,
       );
       if (reserved) return true;
     } catch (error, stackTrace) {
       debugPrint('LocalDatabaseService.reserveProductForCheckout RPC: $error');
       debugPrint('$stackTrace');
     }
-    return _localReserveSku(sku);
+    final products = await getProducts();
+    final index = products.indexWhere((product) => product.id == productId);
+    if (index < 0) return false;
+    return _localReserveSku(products[index].sku);
+  }
+
+  @override
+  Future<void> releaseProductCheckout(String productId) async {
+    if (productId.trim().isEmpty) return;
+    try {
+      await _invokeReleaseProductCheckoutRpc(
+        Supabase.instance.client,
+        productId,
+      );
+      return;
+    } catch (error, stackTrace) {
+      debugPrint('LocalDatabaseService.releaseProductCheckout RPC: $error');
+      debugPrint('$stackTrace');
+    }
+    await _localReleaseProductId(productId);
   }
 }
 
@@ -561,26 +693,52 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   /// Строка Supabase (snake_case) → JSON для [ProductItem.fromJson].
+  ///
+  /// Складской sync часто оставляет [metal], [insert], [category] пустыми — без
+  /// дефолтов [ProductItem.fromJson] падает и [getProducts] возвращал [] целиком.
   static Map<String, dynamic> _productRowToClientJson(
     Map<String, dynamic> row,
   ) {
+    final salePrice = (row['sale_price'] as num?)?.toInt() ?? 0;
+    final oldPrice = (row['old_price'] as num?)?.toInt() ?? salePrice;
     return {
-      'id': row['id'],
-      'sku': row['sku'],
-      'stockQuantity': row['stock_quantity'],
-      'name': row['name'],
-      'description': row['description'],
-      'metal': row['metal'],
-      'salePrice': row['sale_price'],
-      'oldPrice': row['old_price'],
-      'discountPercent': row['discount_percent'],
-      'category': row['category'],
-      'insert': row['insert'],
-      'iconIndex': row['icon_index'],
-      'availableSizes': row['available_sizes'],
-      'imageUrl': row['image_url'],
-      'weightGrams': row['weight_grams'],
+      'id': row['id']?.toString() ?? '',
+      'sku': row['sku']?.toString() ?? '',
+      'stockQuantity': (row['stock_quantity'] as num?)?.toInt() ?? 0,
+      'name': row['name'] is Map ? row['name'] : <String, String>{},
+      'description':
+          row['description'] is Map ? row['description'] : <String, String>{},
+      'metal': (row['metal'] as String?)?.trim() ?? '',
+      'salePrice': salePrice,
+      'oldPrice': oldPrice,
+      'discountPercent': (row['discount_percent'] as num?)?.toInt() ?? 0,
+      'category': (row['category'] as String?)?.trim() ?? '',
+      'insert': (row['insert'] as String?)?.trim() ?? '',
+      'iconIndex': (row['icon_index'] as num?)?.toInt() ?? 0,
+      'availableSizes': row['available_sizes'] is List
+          ? row['available_sizes']
+          : const <dynamic>[],
+      'imageUrl': row['image_url'] as String?,
+      'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
     };
+  }
+
+  Future<List<ProductItem>> _readCloudProductCache() async {
+    final raw = (await _localPrefs()).getString(DatabaseCollections.products);
+    if (raw == null || raw.isEmpty) return [];
+    final decoded = jsonDecode(raw) as List<dynamic>;
+    return decoded
+        .whereType<Map>()
+        .map((item) => ProductItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<void> _writeCloudProductCache(List<ProductItem> products) async {
+    final prefs = await _localPrefs();
+    await prefs.setString(
+      DatabaseCollections.products,
+      jsonEncode(products.map((item) => item.toJson()).toList()),
+    );
   }
 
   @override
@@ -590,15 +748,31 @@ class CloudDatabaseService implements DatabaseService {
           .from('products')
           .select()
           .range(0, 4999);
-      return rows
-          .map((row) => Map<String, dynamic>.from(row))
-          .map(_productRowToClientJson)
-          .map(ProductItem.fromJson)
-          .toList();
+      final products = <ProductItem>[];
+      for (final dynamic row in rows) {
+        if (row is! Map) continue;
+        try {
+          products.add(
+            ProductItem.fromJson(
+              _productRowToClientJson(Map<String, dynamic>.from(row)),
+            ),
+          );
+        } catch (error, stackTrace) {
+          debugPrint(
+            'CloudDatabaseService.getProducts: skip row '
+            '${row['id']}: $error',
+          );
+          debugPrint('$stackTrace');
+        }
+      }
+      if (products.isNotEmpty) {
+        await _writeCloudProductCache(products);
+      }
+      return products;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.getProducts failed: $error');
       debugPrint('$stackTrace');
-      return [];
+      return _readCloudProductCache();
     }
   }
 
@@ -696,6 +870,105 @@ class CloudDatabaseService implements DatabaseService {
     final messages = await getFeedback(UserRole.guest);
     messages.removeWhere((item) => item.id == id);
     await _writeCloudFeedback(messages);
+  }
+
+  static SellerItem _sellerRowToItem(Map<String, dynamic> row) {
+    final createdRaw = row['created_at'];
+    DateTime createdAt;
+    if (createdRaw is String) {
+      createdAt = DateTime.parse(createdRaw);
+    } else if (createdRaw is DateTime) {
+      createdAt = createdRaw;
+    } else {
+      createdAt = DateTime.now();
+    }
+    return SellerItem(
+      promoCode: SellerItem.normalizePromoCode(row['promo_code'] as String),
+      name: (row['name'] as String).trim(),
+      isActive: row['is_active'] as bool? ?? true,
+      createdAt: createdAt,
+    );
+  }
+
+  Future<List<SellerItem>> _readCloudSellersCache() async {
+    final raw = (await _localPrefs()).getString(DatabaseCollections.sellers);
+    if (raw == null || raw.isEmpty) return [];
+    final decoded = jsonDecode(raw) as List<dynamic>;
+    return decoded
+        .whereType<Map>()
+        .map((item) => SellerItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<void> _writeCloudSellersCache(List<SellerItem> sellers) async {
+    final prefs = await _localPrefs();
+    await prefs.setString(
+      DatabaseCollections.sellers,
+      jsonEncode(sellers.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  @override
+  Future<List<SellerItem>> getSellers(UserRole actorRole) async {
+    _assertAdminRead(actorRole, action: 'getSellers');
+    try {
+      final rows = await _supabaseClient
+          .from('sellers')
+          .select()
+          .order('created_at', ascending: false);
+      final sellers = rows
+          .map((row) => Map<String, dynamic>.from(row))
+          .map(_sellerRowToItem)
+          .toList();
+      await _writeCloudSellersCache(sellers);
+      return sellers;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getSellers failed: $error');
+      debugPrint('$stackTrace');
+      return _readCloudSellersCache();
+    }
+  }
+
+  @override
+  Future<void> saveSeller(SellerItem seller, UserRole actorRole) async {
+    _assertAdminWrite(actorRole, action: 'saveSeller');
+    final code = SellerItem.normalizePromoCode(seller.promoCode);
+    try {
+      await _supabaseClient.from('sellers').upsert({
+        'promo_code': code,
+        'name': seller.name.trim(),
+        'is_active': seller.isActive,
+      });
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.saveSeller failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+    final cached = await _readCloudSellersCache();
+    final index = cached.indexWhere((item) => item.promoCode == code);
+    final normalized = seller.copyWith(promoCode: code);
+    if (index >= 0) {
+      cached[index] = normalized;
+    } else {
+      cached.insert(0, normalized);
+    }
+    await _writeCloudSellersCache(cached);
+  }
+
+  @override
+  Future<void> deleteSeller(String promoCode, UserRole actorRole) async {
+    _assertAdminWrite(actorRole, action: 'deleteSeller');
+    final code = SellerItem.normalizePromoCode(promoCode);
+    try {
+      await _supabaseClient.from('sellers').delete().eq('promo_code', code);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteSeller failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+    final cached = await _readCloudSellersCache();
+    cached.removeWhere((item) => item.promoCode == code);
+    await _writeCloudSellersCache(cached);
   }
 
   @override
@@ -846,9 +1119,8 @@ class CloudDatabaseService implements DatabaseService {
   Future<bool> checkSkladAvailability(String sku) async {
     if (sku.trim().isEmpty) return false;
     try {
-      return await _invokeSkladAvailabilityRpc(
+      return await _invokeCheckSkladAvailabilityRpc(
         _supabaseClient,
-        SkladAvailabilityRpc.checkAvailability,
         sku,
       );
     } catch (error, stackTrace) {
@@ -859,13 +1131,12 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<bool> reserveProductForCheckout(String sku) async {
-    if (sku.trim().isEmpty) return false;
+  Future<bool> reserveProductForCheckout(String productId) async {
+    if (productId.trim().isEmpty) return false;
     try {
-      return await _invokeSkladAvailabilityRpc(
+      return await _invokeReserveProductForCheckoutRpc(
         _supabaseClient,
-        SkladAvailabilityRpc.reserveForCheckout,
-        sku,
+        productId,
       );
     } catch (error, stackTrace) {
       debugPrint(
@@ -873,6 +1144,17 @@ class CloudDatabaseService implements DatabaseService {
       );
       debugPrint('$stackTrace');
       return false;
+    }
+  }
+
+  @override
+  Future<void> releaseProductCheckout(String productId) async {
+    if (productId.trim().isEmpty) return;
+    try {
+      await _invokeReleaseProductCheckoutRpc(_supabaseClient, productId);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.releaseProductCheckout failed: $error');
+      debugPrint('$stackTrace');
     }
   }
 }

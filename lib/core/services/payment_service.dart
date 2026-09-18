@@ -1,3 +1,4 @@
+import '../constants/toss_payments_config.dart';
 import '../../features/payment/domain/models/payment_models.dart';
 
 /// Параметры открытия Toss Payments Widget во встроенном WebView.
@@ -50,8 +51,15 @@ class PaymentService {
   static PaymentService get instance =>
       _instance ??= PaymentService._();
 
-  /// Переинициализация (тесты, смена окружения, client key из remote config).
-  static void configure(PaymentServiceConfig config) {
+  /// Активация с публичным client key из [TossPaymentsConfig] (после Supabase.init).
+  static void configure() {
+    configureWith(
+      PaymentServiceConfig(tossClientKey: TossPaymentsConfig.tossClientKey),
+    );
+  }
+
+  /// Переинициализация (тесты, смена окружения, custom config).
+  static void configureWith(PaymentServiceConfig config) {
     _instance = PaymentService._(config: config);
   }
 

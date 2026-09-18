@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../checkout/domain/models/shipping_address.dart';
+import '../../../../core/constants/merchant_legal_info.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/services/payment_service.dart';
 import '../../../../core/services/notification_service.dart';
@@ -38,6 +39,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   KoreanBank? _selectedBank;
   String? _validationMessage;
   bool _isConfirmingPayment = false;
+  bool _isTermsAccepted = false;
 
   String tr(String key) => paymentTr(key, context.langCode);
 
@@ -97,26 +99,61 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Future<bool> _verifySkladAndReserveCart() async {
     final cart = CartScope.of(context);
     final database = CatalogScope.of(context).database;
-    final skus = cart.items.map((item) => item.product.sku).toSet();
+    if (cart.items.isEmpty) return true;
 
-    if (skus.isEmpty) return true;
-
-    for (final sku in skus) {
-      final available = await database.checkSkladAvailability(sku);
+    for (final item in cart.items) {
+      final available =
+          await database.checkSkladAvailability(item.product.sku);
       if (!available) return false;
     }
 
-    for (final sku in skus) {
-      final reserved = await database.reserveProductForCheckout(sku);
+    for (final item in cart.items) {
+      final reserved =
+          await database.reserveProductForCheckout(item.product.id);
       if (!reserved) return false;
     }
 
+    if (!mounted) return false;
     await CatalogScope.of(context).load();
     return true;
   }
 
+  Future<void> _releaseReservedCart() async {
+    final cart = CartScope.of(context);
+    final database = CatalogScope.of(context).database;
+    for (final item in cart.items) {
+      try {
+        await database.releaseProductCheckout(item.product.id);
+      } catch (error, stackTrace) {
+        debugPrint(
+          'releaseProductCheckout id=${item.product.id}: $error',
+        );
+        debugPrint('$stackTrace');
+      }
+    }
+  }
+
+  Future<void> _returnToCartAfterPaymentFailure(String message) async {
+    await _releaseReservedCart();
+    if (!mounted) return;
+    await CatalogScope.of(context).load();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
   Future<void> _confirmPayment() async {
     if (_isConfirmingPayment) return;
+    if (!_isTermsAccepted) return;
 
     final error = _validateSelection();
     if (error != null) {
@@ -147,6 +184,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
       message: tr(PaymentStringKeys.loadingSkladCheck),
     );
 
+    var cartReserved = false;
+
     try {
       final skladOk = await _verifySkladAndReserveCart();
       if (!mounted) return;
@@ -157,6 +196,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         await _showRetailSoldDialog();
         return;
       }
+      cartReserved = true;
 
       PaymentLoadingOverlay.show(
         context,
@@ -185,10 +225,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       Navigator.of(context).pop();
 
       if (!initialized) {
-        setState(() {
-          _isConfirmingPayment = false;
-          _validationMessage = tr(PaymentStringKeys.errorSelectMethod);
-        });
+        if (cartReserved) {
+          await _returnToCartAfterPaymentFailure(
+            tr(PaymentStringKeys.errorSelectMethod),
+          );
+        }
+        setState(() => _isConfirmingPayment = false);
         return;
       }
 
@@ -210,7 +252,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       switch (webViewResult) {
         case TossPaymentWebViewResult.success:
           final cart = CartScope.of(context);
-          await retailNotificationService.sendWhatsAppOrderNotification(
+          await retailNotificationService.sendTelegramOrderNotification(
             orderId: orderId,
             cartItems: cart.items,
             totalAmountKrw: total,
@@ -225,29 +267,28 @@ class _PaymentScreenState extends State<PaymentScreen> {
             ),
           );
         case TossPaymentWebViewResult.failed:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(tr(PaymentStringKeys.paymentFailed)),
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.all(16),
-            ),
+          await _returnToCartAfterPaymentFailure(
+            tr(PaymentStringKeys.paymentFailed),
           );
         case TossPaymentWebViewResult.cancelled:
         case null:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(tr(PaymentStringKeys.paymentCancelled)),
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.all(16),
-            ),
+          await _returnToCartAfterPaymentFailure(
+            tr(PaymentStringKeys.paymentCancelled),
           );
       }
     } catch (_) {
       if (!mounted) return;
       Navigator.of(context).pop();
+      if (cartReserved) {
+        await _returnToCartAfterPaymentFailure(
+          tr(PaymentStringKeys.errorSelectMethod),
+        );
+      }
       setState(() {
         _isConfirmingPayment = false;
-        _validationMessage = tr(PaymentStringKeys.errorSelectMethod);
+        if (!cartReserved) {
+          _validationMessage = tr(PaymentStringKeys.errorSelectMethod);
+        }
       });
     }
   }
@@ -285,6 +326,10 @@ class _PaymentScreenState extends State<PaymentScreen> {
         bottomInset: bottomInset,
         label: tr(PaymentStringKeys.confirmPay),
         isBusy: _isConfirmingPayment,
+        isTermsAccepted: _isTermsAccepted,
+        onTermsAcceptedChanged: (value) {
+          setState(() => _isTermsAccepted = value ?? false);
+        },
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
@@ -814,6 +859,8 @@ class _PaymentBottomBar extends StatelessWidget {
     required this.onConfirm,
     required this.bottomInset,
     required this.label,
+    required this.isTermsAccepted,
+    required this.onTermsAcceptedChanged,
     this.isBusy = false,
   });
 
@@ -822,9 +869,18 @@ class _PaymentBottomBar extends StatelessWidget {
   final double bottomInset;
   final String label;
   final bool isBusy;
+  final bool isTermsAccepted;
+  final ValueChanged<bool?> onTermsAcceptedChanged;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+          color: AppColors.textSecondary,
+          height: 1.45,
+        ) ??
+        AppTypography.productMeta().copyWith(fontSize: 12, height: 1.45);
+
     return Container(
       padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
       decoration: const BoxDecoration(
@@ -837,6 +893,74 @@ class _PaymentBottomBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Material(
+              color: AppColors.cardBackground,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    title: Text(
+                      MerchantLegalInfo.businessInfoExpansionTitleKo,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ) ??
+                          AppTypography.caption(fontWeight: FontWeight.w700)
+                              .copyWith(fontSize: 14),
+                    ),
+                    children: [
+                      Text(
+                        MerchantLegalInfo.businessInfoBodyKo,
+                        style: bodyStyle,
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 1, color: AppColors.border),
+                  ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    title: Text(
+                      MerchantLegalInfo.refundPolicyExpansionTitleKo,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ) ??
+                          AppTypography.caption(fontWeight: FontWeight.w700)
+                              .copyWith(fontSize: 14),
+                    ),
+                    children: [
+                      Text(
+                        MerchantLegalInfo.refundPolicyKo,
+                        style: bodyStyle,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: isTermsAccepted,
+              onChanged: onTermsAcceptedChanged,
+              activeColor: AppColors.primary,
+              checkColor: AppColors.textOnPrimary,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(
+                MerchantLegalInfo.paymentTermsCheckboxLabelKo,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ) ??
+                    AppTypography.productMeta().copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 8),
             if (validationMessage != null) ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -872,7 +996,8 @@ class _PaymentBottomBar extends StatelessWidget {
                   ],
                 ),
                 child: ElevatedButton(
-                  onPressed: isBusy ? null : onConfirm,
+                  onPressed:
+                      isBusy || !isTermsAccepted ? null : onConfirm,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: AppColors.accent,

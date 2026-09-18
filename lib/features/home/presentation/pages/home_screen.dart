@@ -9,6 +9,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../widgets/home_promo_banner.dart';
 import '../widgets/home_recommended_grid.dart';
 import '../widgets/home_stories_section.dart';
+import '../../../../shared/providers/catalog_scope.dart';
 
 /// Главный экран в стиле Dr. Jewelry: истории, баннер, рекомендации.
 class HomeScreen extends StatefulWidget {
@@ -29,6 +30,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _remaining = _initialCountdown;
     _startCountdown();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadCatalogIfEmpty());
+  }
+
+  Future<void> _reloadCatalogIfEmpty() async {
+    if (!mounted) return;
+    final catalog = CatalogScope.of(context);
+    if (catalog.products.isNotEmpty) return;
+    await catalog.load();
   }
 
   void _startCountdown() {

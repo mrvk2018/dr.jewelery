@@ -82,14 +82,6 @@ class ProfileController extends ChangeNotifier {
     return true;
   }
 
-  Future<IntegrationKeys> loadIntegrationKeys() {
-    return _database.loadIntegrationKeys();
-  }
-
-  Future<void> saveIntegrationKeys(IntegrationKeys keys) {
-    return _database.saveIntegrationKeys(keys);
-  }
-
   void logout() {
     isAuthenticated = false;
     user = UserProfile.demoGuest;

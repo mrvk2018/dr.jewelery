@@ -10,7 +10,7 @@ import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/feedback_scope.dart';
 import '../../../catalog/domain/models/catalog_constants.dart';
 import '../../../profile/domain/models/order_item.dart';
-import '../widgets/admin_integrations_section.dart';
+import '../widgets/admin_sellers_section.dart';
 import '../widgets/admin_product_form.dart';
 /// Админ-панель владельца: заказы, товары и обратная связь.
 class AdminPanelScreen extends StatefulWidget {
@@ -118,7 +118,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Tab(text: 'Заказы'),
             Tab(text: 'Товары'),
             Tab(text: 'Обратная связь'),
-            Tab(text: 'Интеграции'),
+            Tab(text: 'Продавцы'),
           ],
         ),
       ),
@@ -150,7 +150,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
               );
             },
           ),
-          const AdminIntegrationsSection(),
+          AdminSellersSection(database: catalog.database),
         ],
       ),
     );

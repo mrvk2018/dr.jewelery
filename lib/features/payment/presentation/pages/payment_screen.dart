@@ -240,9 +240,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final webViewResult = await Navigator.of(context).push<TossPaymentWebViewResult>(
         MaterialPageRoute<TossPaymentWebViewResult>(
           builder: (_) => TossWebViewPage(
-            initialUrl: launchConfig.widgetUrl,
-            successRedirectUrl: paymentService.successRedirectUrl,
-            failRedirectUrl: paymentService.failRedirectUrl,
+            clientKey: launchConfig.clientKey,
+            orderId: launchConfig.orderId,
+            amount: launchConfig.amount,
+            successUrl: launchConfig.successUrl,
+            failUrl: launchConfig.failUrl,
           ),
         ),
       );

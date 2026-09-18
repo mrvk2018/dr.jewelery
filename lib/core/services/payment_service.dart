@@ -1,21 +1,23 @@
 import '../constants/toss_payments_config.dart';
 import '../../features/payment/domain/models/payment_models.dart';
 
-/// Параметры открытия Toss Payments Widget во встроенном WebView.
+/// Параметры открытия Toss Payments Widget v2 во встроенном WebView (HTML + SDK).
 class TossPaymentLaunchConfig {
   const TossPaymentLaunchConfig({
-    required this.widgetUrl,
+    required this.clientKey,
     required this.orderId,
     required this.amount,
     required this.method,
+    required this.successUrl,
+    required this.failUrl,
   });
 
-  /// Полный URL (или deep-link) для загрузки в WebView.
-  final String widgetUrl;
-
+  final String clientKey;
   final String orderId;
   final int amount;
   final PaymentMethodType method;
+  final String successUrl;
+  final String failUrl;
 }
 
 /// Публичный client key и redirect URL задаются при инициализации (не хранить secret key).
@@ -23,8 +25,6 @@ class PaymentServiceConfig {
   const PaymentServiceConfig({
     this.tossClientKey = '',
     this.createOrderDraftUrl,
-    this.paymentWidgetEntryUrl =
-        'https://payment-widget.tosspayments.com/v2/entry',
     this.successRedirectUrl = 'sunlight://payment/success',
     this.failRedirectUrl = 'sunlight://payment/fail',
   });
@@ -35,7 +35,6 @@ class PaymentServiceConfig {
   /// Будущий REST endpoint: POST черновика заказа → `{ "orderId": "..." }`.
   final String? createOrderDraftUrl;
 
-  final String paymentWidgetEntryUrl;
   final String successRedirectUrl;
   final String failRedirectUrl;
 }
@@ -95,7 +94,7 @@ class PaymentService {
     return 'ORD-$timestamp';
   }
 
-  /// Готовит URL Toss Payments Widget для WebView.
+  /// Готовит параметры Toss Payments Widget v2 для WebView ([loadHtmlString] + SDK).
   ///
   /// Возвращает `false`, если способ оплаты не поддерживается виджетом Toss
   /// (например, банковский перевод) или не задан client key.
@@ -123,22 +122,13 @@ class PaymentService {
       return false;
     }
 
-    final uri = Uri.parse(_config.paymentWidgetEntryUrl).replace(
-      queryParameters: <String, String>{
-        'clientKey': _config.tossClientKey,
-        'orderId': orderId,
-        'amount': amount.toString(),
-        'successUrl': _config.successRedirectUrl,
-        'failUrl': _config.failRedirectUrl,
-        'method': tossMethod,
-      },
-    );
-
     _lastTossLaunchConfig = TossPaymentLaunchConfig(
-      widgetUrl: uri.toString(),
+      clientKey: _config.tossClientKey,
       orderId: orderId,
       amount: amount,
       method: method,
+      successUrl: _config.successRedirectUrl,
+      failUrl: _config.failRedirectUrl,
     );
 
     return true;

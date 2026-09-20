@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../checkout/presentation/pages/checkout_screen.dart';
+import '../../../../shared/providers/cart_controller.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../widgets/cart_widgets.dart';
 
@@ -17,6 +18,7 @@ class CartScreen extends StatefulWidget {
 class _CartScreenState extends State<CartScreen> {
   late final TextEditingController _promoController;
   bool _promoSynced = false;
+  final Map<String, bool> _selectedByCartKey = {};
 
   @override
   void initState() {
@@ -38,6 +40,20 @@ class _CartScreenState extends State<CartScreen> {
     super.dispose();
   }
 
+  void _syncSelectionWithCart(CartController cart) {
+    final keys = cart.items.map((item) => item.cartKey).toSet();
+    _selectedByCartKey.removeWhere((key, _) => !keys.contains(key));
+    for (final key in keys) {
+      _selectedByCartKey.putIfAbsent(key, () => true);
+    }
+  }
+
+  List<CartItem> _selectedItems(CartController cart) {
+    return cart.items
+        .where((item) => _selectedByCartKey[item.cartKey] ?? true)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final cart = CartScope.of(context);
@@ -45,6 +61,19 @@ class _CartScreenState extends State<CartScreen> {
     return AnimatedBuilder(
       animation: cart,
       builder: (context, _) {
+        _syncSelectionWithCart(cart);
+        final selectedItems = _selectedItems(cart);
+        final selectedSaleSubtotal = cart.saleSubtotalFor(selectedItems);
+        final selectedPromo = cart.promoDiscountForSubtotal(selectedSaleSubtotal);
+        final selectedBonus =
+            cart.bonusDeductionForSubtotal(selectedSaleSubtotal);
+        final selectedTotal = cart.checkoutTotalFor(selectedItems);
+        final selectedSubtotal = selectedItems.fold<int>(
+          0,
+          (sum, item) => sum + item.product.oldPrice * item.quantity,
+        );
+        final selectedDiscount = selectedSubtotal - selectedSaleSubtotal;
+
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
@@ -63,16 +92,21 @@ class _CartScreenState extends State<CartScreen> {
           bottomNavigationBar: cart.items.isEmpty
               ? null
               : CartCheckoutBar(
-                  total: cart.total,
-                  onCheckout: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => CheckoutScreen(
-                          productsTotal: cart.total,
-                        ),
-                      ),
-                    );
-                  },
+                  total: selectedTotal,
+                  checkoutEnabled: selectedItems.isNotEmpty,
+                  onCheckout: selectedItems.isEmpty
+                      ? null
+                      : () {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CheckoutScreen(
+                                productsTotal: selectedTotal,
+                                checkoutItems:
+                                    List<CartItem>.from(selectedItems),
+                              ),
+                            ),
+                          );
+                        },
                 ),
           body: cart.items.isEmpty
               ? _EmptyCartView()
@@ -89,6 +123,14 @@ class _CartScreenState extends State<CartScreen> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: CartItemTile(
                           item: item,
+                          isSelected:
+                              _selectedByCartKey[item.cartKey] ?? true,
+                          onSelectedChanged: (value) {
+                            setState(() {
+                              _selectedByCartKey[item.cartKey] =
+                                  value ?? false;
+                            });
+                          },
                           onRemove: () => cart.removeItem(item.cartKey),
                           onIncrement: () =>
                               cart.incrementQuantity(item.cartKey),
@@ -102,17 +144,17 @@ class _CartScreenState extends State<CartScreen> {
                       promoController: _promoController,
                       useBonuses: cart.useBonuses,
                       availableBonuses: cart.availableBonuses,
-                      bonusDeduction: cart.bonusDeduction,
+                      bonusDeduction: selectedBonus,
                       onPromoChanged: cart.setPromoCode,
                       onUseBonusesChanged: cart.setUseBonuses,
                     ),
                     const SizedBox(height: 12),
                     CartSummarySection(
-                      subtotal: cart.subtotal,
-                      discount: cart.discountTotal,
-                      promoDiscount: cart.promoDiscount,
-                      bonusDeduction: cart.bonusDeduction,
-                      total: cart.total,
+                      subtotal: selectedSubtotal,
+                      discount: selectedDiscount,
+                      promoDiscount: selectedPromo,
+                      bonusDeduction: selectedBonus,
+                      total: selectedTotal,
                     ),
                     const SizedBox(height: 100),
                   ],

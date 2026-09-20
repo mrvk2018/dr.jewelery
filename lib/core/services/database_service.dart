@@ -11,7 +11,9 @@ import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 import '../../shared/models/feedback_item.dart';
 import '../../shared/models/product_item.dart';
+import '../../shared/models/app_marketing_settings.dart';
 import '../../shared/models/seller_item.dart';
+import '../../shared/models/seller_referral_apply_result.dart';
 import 'device_secrets_store.dart';
 
 export 'device_secrets_store.dart' show IntegrationKeys, DeviceSecretKeys;
@@ -25,6 +27,8 @@ abstract final class DatabaseCollections {
   static const favorites = 'dj_favorites_v1';
   static const orders = 'dj_profile_orders_v1';
   static const profileSession = 'dj_profile_session_v1';
+  static const appMarketing = 'local_app_marketing_settings_v1';
+  static const localReferralSeller = 'local_referred_by_seller_v1';
   static const adminPasswordHash = DeviceSecretKeys.adminPasswordHash;
   static const adminDeviceClaimed = DeviceSecretKeys.adminDeviceClaimed;
   static const posApiKey = DeviceSecretKeys.posApiKey;
@@ -44,6 +48,15 @@ abstract final class SkladAvailabilityRpc {
   static const releaseCheckout = 'release_product_checkout';
   static const skuParam = 'p_sku';
   static const productIdParam = 'p_id';
+}
+
+/// Postgres RPC для профиля, реферала и маркетинга.
+abstract final class ProfileBonusRpc {
+  static const applySellerReferralPromo = 'apply_seller_referral_promo';
+  static const saveAppMarketingSettings = 'save_app_marketing_settings';
+  static const promoCodeParam = 'p_promo_code';
+  static const welcomeEnabledParam = 'p_welcome_bonus_enabled';
+  static const welcomeAmountParam = 'p_welcome_bonus_amount';
 }
 
 bool _parseSkladAvailabilityCheckResult(dynamic result) {
@@ -206,6 +219,33 @@ abstract class DatabaseService {
 
   /// Отмена брони после ошибки/отмены Toss (возврат `active` в Supabase).
   Future<void> releaseProductCheckout(String productId);
+
+  /// UUID текущего Supabase Auth пользователя или `null`.
+  Future<String?> currentAuthUserId();
+
+  /// Вход покупателя (anonymous auth) + загрузка `public.profiles`.
+  Future<UserProfile> signInCustomerWithSupabase();
+
+  /// Выход из Supabase Auth (покупатель).
+  Future<void> signOutSupabaseAuth();
+
+  /// Актуальный профиль из `profiles` для текущей сессии.
+  Future<UserProfile?> refreshCustomerProfileFromCloud();
+
+  /// `profiles.bonus_balance` для текущего auth user.
+  Future<int> fetchBonusBalanceForCurrentUser();
+
+  /// Серверная привязка промокода продавца (anti-abuse RPC).
+  Future<SellerReferralApplyResult> applySellerReferralPromo(String promoCode);
+
+  /// Глобальные настройки welcome-акции (`app_settings`).
+  Future<AppMarketingSettings> getAppMarketingSettings();
+
+  /// Сохранение welcome-акции (админ).
+  Future<void> saveAppMarketingSettings(
+    AppMarketingSettings settings,
+    UserRole actorRole,
+  );
 }
 
 Future<File?> _pickProductImageFromGalleryImpl() async {
@@ -657,6 +697,102 @@ class LocalDatabaseService implements DatabaseService {
     }
     await _localReleaseProductId(productId);
   }
+
+  @override
+  Future<String?> currentAuthUserId() async => null;
+
+  @override
+  Future<UserProfile> signInCustomerWithSupabase() async {
+    return UserProfile.demoCustomer;
+  }
+
+  @override
+  Future<void> signOutSupabaseAuth() async {}
+
+  @override
+  Future<UserProfile?> refreshCustomerProfileFromCloud() async => null;
+
+  @override
+  Future<int> fetchBonusBalanceForCurrentUser() async {
+    final session = await loadProfileSession();
+    if (session == null) return 0;
+    final rawUser = session['user'];
+    if (rawUser is! Map) return 0;
+    return UserProfile.fromJson(Map<String, dynamic>.from(rawUser)).bonusBalance;
+  }
+
+  @override
+  Future<SellerReferralApplyResult> applySellerReferralPromo(
+    String promoCode,
+  ) async {
+    const alreadyMessage =
+        'Промокод применен для привязки к продавцу, но приветственный бонус уже был получен вами ранее';
+    final existing = _prefs.getString(DatabaseCollections.localReferralSeller);
+    if (existing != null && existing.isNotEmpty) {
+      return const SellerReferralApplyResult(
+        ok: true,
+        alreadyReferred: true,
+        message: alreadyMessage,
+      );
+    }
+
+    final code = SellerItem.normalizePromoCode(promoCode);
+    if (code.isEmpty) {
+      return const SellerReferralApplyResult(
+        ok: false,
+        errorCode: 'empty_code',
+      );
+    }
+
+    SellerItem? seller;
+    for (final item in _readSellers()) {
+      if (item.promoCode == code && item.isActive) {
+        seller = item;
+        break;
+      }
+    }
+    if (seller == null) {
+      return const SellerReferralApplyResult(
+        ok: false,
+        errorCode: 'invalid_code',
+      );
+    }
+
+    await _prefs.setString(DatabaseCollections.localReferralSeller, code);
+    return SellerReferralApplyResult(
+      ok: true,
+      discountKrw: seller.buyerBonusKrw,
+      sellerCode: code,
+    );
+  }
+
+  @override
+  Future<AppMarketingSettings> getAppMarketingSettings() async {
+    final raw = _prefs.getString(DatabaseCollections.appMarketing);
+    if (raw == null || raw.isEmpty) return AppMarketingSettings.defaults;
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return AppMarketingSettings.defaults;
+    final map = Map<String, dynamic>.from(decoded);
+    return AppMarketingSettings(
+      welcomeBonusEnabled: map['welcomeBonusEnabled'] as bool? ?? false,
+      welcomeBonusAmountKrw: (map['welcomeBonusAmountKrw'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  @override
+  Future<void> saveAppMarketingSettings(
+    AppMarketingSettings settings,
+    UserRole actorRole,
+  ) async {
+    _assertAdminWrite(actorRole, action: 'saveAppMarketingSettings');
+    await _prefs.setString(
+      DatabaseCollections.appMarketing,
+      jsonEncode({
+        'welcomeBonusEnabled': settings.welcomeBonusEnabled,
+        'welcomeBonusAmountKrw': settings.welcomeBonusAmountKrw,
+      }),
+    );
+  }
 }
 
 /// Каркас облачного хранилища (Supabase / Firebase).
@@ -886,6 +1022,7 @@ class CloudDatabaseService implements DatabaseService {
       promoCode: SellerItem.normalizePromoCode(row['promo_code'] as String),
       name: (row['name'] as String).trim(),
       isActive: row['is_active'] as bool? ?? true,
+      buyerBonusKrw: (row['buyer_bonus_krw'] as num?)?.toInt() ?? 0,
       createdAt: createdAt,
     );
   }
@@ -938,6 +1075,7 @@ class CloudDatabaseService implements DatabaseService {
         'promo_code': code,
         'name': seller.name.trim(),
         'is_active': seller.isActive,
+        'buyer_bonus_krw': seller.buyerBonusKrw,
       });
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.saveSeller failed: $error');
@@ -1155,6 +1293,144 @@ class CloudDatabaseService implements DatabaseService {
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.releaseProductCheckout failed: $error');
       debugPrint('$stackTrace');
+    }
+  }
+
+  UserProfile _userProfileFromAuth(User authUser, Map<String, dynamic>? row) {
+    final bonus = (row?['bonus_balance'] as num?)?.toInt() ?? 0;
+    final referred = row?['referred_by_seller'] as String?;
+    final metaName = authUser.userMetadata?['name'] as String?;
+    final shortId = authUser.id.replaceAll('-', '').substring(0, 8).toUpperCase();
+    return UserProfile(
+      id: authUser.id,
+      name: metaName?.trim().isNotEmpty == true ? metaName!.trim() : 'Покупатель',
+      email: authUser.email ?? '',
+      bonusBalance: bonus,
+      role: UserRole.customer,
+      loyaltyCardNumber: 'DJ-$shortId',
+      referredBySeller: referred,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchProfileRow(String userId) async {
+    final row = await _supabaseClient
+        .from('profiles')
+        .select('bonus_balance, referred_by_seller')
+        .eq('id', userId)
+        .maybeSingle();
+    if (row == null) {
+      await _supabaseClient.from('profiles').insert({'id': userId});
+      return _supabaseClient
+          .from('profiles')
+          .select('bonus_balance, referred_by_seller')
+          .eq('id', userId)
+          .maybeSingle();
+    }
+    return Map<String, dynamic>.from(row);
+  }
+
+  @override
+  Future<String?> currentAuthUserId() async {
+    return _supabaseClient.auth.currentUser?.id;
+  }
+
+  @override
+  Future<UserProfile> signInCustomerWithSupabase() async {
+    final auth = _supabaseClient.auth;
+    if (auth.currentUser == null) {
+      await auth.signInAnonymously();
+    }
+    final authUser = auth.currentUser;
+    if (authUser == null) {
+      throw StateError('Supabase auth session missing after sign-in');
+    }
+    final row = await _fetchProfileRow(authUser.id);
+    return _userProfileFromAuth(authUser, row);
+  }
+
+  @override
+  Future<void> signOutSupabaseAuth() async {
+    await _supabaseClient.auth.signOut();
+  }
+
+  @override
+  Future<UserProfile?> refreshCustomerProfileFromCloud() async {
+    final authUser = _supabaseClient.auth.currentUser;
+    if (authUser == null) return null;
+    final row = await _fetchProfileRow(authUser.id);
+    return _userProfileFromAuth(authUser, row);
+  }
+
+  @override
+  Future<int> fetchBonusBalanceForCurrentUser() async {
+    final userId = await currentAuthUserId();
+    if (userId == null) return 0;
+    final row = await _fetchProfileRow(userId);
+    return (row?['bonus_balance'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<SellerReferralApplyResult> applySellerReferralPromo(
+    String promoCode,
+  ) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        ProfileBonusRpc.applySellerReferralPromo,
+        params: {ProfileBonusRpc.promoCodeParam: promoCode},
+      );
+      if (result is Map) {
+        return SellerReferralApplyResult.fromJson(
+          Map<String, dynamic>.from(result),
+        );
+      }
+      return const SellerReferralApplyResult(ok: false, errorCode: 'bad_response');
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.applySellerReferralPromo failed: $error');
+      debugPrint('$stackTrace');
+      return const SellerReferralApplyResult(ok: false, errorCode: 'network');
+    }
+  }
+
+  @override
+  Future<AppMarketingSettings> getAppMarketingSettings() async {
+    try {
+      final row = await _supabaseClient
+          .from('app_settings')
+          .select('welcome_bonus_enabled, welcome_bonus_amount')
+          .eq('id', 1)
+          .maybeSingle();
+      if (row == null) return AppMarketingSettings.defaults;
+      final map = Map<String, dynamic>.from(row);
+      return AppMarketingSettings(
+        welcomeBonusEnabled: map['welcome_bonus_enabled'] as bool? ?? false,
+        welcomeBonusAmountKrw:
+            (map['welcome_bonus_amount'] as num?)?.toInt() ?? 0,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getAppMarketingSettings failed: $error');
+      debugPrint('$stackTrace');
+      return AppMarketingSettings.defaults;
+    }
+  }
+
+  @override
+  Future<void> saveAppMarketingSettings(
+    AppMarketingSettings settings,
+    UserRole actorRole,
+  ) async {
+    _assertAdminWrite(actorRole, action: 'saveAppMarketingSettings');
+    try {
+      await _supabaseClient.rpc(
+        ProfileBonusRpc.saveAppMarketingSettings,
+        params: {
+          ProfileBonusRpc.welcomeEnabledParam: settings.welcomeBonusEnabled,
+          ProfileBonusRpc.welcomeAmountParam: settings.welcomeBonusAmountKrw,
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.saveAppMarketingSettings failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
     }
   }
 }

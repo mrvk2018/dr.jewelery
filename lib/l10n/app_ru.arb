@@ -33,5 +33,9 @@
   "homeStoryNew": "Новинки",
   "homeStoryEarrings": "Серьги",
   "homeStoryChains": "Цепи",
-  "homeStoryGifts": "Подарки"
+  "homeStoryGifts": "Подарки",
+  "buyNow": "Купить",
+  "filterAll": "Все",
+  "filterGold": "Золото",
+  "filterSilver": "Серебро"
 }

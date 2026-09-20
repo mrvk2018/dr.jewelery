@@ -111,4 +111,16 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get homeStoryGifts => 'Подарки';
+
+  @override
+  String get buyNow => 'Купить';
+
+  @override
+  String get filterAll => 'Все';
+
+  @override
+  String get filterGold => 'Золото';
+
+  @override
+  String get filterSilver => 'Серебро';
 }

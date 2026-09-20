@@ -33,5 +33,9 @@
   "homeStoryNew": "New In",
   "homeStoryEarrings": "Earrings",
   "homeStoryChains": "Chains",
-  "homeStoryGifts": "Gifts"
+  "homeStoryGifts": "Gifts",
+  "buyNow": "Buy Now",
+  "filterAll": "All",
+  "filterGold": "Gold",
+  "filterSilver": "Silver"
 }

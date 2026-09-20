@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -39,6 +41,7 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
   late final WebViewController _controller;
   var _isLoading = true;
   var _isCompleting = false;
+  var _tossWidgetsReady = false;
 
   static const _htmlBaseUrl = 'https://localhost/';
 
@@ -56,6 +59,17 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setOnConsoleMessage((JavaScriptConsoleMessage message) {
+        debugPrint('🛑 TOSS JS CONSOLE: ${message.message}');
+      })
+      ..addJavaScriptChannel(
+        'TossBridge',
+        onMessageReceived: (message) {
+          if (message.message == 'ready' && mounted) {
+            setState(() => _tossWidgetsReady = true);
+          }
+        },
+      )
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
@@ -92,6 +106,21 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
         ),
       )
       ..loadHtmlString(html, baseUrl: _htmlBaseUrl);
+
+    unawaited(_configurePlatformWebView(_controller));
+  }
+
+  /// DOM Storage на Android включён в [AndroidWebViewController] по умолчанию;
+  /// дополнительно разрешаем mixed content для ресурсов виджета.
+  Future<void> _configurePlatformWebView(WebViewController controller) async {
+    if (!Platform.isAndroid) return;
+    final platform = controller.platform;
+    if (platform is! AndroidWebViewController) return;
+
+    await platform.setMixedContentMode(MixedContentMode.alwaysAllow);
+    debugPrint(
+      '[TossWebView] Android WebView: DOM Storage enabled by plugin default',
+    );
   }
 
   static String _escapeJsString(String value) {
@@ -122,41 +151,78 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://js.tosspayments.com/v2/standard"></script>
+  <script src="https://js.tosspayments.com/v2/standard" onload="initToss()" onerror="console.error('Не удалось загрузить Toss SDK')"></script>
+  <script>
+    var tossWidgets = null;
+
+    async function initToss() {
+      try {
+        console.log("Toss SDK успешно загружен. Инициализация...");
+        if (typeof TossPayments === "undefined") {
+          throw new Error("TossPayments is undefined after script onload");
+        }
+        const tossPayments = TossPayments("$jsClientKey");
+        tossWidgets = tossPayments.widgets({ customerKey: "$jsCustomerKey" });
+
+        await tossWidgets.setAmount({
+          currency: "KRW",
+          value: $amount
+        });
+
+        await tossWidgets.renderPaymentMethods({
+          selector: "#payment-method",
+          variantKey: "DEFAULT"
+        });
+
+        await tossWidgets.renderAgreement({
+          selector: "#agreement",
+          variantKey: "AGREEMENT"
+        });
+
+        if (typeof TossBridge !== "undefined") {
+          TossBridge.postMessage("ready");
+        }
+        console.log("Виджеты Toss успешно отрендерены!");
+      } catch (error) {
+        var msg = (error && error.message) ? error.message : String(error);
+        console.error("Критическая ошибка инициализации Toss:", msg);
+      }
+    }
+
+    async function requestTossPayment() {
+      try {
+        if (!tossWidgets) {
+          console.error("Toss widgets еще не готовы");
+          return;
+        }
+        console.log("Запрос оплаты requestPayment...");
+        await tossWidgets.requestPayment({
+          orderId: "$jsOrderId",
+          orderName: "Jewelry Order",
+          successUrl: "$jsSuccessUrl",
+          failUrl: "$jsFailUrl"
+        });
+      } catch (error) {
+        var msg = (error && error.message) ? error.message : String(error);
+        console.error("Ошибка requestPayment:", msg);
+      }
+    }
+  </script>
 </head>
 <body>
   <div id="payment-method"></div>
   <div id="agreement"></div>
-  <script>
-    const clientKey = "$jsClientKey";
-    const customerKey = "$jsCustomerKey";
-
-    async function main() {
-      const tossPayments = TossPayments(clientKey);
-      const widgets = tossPayments.widgets({ customerKey: customerKey });
-
-      await widgets.setAmount({
-        currency: "KRW",
-        value: $amount
-      });
-
-      await Promise.all([
-        widgets.renderPaymentMethods({ selector: "#payment-method", variantKey: "DEFAULT" }),
-        widgets.renderAgreement({ selector: "#agreement", variantKey: "AGREEMENT" })
-      ]);
-
-      await widgets.requestPayment({
-        orderId: "$jsOrderId",
-        orderName: "Jewelry Order",
-        successUrl: "$jsSuccessUrl",
-        failUrl: "$jsFailUrl"
-      });
-    }
-    main().catch(function(err) { console.error(err); });
-  </script>
 </body>
 </html>
 ''';
+  }
+
+  Future<void> _submitPayment() async {
+    if (!_tossWidgetsReady) {
+      debugPrint('[TossWebView] Pay tapped before widgets ready');
+      return;
+    }
+    await _controller.runJavaScript('requestTossPayment()');
   }
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
@@ -176,7 +242,6 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
     return lower.startsWith('http://') || lower.startsWith('https://');
   }
 
-  /// Android `intent://` → app scheme (Toss Payments WebView guide).
   static String? _convertIntentUrlToAppScheme(String intentUrl) {
     final normalized = intentUrl.trim();
     if (!normalized.toLowerCase().startsWith('intent:')) {
@@ -299,16 +364,53 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
             onPressed: _onUserClose,
           ),
         ),
-        body: Stack(
+        body: Column(
           children: [
-            WebViewWidget(controller: _controller),
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(color: AppColors.accent),
+            Expanded(
+              child: Stack(
+                children: [
+                  WebViewWidget(controller: _controller),
+                  if (_isLoading)
+                    const Center(
+                      child: CircularProgressIndicator(color: AppColors.accent),
+                    ),
+                ],
               ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _tossWidgetsReady ? _submitPayment : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.textOnAccent,
+                      disabledBackgroundColor:
+                          AppColors.accent.withValues(alpha: 0.35),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      _tossWidgetsReady ? 'Оплатить' : 'Загрузка Toss…',
+                      style: AppTypography.caption(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textOnAccent,
+                      ).copyWith(fontSize: 15),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
 }

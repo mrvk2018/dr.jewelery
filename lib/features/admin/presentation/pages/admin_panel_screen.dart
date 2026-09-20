@@ -10,6 +10,7 @@ import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/feedback_scope.dart';
 import '../../../catalog/domain/models/catalog_constants.dart';
 import '../../../profile/domain/models/order_item.dart';
+import '../widgets/admin_marketing_section.dart';
 import '../widgets/admin_sellers_section.dart';
 import '../widgets/admin_product_form.dart';
 /// Админ-панель владельца: заказы, товары и обратная связь.
@@ -30,7 +31,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _orders = List<OrderItem>.from(demoAdminOrders);
   }
   @override
@@ -119,6 +120,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             Tab(text: 'Товары'),
             Tab(text: 'Обратная связь'),
             Tab(text: 'Продавцы'),
+            Tab(text: 'Маркетинг'),
           ],
         ),
       ),
@@ -151,6 +153,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
             },
           ),
           AdminSellersSection(database: catalog.database),
+          AdminMarketingSection(database: catalog.database),
         ],
       ),
     );

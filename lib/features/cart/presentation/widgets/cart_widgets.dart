@@ -13,12 +13,16 @@ class CartItemTile extends StatelessWidget {
   const CartItemTile({
     super.key,
     required this.item,
+    required this.isSelected,
+    required this.onSelectedChanged,
     required this.onRemove,
     required this.onIncrement,
     required this.onDecrement,
   });
 
   final CartItem item;
+  final bool isSelected;
+  final ValueChanged<bool?> onSelectedChanged;
   final VoidCallback onRemove;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
@@ -38,6 +42,12 @@ class CartItemTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Checkbox(
+            value: isSelected,
+            onChanged: onSelectedChanged,
+            activeColor: AppColors.primary,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
@@ -388,10 +398,12 @@ class CartCheckoutBar extends StatelessWidget {
     super.key,
     required this.total,
     required this.onCheckout,
+    this.checkoutEnabled = true,
   });
 
   final int total;
-  final VoidCallback onCheckout;
+  final VoidCallback? onCheckout;
+  final bool checkoutEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -410,10 +422,12 @@ class CartCheckoutBar extends StatelessWidget {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: onCheckout,
+                onPressed: checkoutEnabled ? onCheckout : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.textOnPrimary,
+                  disabledBackgroundColor:
+                      AppColors.primary.withValues(alpha: 0.35),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),

@@ -307,6 +307,30 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Подарки'**
   String get homeStoryGifts;
+
+  /// No description provided for @buyNow.
+  ///
+  /// In ru, this message translates to:
+  /// **'Купить'**
+  String get buyNow;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In ru, this message translates to:
+  /// **'Все'**
+  String get filterAll;
+
+  /// No description provided for @filterGold.
+  ///
+  /// In ru, this message translates to:
+  /// **'Золото'**
+  String get filterGold;
+
+  /// No description provided for @filterSilver.
+  ///
+  /// In ru, this message translates to:
+  /// **'Серебро'**
+  String get filterSilver;
 }
 
 class _AppLocalizationsDelegate

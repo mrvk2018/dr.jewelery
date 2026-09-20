@@ -111,4 +111,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeStoryGifts => 'Gifts';
+
+  @override
+  String get buyNow => 'Buy Now';
+
+  @override
+  String get filterAll => 'All';
+
+  @override
+  String get filterGold => 'Gold';
+
+  @override
+  String get filterSilver => 'Silver';
 }

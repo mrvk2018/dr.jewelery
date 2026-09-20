@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -19,6 +20,7 @@ class AdminSellersSection extends StatefulWidget {
 class _AdminSellersSectionState extends State<AdminSellersSection> {
   final _promoController = TextEditingController();
   final _nameController = TextEditingController();
+  final _buyerBonusController = TextEditingController(text: '0');
 
   List<SellerItem> _sellers = [];
   bool _loading = true;
@@ -82,12 +84,23 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
       return;
     }
 
+    final bonus = int.tryParse(_buyerBonusController.text.trim()) ?? 0;
+    if (bonus < 0) {
+      _showSnack('Бонус покупателю не может быть отрицательным', isError: true);
+      return;
+    }
+
     setState(() => _saving = true);
     try {
-      final item = SellerItem(promoCode: promo, name: name);
+      final item = SellerItem(
+        promoCode: promo,
+        name: name,
+        buyerBonusKrw: bonus,
+      );
       await widget.database.saveSeller(item, UserRole.admin);
       _promoController.clear();
       _nameController.clear();
+      _buyerBonusController.text = '0';
       await _reload();
       if (!mounted) return;
       _showSnack('Продавец сохранён');
@@ -151,6 +164,7 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
   void dispose() {
     _promoController.dispose();
     _nameController.dispose();
+    _buyerBonusController.dispose();
     super.dispose();
   }
 
@@ -193,6 +207,14 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
             controller: _nameController,
             enabled: !_saving,
             decoration: _fieldDecoration('Имя продавца / блогера'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _buyerBonusController,
+            enabled: !_saving,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: _fieldDecoration('Бонус покупателю (KRW)'),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -292,6 +314,14 @@ class _SellerRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(seller.name, style: AppTypography.productName()),
+                  if (seller.buyerBonusKrw > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Бонус покупателю: ${seller.buyerBonusKrw} KRW',
+                        style: AppTypography.productMeta().copyWith(fontSize: 12),
+                      ),
+                    ),
                   if (!seller.isActive)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),

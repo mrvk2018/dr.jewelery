@@ -24,16 +24,22 @@ class ProfileController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final session = await _database.loadProfileSession();
-      if (session != null) {
-        isAuthenticated = session['isAuthenticated'] as bool? ?? false;
-        user = UserProfile.fromJson(
-          Map<String, dynamic>.from(session['user'] as Map? ?? const {}),
-        );
-        if (!isAuthenticated || user.role == UserRole.admin) {
-          // Админ-роль не восстанавливаем с диска: только runtime-сессия.
-          isAuthenticated = false;
-          user = UserProfile.demoGuest;
+      final cloudUser = await _database.refreshCustomerProfileFromCloud();
+      if (cloudUser != null) {
+        isAuthenticated = true;
+        user = cloudUser;
+        await _persistSession();
+      } else {
+        final session = await _database.loadProfileSession();
+        if (session != null) {
+          isAuthenticated = session['isAuthenticated'] as bool? ?? false;
+          user = UserProfile.fromJson(
+            Map<String, dynamic>.from(session['user'] as Map? ?? const {}),
+          );
+          if (!isAuthenticated || user.role == UserRole.admin) {
+            isAuthenticated = false;
+            user = UserProfile.demoGuest;
+          }
         }
       }
 
@@ -42,7 +48,7 @@ class ProfileController extends ChangeNotifier {
         ..clear()
         ..addAll(stored);
 
-      if (_orders.isEmpty) {
+      if (_orders.isEmpty && isAuthenticated) {
         for (final order in demoProfileOrders) {
           await _database.createOrder(order);
           _orders.add(order);
@@ -54,18 +60,32 @@ class ProfileController extends ChangeNotifier {
     }
   }
 
-  void signInCustomer() {
-    isAuthenticated = true;
-    user = UserProfile.demoCustomer;
+  Future<void> signInCustomer() async {
+    try {
+      user = await _database.signInCustomerWithSupabase();
+      isAuthenticated = true;
+      notifyListeners();
+      await _persistSession();
+    } catch (error, stackTrace) {
+      debugPrint('ProfileController.signInCustomer failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  /// Обновляет баланс и реферал из Supabase (после checkout / RPC).
+  Future<void> refreshWalletFromCloud() async {
+    final refreshed = await _database.refreshCustomerProfileFromCloud();
+    if (refreshed == null) return;
+    user = refreshed;
     notifyListeners();
-    unawaited(_persistSession());
+    await _persistSession();
   }
 
   void signInAdmin() {
     isAuthenticated = true;
     user = UserProfile.demoAdmin;
     notifyListeners();
-    // First Claim: админ живёт только в текущей сессии, не пишем на диск.
   }
 
   Future<bool> isAdminDeviceClaimed() => _database.isAdminDeviceClaimed();
@@ -82,11 +102,12 @@ class ProfileController extends ChangeNotifier {
     return true;
   }
 
-  void logout() {
+  Future<void> logout() async {
+    await _database.signOutSupabaseAuth();
     isAuthenticated = false;
     user = UserProfile.demoGuest;
     notifyListeners();
-    unawaited(_persistSession());
+    await _persistSession();
   }
 
   void addOrder(OrderItem order) {

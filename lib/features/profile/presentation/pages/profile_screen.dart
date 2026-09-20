@@ -5,6 +5,7 @@ import '../../../../core/l10n/app_language.dart';
 import '../../../../core/services/admin_auth_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../admin/presentation/pages/admin_owner_init_page.dart';
@@ -26,18 +27,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _adminTapCount = 0;
   DateTime? _lastAdminTapAt;
 
-  void _signInWithGoogle() {
-    ProfileScope.of(context).signInCustomer();
+  Future<void> _signInWithGoogle() async {
+    try {
+      await ProfileScope.of(context).signInCustomer();
+      if (!mounted) return;
+      await CartScope.of(context).syncBonusBalanceFromProfile();
+    } catch (_) {
+      if (!mounted) return;
+      _showAdminSnack('Не удалось войти. Проверьте Supabase Auth (anonymous).');
+    }
   }
 
-  void _signInWithApple() {
-    ProfileScope.of(context).signInCustomer();
+  Future<void> _signInWithApple() async {
+    await _signInWithGoogle();
   }
 
-  void _logout() {
+  Future<void> _logout() async {
     _adminTapCount = 0;
     _lastAdminTapAt = null;
-    ProfileScope.of(context).logout();
+    await ProfileScope.of(context).logout();
+    if (!mounted) return;
+    await CartScope.of(context).syncBonusBalanceFromProfile();
   }
 
   /// Скрытый вход: 5 быстрых тапов по аватару / версии.

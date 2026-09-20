@@ -10,6 +10,7 @@ import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../shared/providers/cart_controller.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../domain/models/payment_models.dart';
@@ -24,11 +25,15 @@ class PaymentScreen extends StatefulWidget {
     required this.productsTotalKrw,
     required this.deliveryFeeKrw,
     required this.shippingAddress,
+    this.checkoutItems,
   });
 
   final int productsTotalKrw;
   final int deliveryFeeKrw;
   final ShippingAddress shippingAddress;
+
+  /// Линии заказа для резерва склада и уведомлений. `null` → вся корзина.
+  final List<CartItem>? checkoutItems;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -95,19 +100,26 @@ class _PaymentScreenState extends State<PaymentScreen> {
     );
   }
 
+  List<CartItem> get _checkoutLineItems {
+    if (widget.checkoutItems != null && widget.checkoutItems!.isNotEmpty) {
+      return widget.checkoutItems!;
+    }
+    return CartScope.of(context).items;
+  }
+
   /// Анти-дубль: MSSQL через Supabase RPC, затем `reserved` перед Toss.
   Future<bool> _verifySkladAndReserveCart() async {
-    final cart = CartScope.of(context);
     final database = CatalogScope.of(context).database;
-    if (cart.items.isEmpty) return true;
+    final items = _checkoutLineItems;
+    if (items.isEmpty) return false;
 
-    for (final item in cart.items) {
+    for (final item in items) {
       final available =
           await database.checkSkladAvailability(item.product.sku);
       if (!available) return false;
     }
 
-    for (final item in cart.items) {
+    for (final item in items) {
       final reserved =
           await database.reserveProductForCheckout(item.product.id);
       if (!reserved) return false;
@@ -119,9 +131,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _releaseReservedCart() async {
-    final cart = CartScope.of(context);
     final database = CatalogScope.of(context).database;
-    for (final item in cart.items) {
+    for (final item in _checkoutLineItems) {
       try {
         await database.releaseProductCheckout(item.product.id);
       } catch (error, stackTrace) {
@@ -254,11 +265,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       switch (webViewResult) {
         case TossPaymentWebViewResult.success:
           final cart = CartScope.of(context);
+          final purchased = _checkoutLineItems;
           await retailNotificationService.sendTelegramOrderNotification(
             orderId: orderId,
-            cartItems: cart.items,
+            cartItems: purchased,
             totalAmountKrw: total,
           );
+          for (final item in purchased) {
+            cart.removeItem(item.cartKey);
+          }
           if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
@@ -316,28 +331,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(
           tr(PaymentStringKeys.title),
           style: AppTypography.heading(fontSize: 22),
         ),
       ),
-      bottomNavigationBar: _PaymentBottomBar(
-        validationMessage: _validationMessage,
-        onConfirm: _confirmPayment,
-        bottomInset: bottomInset,
-        label: tr(PaymentStringKeys.confirmPay),
-        isBusy: _isConfirmingPayment,
-        isTermsAccepted: _isTermsAccepted,
-        onTermsAcceptedChanged: (value) {
-          setState(() => _isTermsAccepted = value ?? false);
-        },
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset),
+      body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -409,7 +419,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
               copyLabel: tr(PaymentStringKeys.copy),
               onCopy: _copyBankDetails,
             ),
-            const SizedBox(height: 100),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: _MerchantLegalDisclosure(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.38,
+              ),
+            ),
+            _PaymentBottomBar(
+              validationMessage: _validationMessage,
+              onConfirm: _confirmPayment,
+              bottomInset: bottomInset,
+              label: tr(PaymentStringKeys.confirmPay),
+              isBusy: _isConfirmingPayment,
+              isTermsAccepted: _isTermsAccepted,
+              onTermsAcceptedChanged: (value) {
+                setState(() => _isTermsAccepted = value ?? false);
+              },
+            ),
           ],
         ),
       ),
@@ -855,6 +885,73 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
+/// Корейский юридический блок (Toss) — всегда над кнопкой оплаты, не в [Scaffold.bottomNavigationBar].
+class _MerchantLegalDisclosure extends StatelessWidget {
+  const _MerchantLegalDisclosure({required this.maxHeight});
+
+  final double maxHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+          color: AppColors.textSecondary,
+          height: 1.45,
+        ) ??
+        AppTypography.productMeta().copyWith(fontSize: 12, height: 1.45);
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+        ) ??
+        AppTypography.caption(fontWeight: FontWeight.w700).copyWith(fontSize: 14);
+
+    return Material(
+      color: AppColors.cardBackground,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ExpansionTile(
+                initiallyExpanded: true,
+                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                title: Text(
+                  MerchantLegalInfo.businessInfoExpansionTitleKo,
+                  style: titleStyle,
+                ),
+                children: [
+                  Text(
+                    MerchantLegalInfo.businessInfoBodyKo,
+                    style: bodyStyle,
+                  ),
+                ],
+              ),
+              const Divider(height: 1, color: AppColors.border),
+              ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                title: Text(
+                  MerchantLegalInfo.refundPolicyExpansionTitleKo,
+                  style: titleStyle,
+                ),
+                children: [
+                  Text(
+                    MerchantLegalInfo.refundPolicyKo,
+                    style: bodyStyle,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PaymentBottomBar extends StatelessWidget {
   const _PaymentBottomBar({
     required this.validationMessage,
@@ -877,72 +974,17 @@ class _PaymentBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
-          color: AppColors.textSecondary,
-          height: 1.45,
-        ) ??
-        AppTypography.productMeta().copyWith(fontSize: 12, height: 1.45);
 
     return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottomInset),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomInset),
       decoration: const BoxDecoration(
         color: AppColors.background,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Material(
-              color: AppColors.cardBackground,
-              borderRadius: BorderRadius.circular(12),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    title: Text(
-                      MerchantLegalInfo.businessInfoExpansionTitleKo,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ) ??
-                          AppTypography.caption(fontWeight: FontWeight.w700)
-                              .copyWith(fontSize: 14),
-                    ),
-                    children: [
-                      Text(
-                        MerchantLegalInfo.businessInfoBodyKo,
-                        style: bodyStyle,
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 1, color: AppColors.border),
-                  ExpansionTile(
-                    tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-                    childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    title: Text(
-                      MerchantLegalInfo.refundPolicyExpansionTitleKo,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ) ??
-                          AppTypography.caption(fontWeight: FontWeight.w700)
-                              .copyWith(fontSize: 14),
-                    ),
-                    children: [
-                      Text(
-                        MerchantLegalInfo.refundPolicyKo,
-                        style: bodyStyle,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             CheckboxListTile(
               value: isTermsAccepted,
               onChanged: onTermsAcceptedChanged,
@@ -1020,7 +1062,6 @@ class _PaymentBottomBar extends StatelessWidget {
               ),
             ),
           ],
-        ),
       ),
     );
   }

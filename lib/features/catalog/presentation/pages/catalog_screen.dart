@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
@@ -95,7 +96,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(
-                      'Каталог',
+                      context.l10n.catalog,
                       style: AppTypography.heading(fontSize: 24),
                     ),
                   ),

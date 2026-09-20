@@ -39,7 +39,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get support => '고객센터';
 
   @override
-  String get addToCart => '장바구니에 담기';
+  String get addToCart => '장바구니 담기';
 
   @override
   String get outOfStock => '품절';
@@ -109,4 +109,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get homeStoryGifts => '선물 추천';
+
+  @override
+  String get buyNow => '바로 구매';
+
+  @override
+  String get filterAll => '전체';
+
+  @override
+  String get filterGold => '골드';
+
+  @override
+  String get filterSilver => '실버';
 }

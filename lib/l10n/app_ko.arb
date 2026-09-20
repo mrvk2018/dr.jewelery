@@ -10,7 +10,7 @@
   "favoritesEmptySubtitle": "상품 카드의 하트를 누르면 여기에 표시됩니다",
   "profile": "프로필",
   "support": "고객센터",
-  "addToCart": "장바구니에 담기",
+  "addToCart": "장바구니 담기",
   "outOfStock": "품절",
   "continueOnboarding": "계속",
   "translateAllLanguages": "모든 언어로 번역 (AI)",
@@ -33,5 +33,9 @@
   "homeStoryNew": "신상품",
   "homeStoryEarrings": "귀걸이",
   "homeStoryChains": "체인 목걸이",
-  "homeStoryGifts": "선물 추천"
+  "homeStoryGifts": "선물 추천",
+  "buyNow": "바로 구매",
+  "filterAll": "전체",
+  "filterGold": "골드",
+  "filterSilver": "실버"
 }

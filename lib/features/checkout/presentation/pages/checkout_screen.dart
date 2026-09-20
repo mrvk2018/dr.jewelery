@@ -8,6 +8,10 @@ import '../../../../core/services/korean_address_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../shared/providers/cart_controller.dart';
+import '../../../../shared/providers/cart_scope.dart';
+import '../../../../shared/providers/catalog_scope.dart';
+import '../../../../shared/providers/profile_scope.dart';
 import '../../domain/models/delivery_method.dart';
 import '../../domain/models/shipping_address.dart';
 
@@ -16,9 +20,13 @@ class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({
     super.key,
     required this.productsTotal,
+    this.checkoutItems,
   });
 
   final int productsTotal;
+
+  /// Позиции этого заказа. Если `null` — на оплате используется вся корзина.
+  final List<CartItem>? checkoutItems;
 
   @override
   State<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -30,10 +38,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   final TextEditingController _detailAddressController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _sellerPromoController = TextEditingController();
 
   DeliveryMethod _deliveryMethod = DeliveryMethod.courier;
   bool _isSearchingAddress = false;
+  bool _isApplyingSellerPromo = false;
   String? _validationMessage;
+  String? _sellerPromoInfoMessage;
+  int _referralDiscountKrw = 0;
 
   String tr(String key) => checkoutTr(key, context.langCode);
 
@@ -46,7 +58,77 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _detailAddressController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
+    _sellerPromoController.dispose();
     super.dispose();
+  }
+
+  int get _payableProductsTotal {
+    final discounted = widget.productsTotal - _referralDiscountKrw;
+    return discounted < 0 ? 0 : discounted;
+  }
+
+  Future<void> _applySellerPromo() async {
+    final profile = ProfileScope.of(context);
+    if (!profile.isAuthenticated) {
+      setState(() {
+        _sellerPromoInfoMessage =
+            'Войдите в профиль, чтобы применить промокод продавца.';
+        _referralDiscountKrw = 0;
+      });
+      return;
+    }
+
+    final code = _sellerPromoController.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _sellerPromoInfoMessage = 'Введите промокод продавца.';
+        _referralDiscountKrw = 0;
+      });
+      return;
+    }
+
+    setState(() {
+      _isApplyingSellerPromo = true;
+      _sellerPromoInfoMessage = null;
+    });
+
+    try {
+      final database = CatalogScope.of(context).database;
+      final result = await database.applySellerReferralPromo(code);
+      if (!mounted) return;
+
+      if (!result.ok) {
+        setState(() {
+          _referralDiscountKrw = 0;
+          _sellerPromoInfoMessage = switch (result.errorCode) {
+            'not_authenticated' => 'Войдите в профиль для применения промокода.',
+            'invalid_code' => 'Промокод не найден или неактивен.',
+            _ => 'Не удалось применить промокод. Попробуйте позже.',
+          };
+        });
+        return;
+      }
+
+      if (result.alreadyReferred) {
+        setState(() {
+          _referralDiscountKrw = 0;
+          _sellerPromoInfoMessage = result.message ??
+              'Промокод применен для привязки к продавцу, но приветственный бонус уже был получен вами ранее';
+        });
+        await profile.refreshWalletFromCloud();
+        return;
+      }
+
+      setState(() {
+        _referralDiscountKrw = result.discountKrw;
+        _sellerPromoInfoMessage = result.discountKrw > 0
+            ? 'Промокод продавца применён.'
+            : 'Промокод продавца привязан к профилю.';
+      });
+      await profile.refreshWalletFromCloud();
+    } finally {
+      if (mounted) setState(() => _isApplyingSellerPromo = false);
+    }
   }
 
   Future<void> _searchAddress() async {
@@ -107,20 +189,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     setState(() => _validationMessage = null);
     final shipping = _collectShippingAddress();
+    final lineItems = _resolvedCheckoutItems();
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PaymentScreen(
-          productsTotalKrw: widget.productsTotal,
+          productsTotalKrw: _payableProductsTotal,
           deliveryFeeKrw: _deliveryFee,
           shippingAddress: shipping,
+          checkoutItems: lineItems,
         ),
       ),
     );
   }
 
+  List<CartItem> _resolvedCheckoutItems() {
+    if (widget.checkoutItems != null && widget.checkoutItems!.isNotEmpty) {
+      return List<CartItem>.from(widget.checkoutItems!);
+    }
+    return List<CartItem>.from(CartScope.of(context).items);
+  }
+
   String get _orderButtonLabel {
     final base = tr(CheckoutStringKeys.placeOrder);
-    final productsTotal = formatWon(widget.productsTotal);
+    final productsTotal = formatWon(_payableProductsTotal);
     if (_deliveryFee > 0) {
       return '$base · $productsTotal + ${formatWon(_deliveryFee)}';
     }
@@ -308,12 +399,103 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             const SizedBox(height: 16),
             _CheckoutSection(
+              title: 'Промокод продавца',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _CheckoutTextField(
+                          controller: _sellerPromoController,
+                          hint: 'Код продавца / блогера',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed:
+                              _isApplyingSellerPromo ? null : _applySellerPromo,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.textOnPrimary,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: _isApplyingSellerPromo
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.textOnPrimary,
+                                  ),
+                                )
+                              : const Text('Применить'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_sellerPromoInfoMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      _sellerPromoInfoMessage!,
+                      style: AppTypography.productMeta().copyWith(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            _CheckoutSection(
               title: tr(CheckoutStringKeys.orderSummary),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  ..._resolvedCheckoutItems().map(
+                    (item) {
+                      final lang = context.langCode;
+                      final name = item.product.nameTranslations[lang] ??
+                          item.product.nameTranslations['ru'] ??
+                          item.product.sku;
+                      final qtyLabel =
+                          item.quantity > 1 ? ' ×${item.quantity}' : '';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          '• $name$qtyLabel · ${formatWon(item.lineTotal)}',
+                          style: AppTypography.productMeta().copyWith(
+                            fontSize: 13,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
                   _SummaryRow(
                     label: tr(CheckoutStringKeys.productsTotal),
                     value: formatWon(widget.productsTotal),
+                  ),
+                  if (_referralDiscountKrw > 0) ...[
+                    const SizedBox(height: 8),
+                    _SummaryRow(
+                      label: 'Реферальный бонус',
+                      value: '- ${formatWon(_referralDiscountKrw)}',
+                      valueColor: AppColors.accent,
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  _SummaryRow(
+                    label: 'К оплате (товары)',
+                    value: formatWon(_payableProductsTotal),
+                    valueColor: AppColors.textPrimary,
                   ),
                   const SizedBox(height: 8),
                   _SummaryRow(

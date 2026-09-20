@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../checkout/presentation/pages/checkout_screen.dart';
 import '../../../../core/extensions/context_extensions.dart';
+import '../../../../shared/providers/cart_controller.dart';
 import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -42,14 +44,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
   }
 
-  void _addToCart() {
-    if (product.isOutOfStock) return;
+  bool _ensureCanPurchase() {
+    if (product.isOutOfStock) return false;
     if (_requiresSize && _selectedSize == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Выберите размер изделия')),
       );
-      return;
+      return false;
     }
+    return true;
+  }
+
+  void _addToCart() {
+    if (!_ensureCanPurchase()) return;
 
     CartScope.of(context).addProduct(
       product: product,
@@ -69,6 +76,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     );
   }
 
+  void _buyNow() {
+    if (!_ensureCanPurchase()) return;
+
+    final buyNowLine = CartItem(
+      product: product,
+      selectedSize: _selectedSize,
+      quantity: 1,
+    );
+
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CheckoutScreen(
+          productsTotal: buyNowLine.lineTotal,
+          checkoutItems: [buyNowLine],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final languageCode = context.langCode;
@@ -81,9 +107,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           style: AppTypography.heading(fontSize: 18),
         ),
       ),
-      bottomNavigationBar: _AddToCartBar(
-        onPressed: product.isOutOfStock ? null : _addToCart,
+      bottomNavigationBar: _ProductActionBar(
         isOutOfStock: product.isOutOfStock,
+        onAddToCart: product.isOutOfStock ? null : _addToCart,
+        onBuyNow: product.isOutOfStock ? null : _buyNow,
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -302,17 +329,21 @@ class _SpecRow extends StatelessWidget {
   }
 }
 
-class _AddToCartBar extends StatelessWidget {
-  const _AddToCartBar({
-    required this.onPressed,
+class _ProductActionBar extends StatelessWidget {
+  const _ProductActionBar({
     required this.isOutOfStock,
+    required this.onAddToCart,
+    required this.onBuyNow,
   });
 
-  final VoidCallback? onPressed;
   final bool isOutOfStock;
+  final VoidCallback? onAddToCart;
+  final VoidCallback? onBuyNow;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -321,28 +352,59 @@ class _AddToCartBar extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 48,
-          width: double.infinity,
-          child: isOutOfStock
-              ? const OutOfStockPlaque(height: 48)
-              : ElevatedButton(
-                  onPressed: onPressed,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textOnPrimary,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+        child: isOutOfStock
+            ? const SizedBox(
+                height: 48,
+                width: double.infinity,
+                child: OutOfStockPlaque(height: 48),
+              )
+            : Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: onAddToCart,
+                        icon: const Icon(Icons.shopping_bag_outlined, size: 20),
+                        label: Text(l10n.addToCart),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: AppTypography.caption(
+                            fontWeight: FontWeight.w700,
+                          ).copyWith(fontSize: 14),
+                        ),
+                      ),
                     ),
-                    textStyle: AppTypography.caption(
-                      color: AppColors.textOnPrimary,
-                      fontWeight: FontWeight.w700,
-                    ).copyWith(fontSize: 15),
                   ),
-                  child: const Text('Добавить в корзину'),
-                ),
-        ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: onBuyNow,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: AppColors.textOnAccent,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          textStyle: AppTypography.caption(
+                            color: AppColors.textOnAccent,
+                            fontWeight: FontWeight.w700,
+                          ).copyWith(fontSize: 15),
+                        ),
+                        child: Text(l10n.buyNow),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

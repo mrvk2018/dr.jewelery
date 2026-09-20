@@ -43,7 +43,7 @@ class CartItem {
 
 /// Глобальное состояние корзины с автосохранением в локальную базу.
 class CartController extends ChangeNotifier {
-  CartController(this._database, {this.availableBonuses = 85000});
+  CartController(this._database, {this.availableBonuses = 0});
 
   final DatabaseService _database;
   final List<CartItem> _items = [];
@@ -62,7 +62,20 @@ class CartController extends ChangeNotifier {
 
   int get discountTotal => subtotal - saleSubtotal;
 
-  int get promoDiscount {
+  int get promoDiscount => promoDiscountForSubtotal(saleSubtotal);
+
+  int get maxBonusDeduction => (saleSubtotal * 0.3).round();
+
+  int get bonusDeduction => bonusDeductionForSubtotal(saleSubtotal);
+
+  int get total {
+    return checkoutTotalFor(_items);
+  }
+
+  int saleSubtotalFor(Iterable<CartItem> items) =>
+      items.fold(0, (sum, item) => sum + item.lineTotal);
+
+  int promoDiscountForSubtotal(int saleSubtotal) {
     final code = promoCode.trim().toUpperCase();
     if (code.isEmpty) return 0;
     if (code == 'DRJEWELRY' || code == 'VIP') {
@@ -71,17 +84,21 @@ class CartController extends ChangeNotifier {
     return 0;
   }
 
-  int get maxBonusDeduction => (saleSubtotal * 0.3).round();
-
-  int get bonusDeduction {
+  int bonusDeductionForSubtotal(int saleSubtotal) {
     if (!useBonuses) return 0;
-    return availableBonuses < maxBonusDeduction
-        ? availableBonuses
-        : maxBonusDeduction;
+    final cap = (saleSubtotal * 0.3).round();
+    final maxDeduct = availableBonuses < cap ? availableBonuses : cap;
+    return maxDeduct;
   }
 
-  int get total {
-    final result = saleSubtotal - promoDiscount - bonusDeduction;
+  /// Итог к оплате для выбранных позиций (Coupang-style checkout).
+  int checkoutTotalFor(Iterable<CartItem> items) {
+    final list = items.toList();
+    if (list.isEmpty) return 0;
+    final sale = saleSubtotalFor(list);
+    final promo = promoDiscountForSubtotal(sale);
+    final bonus = bonusDeductionForSubtotal(sale);
+    final result = sale - promo - bonus;
     return result < 0 ? 0 : result;
   }
 
@@ -101,7 +118,13 @@ class CartController extends ChangeNotifier {
       );
     promoCode = snapshot['promoCode'] as String? ?? '';
     useBonuses = snapshot['useBonuses'] as bool? ?? false;
-    availableBonuses = snapshot['availableBonuses'] as int? ?? availableBonuses;
+    final authUserId = await _database.currentAuthUserId();
+    if (authUserId != null) {
+      availableBonuses = await _database.fetchBonusBalanceForCurrentUser();
+    } else {
+      availableBonuses =
+          snapshot['availableBonuses'] as int? ?? availableBonuses;
+    }
     notifyListeners();
   }
 
@@ -171,6 +194,19 @@ class CartController extends ChangeNotifier {
   void setAvailableBonuses(int value) {
     availableBonuses = value;
     _notifyAndPersist();
+  }
+
+  /// Синхронизация лимита списания с `profiles.bonus_balance`.
+  Future<void> syncBonusBalanceFromProfile() async {
+    final authUserId = await _database.currentAuthUserId();
+    if (authUserId == null) {
+      availableBonuses = 0;
+      useBonuses = false;
+    } else {
+      availableBonuses = await _database.fetchBonusBalanceForCurrentUser();
+    }
+    notifyListeners();
+    await _persist();
   }
 
   void clear() {

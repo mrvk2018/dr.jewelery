@@ -207,7 +207,7 @@ class _ProductCardState extends State<ProductCard> {
                                   ),
                                   textStyle: AppTypography.productCartButton,
                                 ),
-                                child: const Text('В корзину'),
+                                child: Text(context.l10n.addToCart),
                               ),
                       ),
                     ],

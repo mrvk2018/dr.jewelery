@@ -14,6 +14,7 @@ class UserProfile {
     required this.bonusBalance,
     required this.role,
     required this.loyaltyCardNumber,
+    this.referredBySeller,
   });
 
   final String id;
@@ -22,6 +23,7 @@ class UserProfile {
   final int bonusBalance;
   final UserRole role;
   final String loyaltyCardNumber;
+  final String? referredBySeller;
 
   bool get isAdmin => role == UserRole.admin;
 
@@ -32,6 +34,7 @@ class UserProfile {
         'bonusBalance': bonusBalance,
         'role': role.name,
         'loyaltyCardNumber': loyaltyCardNumber,
+        'referredBySeller': referredBySeller,
       };
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -47,6 +50,27 @@ class UserProfile {
         orElse: () => UserRole.guest,
       ),
       loyaltyCardNumber: json['loyaltyCardNumber'] as String? ?? '',
+      referredBySeller: json['referredBySeller'] as String?,
+    );
+  }
+
+  UserProfile copyWith({
+    String? id,
+    String? name,
+    String? email,
+    int? bonusBalance,
+    UserRole? role,
+    String? loyaltyCardNumber,
+    String? referredBySeller,
+  }) {
+    return UserProfile(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      bonusBalance: bonusBalance ?? this.bonusBalance,
+      role: role ?? this.role,
+      loyaltyCardNumber: loyaltyCardNumber ?? this.loyaltyCardNumber,
+      referredBySeller: referredBySeller ?? this.referredBySeller,
     );
   }
 
@@ -63,7 +87,7 @@ class UserProfile {
     id: 'user-001',
     name: 'Анна Иванова',
     email: 'anna.ivanova@example.com',
-    bonusBalance: 85000,
+    bonusBalance: 0,
     role: UserRole.customer,
     loyaltyCardNumber: 'DJ-8842-9011',
   );

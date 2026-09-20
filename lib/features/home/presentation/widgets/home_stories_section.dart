@@ -38,7 +38,7 @@ class HomeStoriesSection extends StatelessWidget {
     return [
       story(
         filterKey: 'all',
-        title: 'Все',
+        title: l10n.filterAll,
         icon: Icons.grid_view_rounded,
       ),
       story(
@@ -73,12 +73,12 @@ class HomeStoriesSection extends StatelessWidget {
       ),
       story(
         filterKey: 'gold',
-        title: 'Золото',
+        title: l10n.filterGold,
         icon: Icons.brightness_high_outlined,
       ),
       story(
         filterKey: 'silver',
-        title: 'Серебро',
+        title: l10n.filterSilver,
         icon: Icons.tonality_outlined,
       ),
     ];

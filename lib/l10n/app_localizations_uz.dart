@@ -111,4 +111,16 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get homeStoryGifts => 'Sog\'liqlar';
+
+  @override
+  String get buyNow => 'Sotib olish';
+
+  @override
+  String get filterAll => 'Hammasi';
+
+  @override
+  String get filterGold => 'Oltin';
+
+  @override
+  String get filterSilver => 'Kumush';
 }

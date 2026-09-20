@@ -64,10 +64,13 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
     await Future.wait<void>([
       catalogController.load(),
       feedbackController.load(),
-      cartController.load(),
       favoritesController.load(),
       profileController.load(),
     ]);
+    await cartController.load();
+    if (profileController.isAuthenticated) {
+      await cartController.syncBonusBalanceFromProfile();
+    }
     if (!mounted) return;
     setState(() {
       _storage = storage;

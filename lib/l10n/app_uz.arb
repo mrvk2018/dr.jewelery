@@ -33,5 +33,9 @@
   "homeStoryNew": "Yyangiliklar",
   "homeStoryEarrings": "Sirg'alar",
   "homeStoryChains": "Zanjirlar",
-  "homeStoryGifts": "Sog'liqlar"
+  "homeStoryGifts": "Sog'liqlar",
+  "buyNow": "Sotib olish",
+  "filterAll": "Hammasi",
+  "filterGold": "Oltin",
+  "filterSilver": "Kumush"
 }

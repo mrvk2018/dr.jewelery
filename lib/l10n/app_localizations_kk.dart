@@ -111,4 +111,16 @@ class AppLocalizationsKk extends AppLocalizations {
 
   @override
   String get homeStoryGifts => 'Сыйлықтар';
+
+  @override
+  String get buyNow => 'Сатып алу';
+
+  @override
+  String get filterAll => 'Барлығы';
+
+  @override
+  String get filterGold => 'Алтын';
+
+  @override
+  String get filterSilver => 'Күміс';
 }

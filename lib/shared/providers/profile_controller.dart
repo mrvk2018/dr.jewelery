@@ -39,6 +39,11 @@ class ProfileController extends ChangeNotifier {
           if (!isAuthenticated || user.role == UserRole.admin) {
             isAuthenticated = false;
             user = UserProfile.demoGuest;
+          } else if (user.role == UserRole.customer) {
+            final refreshed = await _database.refreshCustomerProfileFromCloud();
+            if (refreshed != null) {
+              user = refreshed;
+            }
           }
         }
       }

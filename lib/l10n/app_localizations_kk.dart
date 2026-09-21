@@ -123,4 +123,34 @@ class AppLocalizationsKk extends AppLocalizations {
 
   @override
   String get filterSilver => 'Күміс';
+
+  @override
+  String get productAddedToCart => 'Тауар себетке қосылды';
+
+  @override
+  String productWeightGrams(String weight) {
+    return '$weight г';
+  }
+
+  @override
+  String get homeCollectionsComingSoon => 'Жаңа коллекциялар жақында';
+
+  @override
+  String get exitAppDialogTitle => 'Қосымшadan шығу керек пе?';
+
+  @override
+  String get exitAppDialogMessage => 'Шынымен шығыңыз келе ме?';
+
+  @override
+  String get exitAppConfirm => 'Иә';
+
+  @override
+  String get exitAppCancel => 'Жоқ';
+
+  @override
+  String get cartBonusLimitHint =>
+      'Бонустармен тапсырыс сомасының 15%-ға дейін төлеуге болады';
+
+  @override
+  String get cartBonusDiscountLabel => 'Бонус жеңілдігі';
 }

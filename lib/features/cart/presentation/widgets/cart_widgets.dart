@@ -246,6 +246,15 @@ class CartLoyaltySection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          Text(
+            context.l10n.cartBonusLimitHint,
+            style: AppTypography.productMeta().copyWith(
+              fontSize: 12,
+              height: 1.35,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -259,7 +268,7 @@ class CartLoyaltySection extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Доступно: $availableBonuses бонусов',
+                      'Доступно: ${formatWon(availableBonuses)}',
                       style: AppTypography.productMeta(),
                     ),
                   ],
@@ -273,13 +282,16 @@ class CartLoyaltySection extends StatelessWidget {
               ),
             ],
           ),
-          if (useBonuses && bonusDeduction > 0)
+          if (useBonuses)
             Padding(
-              padding: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.only(top: 12),
               child: Text(
-                'Будет списано: $bonusDeduction бонусов',
-                style: AppTypography.caption(color: AppColors.accent)
-                    .copyWith(fontSize: 12),
+                '${context.l10n.cartBonusDiscountLabel}: - ${formatWon(bonusDeduction)}',
+                style: AppTypography.price(
+                  fontSize: 18,
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
         ],
@@ -439,12 +451,6 @@ class CartCheckoutBar extends StatelessWidget {
                 ),
                 child: const Text('Перейти к оплате'),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Доступна рассрочка: Яндекс Сплит и Долями',
-              textAlign: TextAlign.center,
-              style: AppTypography.productMeta().copyWith(fontSize: 11),
             ),
           ],
         ),

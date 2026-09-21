@@ -121,4 +121,33 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get filterSilver => '실버';
+
+  @override
+  String get productAddedToCart => '장바구니에 담았습니다';
+
+  @override
+  String productWeightGrams(String weight) {
+    return '${weight}g';
+  }
+
+  @override
+  String get homeCollectionsComingSoon => '새로운 컬렉션이 곧 공개됩니다';
+
+  @override
+  String get exitAppDialogTitle => '앱을 종료하시겠습니까?';
+
+  @override
+  String get exitAppDialogMessage => '정말 종료하시겠습니까?';
+
+  @override
+  String get exitAppConfirm => '예';
+
+  @override
+  String get exitAppCancel => '아니요';
+
+  @override
+  String get cartBonusLimitHint => '보너스로 상품 금액의 최대 15%까지 결제할 수 있습니다';
+
+  @override
+  String get cartBonusDiscountLabel => '보너스 할인';
 }

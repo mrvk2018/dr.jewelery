@@ -828,6 +828,22 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static List<dynamic> _parseAvailableSizesField(Object? raw) {
+    if (raw == null) return const <dynamic>[];
+    if (raw is List) return raw;
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return const <dynamic>[];
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is List) return decoded;
+      } catch (_) {
+        return const <dynamic>[];
+      }
+    }
+    return const <dynamic>[];
+  }
+
   /// Строка Supabase (snake_case) → JSON для [ProductItem.fromJson].
   ///
   /// Складской sync часто оставляет [metal], [insert], [category] пустыми — без
@@ -851,9 +867,7 @@ class CloudDatabaseService implements DatabaseService {
       'category': (row['category'] as String?)?.trim() ?? '',
       'insert': (row['insert'] as String?)?.trim() ?? '',
       'iconIndex': (row['icon_index'] as num?)?.toInt() ?? 0,
-      'availableSizes': row['available_sizes'] is List
-          ? row['available_sizes']
-          : const <dynamic>[],
+      'availableSizes': _parseAvailableSizesField(row['available_sizes']),
       'imageUrl': row['image_url'] as String?,
       'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
     };

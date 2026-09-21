@@ -331,6 +331,60 @@ abstract class AppLocalizations {
   /// In ru, this message translates to:
   /// **'Серебро'**
   String get filterSilver;
+
+  /// No description provided for @productAddedToCart.
+  ///
+  /// In ru, this message translates to:
+  /// **'Товар добавлен в корзину'**
+  String get productAddedToCart;
+
+  /// No description provided for @productWeightGrams.
+  ///
+  /// In ru, this message translates to:
+  /// **'{weight} г'**
+  String productWeightGrams(String weight);
+
+  /// No description provided for @homeCollectionsComingSoon.
+  ///
+  /// In ru, this message translates to:
+  /// **'Скоро появятся новые коллекции'**
+  String get homeCollectionsComingSoon;
+
+  /// No description provided for @exitAppDialogTitle.
+  ///
+  /// In ru, this message translates to:
+  /// **'Выйти из приложения?'**
+  String get exitAppDialogTitle;
+
+  /// No description provided for @exitAppDialogMessage.
+  ///
+  /// In ru, this message translates to:
+  /// **'Вы действительно хотите выйти?'**
+  String get exitAppDialogMessage;
+
+  /// No description provided for @exitAppConfirm.
+  ///
+  /// In ru, this message translates to:
+  /// **'Да'**
+  String get exitAppConfirm;
+
+  /// No description provided for @exitAppCancel.
+  ///
+  /// In ru, this message translates to:
+  /// **'Нет'**
+  String get exitAppCancel;
+
+  /// No description provided for @cartBonusLimitHint.
+  ///
+  /// In ru, this message translates to:
+  /// **'Бонусами можно оплатить до 15% от стоимости товаров заказа'**
+  String get cartBonusLimitHint;
+
+  /// No description provided for @cartBonusDiscountLabel.
+  ///
+  /// In ru, this message translates to:
+  /// **'Скидка за бонусы'**
+  String get cartBonusDiscountLabel;
 }
 
 class _AppLocalizationsDelegate

@@ -122,6 +122,27 @@ const catalogDescriptionTranslations = <String, Map<String, String>>{
 
 /// Металл, категория, вставка — целые строки, не склейка.
 const catalogAttributeTranslations = <String, Map<String, String>>{
+  'Кольцо': {
+    AppLocaleCodes.ru: 'Кольцо',
+    AppLocaleCodes.kk: 'Жүзік',
+    AppLocaleCodes.ko: '반지',
+    AppLocaleCodes.en: 'Ring',
+    AppLocaleCodes.uz: 'Uzuk',
+  },
+  'Золото(585)': {
+    AppLocaleCodes.ru: 'Золото(585)',
+    AppLocaleCodes.kk: 'Алтын(585)',
+    AppLocaleCodes.ko: '금(585)',
+    AppLocaleCodes.en: 'Gold(585)',
+    AppLocaleCodes.uz: 'Oltin(585)',
+  },
+  'Фианит': {
+    AppLocaleCodes.ru: 'Фианит',
+    AppLocaleCodes.kk: 'Фианит',
+    AppLocaleCodes.ko: '큐빅 지르코니아',
+    AppLocaleCodes.en: 'Cubic Zirconia',
+    AppLocaleCodes.uz: 'Fianit',
+  },
   'Кольца': {
     AppLocaleCodes.ru: 'Кольца',
     AppLocaleCodes.kk: 'Сақиналар',

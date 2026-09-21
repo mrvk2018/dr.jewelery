@@ -58,43 +58,63 @@ class _AdminMarketingSectionState extends State<AdminMarketingSection> {
     }
   }
 
-  Future<void> _save() async {
+  AppMarketingSettings _settingsFromForm() {
     final amount = int.tryParse(_amountController.text.trim()) ?? 0;
+    return AppMarketingSettings(
+      welcomeBonusEnabled: _enabled,
+      welcomeBonusAmountKrw: amount < 0 ? 0 : amount,
+    );
+  }
+
+  Future<bool> _persistToSupabase({bool showSuccessSnack = true}) async {
     setState(() => _saving = true);
     try {
       await widget.database.saveAppMarketingSettings(
-        AppMarketingSettings(
-          welcomeBonusEnabled: _enabled,
-          welcomeBonusAmountKrw: amount < 0 ? 0 : amount,
-        ),
+        _settingsFromForm(),
         UserRole.admin,
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Настройки маркетинга сохранены',
-            style: AppTypography.caption(
-              color: AppColors.textOnPrimary,
-              fontWeight: FontWeight.w600,
-            ).copyWith(fontSize: 14),
+      if (!mounted) return true;
+      if (showSuccessSnack) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Настройки маркетинга сохранены',
+              style: AppTypography.caption(
+                color: AppColors.textOnPrimary,
+                fontWeight: FontWeight.w600,
+              ).copyWith(fontSize: 14),
+            ),
+            backgroundColor: AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
           ),
-          backgroundColor: AppColors.primary,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-        ),
-      );
+        );
+      }
+      return true;
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Ошибка: $error'),
           backgroundColor: AppColors.saleRed,
         ),
       );
+      return false;
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _save() => _persistToSupabase();
+
+  Future<void> _onWelcomeToggleChanged(bool value) async {
+    final previous = _enabled;
+    setState(() => _enabled = value);
+    final ok = await _persistToSupabase(showSuccessSnack: false);
+    if (!ok && mounted) {
+      setState(() => _enabled = previous);
     }
   }
 
@@ -141,7 +161,7 @@ class _AdminMarketingSectionState extends State<AdminMarketingSection> {
             ),
             value: _enabled,
             activeThumbColor: AppColors.accent,
-            onChanged: _saving ? null : (value) => setState(() => _enabled = value),
+            onChanged: _saving ? null : _onWelcomeToggleChanged,
           ),
           const SizedBox(height: 16),
           TextField(

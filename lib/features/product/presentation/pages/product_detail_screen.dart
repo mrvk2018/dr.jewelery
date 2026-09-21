@@ -11,7 +11,6 @@ import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../widgets/product_gallery.dart';
-import '../widgets/product_installment_banner.dart';
 import '../widgets/product_size_selector.dart';
 
 /// Детальная карточка ювелирного изделия.
@@ -141,8 +140,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   const SizedBox(height: 16),
                   _DetailPriceRow(
                     salePrice: product.salePrice,
-                    oldPrice: product.oldPrice,
-                    discountPercent: product.discountPercent,
+                    displayOldPrice: displayOldPriceForProduct(product),
+                    discountPercent:
+                        displayDiscountPercentForProduct(product),
                   ),
                   const SizedBox(height: 20),
                   ProductSizeSelector(
@@ -160,8 +160,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     },
                   ),
                   if (_sizes.isNotEmpty) const SizedBox(height: 20),
-                  ProductInstallmentBanner(product: product),
-                  const SizedBox(height: 20),
                   Text(
                     LocalizedText.productDetail(
                       'description',
@@ -249,12 +247,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 class _DetailPriceRow extends StatelessWidget {
   const _DetailPriceRow({
     required this.salePrice,
-    required this.oldPrice,
+    required this.displayOldPrice,
     required this.discountPercent,
   });
 
   final int salePrice;
-  final int oldPrice;
+  final int displayOldPrice;
   final int discountPercent;
 
   @override
@@ -262,39 +260,51 @@ class _DetailPriceRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(
-          formatWon(salePrice),
-          style: AppTypography.price(
-            fontSize: 28,
-            color: AppColors.saleRed,
-            fontWeight: FontWeight.w700,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                formatWon(displayOldPrice),
+                style: AppTypography.price(
+                  fontSize: 16,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w400,
+                  decoration: TextDecoration.lineThrough,
+                ),
+              ),
+              const SizedBox(height: 4),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  formatWon(salePrice),
+                  style: AppTypography.price(
+                    fontSize: 28,
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 10),
-        Text(
-          formatWon(oldPrice),
-          style: AppTypography.price(
-            fontSize: 16,
-            color: AppColors.textSecondary,
-            fontWeight: FontWeight.w400,
-            decoration: TextDecoration.lineThrough,
+        if (discountPercent > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.saleBadge,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '-$discountPercent%',
+              style: AppTypography.caption(
+                color: AppColors.textOnPrimary,
+                fontWeight: FontWeight.w700,
+              ).copyWith(fontSize: 12),
+            ),
           ),
-        ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppColors.saleBadge,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text(
-            '-$discountPercent%',
-            style: AppTypography.caption(
-              color: AppColors.textOnPrimary,
-              fontWeight: FontWeight.w700,
-            ).copyWith(fontSize: 12),
-          ),
-        ),
       ],
     );
   }
@@ -361,28 +371,32 @@ class _ProductActionBar extends StatelessWidget {
             : Row(
                 children: [
                   Expanded(
+                    flex: 1,
                     child: SizedBox(
                       height: 48,
-                      child: OutlinedButton.icon(
+                      child: OutlinedButton(
                         onPressed: onAddToCart,
-                        icon: const Icon(Icons.shopping_bag_outlined, size: 20),
-                        label: Text(l10n.addToCart),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.primary,
                           side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                           textStyle: AppTypography.caption(
                             fontWeight: FontWeight.w700,
-                          ).copyWith(fontSize: 14),
+                          ).copyWith(fontSize: 13),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(l10n.addToCart),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
+                    flex: 1,
                     child: SizedBox(
                       height: 48,
                       child: ElevatedButton(
@@ -391,15 +405,19 @@ class _ProductActionBar extends StatelessWidget {
                           backgroundColor: AppColors.accent,
                           foregroundColor: AppColors.textOnAccent,
                           elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                           textStyle: AppTypography.caption(
                             color: AppColors.textOnAccent,
                             fontWeight: FontWeight.w700,
-                          ).copyWith(fontSize: 15),
+                          ).copyWith(fontSize: 13),
                         ),
-                        child: Text(l10n.buyNow),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(l10n.buyNow),
+                        ),
                       ),
                     ),
                   ),

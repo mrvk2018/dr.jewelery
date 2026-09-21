@@ -43,6 +43,9 @@ class CartItem {
 
 /// Глобальное состояние корзины с автосохранением в локальную базу.
 class CartController extends ChangeNotifier {
+  /// Максимальная доля суммы товаров, которую можно оплатить бонусами.
+  static const bonusCheckoutMaxFraction = 0.15;
+
   CartController(this._database, {this.availableBonuses = 0});
 
   final DatabaseService _database;
@@ -64,7 +67,8 @@ class CartController extends ChangeNotifier {
 
   int get promoDiscount => promoDiscountForSubtotal(saleSubtotal);
 
-  int get maxBonusDeduction => (saleSubtotal * 0.3).round();
+  int get maxBonusDeduction =>
+      (saleSubtotal * bonusCheckoutMaxFraction).round();
 
   int get bonusDeduction => bonusDeductionForSubtotal(saleSubtotal);
 
@@ -86,7 +90,7 @@ class CartController extends ChangeNotifier {
 
   int bonusDeductionForSubtotal(int saleSubtotal) {
     if (!useBonuses) return 0;
-    final cap = (saleSubtotal * 0.3).round();
+    final cap = (saleSubtotal * bonusCheckoutMaxFraction).round();
     final maxDeduct = availableBonuses < cap ? availableBonuses : cap;
     return maxDeduct;
   }

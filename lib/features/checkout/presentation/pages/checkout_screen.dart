@@ -62,8 +62,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.dispose();
   }
 
+  List<CartItem> _resolvedCheckoutItems() {
+    if (widget.checkoutItems != null && widget.checkoutItems!.isNotEmpty) {
+      return List<CartItem>.from(widget.checkoutItems!);
+    }
+    return List<CartItem>.from(CartScope.of(context).items);
+  }
+
+  int get _checkoutSaleSubtotal =>
+      CartScope.of(context).saleSubtotalFor(_resolvedCheckoutItems());
+
+  int get _checkoutPromoDiscount => CartScope.of(context)
+      .promoDiscountForSubtotal(_checkoutSaleSubtotal);
+
+  int get _checkoutBonusDeduction => CartScope.of(context)
+      .bonusDeductionForSubtotal(_checkoutSaleSubtotal);
+
+  /// Пересчитывается при изменении баланса бонусов (в т.ч. после промокода продавца).
+  int get _liveProductsTotal =>
+      CartScope.of(context).checkoutTotalFor(_resolvedCheckoutItems());
+
   int get _payableProductsTotal {
-    final discounted = widget.productsTotal - _referralDiscountKrw;
+    final discounted = _liveProductsTotal - _referralDiscountKrw;
     return discounted < 0 ? 0 : discounted;
   }
 
@@ -116,6 +136,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               'Промокод применен для привязки к продавцу, но приветственный бонус уже был получен вами ранее';
         });
         await profile.refreshWalletFromCloud();
+        if (!mounted) return;
+        await CartScope.of(context).syncBonusBalanceFromProfile();
         return;
       }
 
@@ -126,6 +148,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             : 'Промокод продавца привязан к профилю.';
       });
       await profile.refreshWalletFromCloud();
+      if (!mounted) return;
+      await CartScope.of(context).syncBonusBalanceFromProfile();
     } finally {
       if (mounted) setState(() => _isApplyingSellerPromo = false);
     }
@@ -187,6 +211,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    final maxAllowedBonus = (_checkoutSaleSubtotal * 0.15).round();
+    if (_checkoutBonusDeduction > maxAllowedBonus) {
+      setState(
+        () => _validationMessage =
+            'Ошибка: Превышен лимит списания бонусов (макс. 15%)',
+      );
+      return;
+    }
+
     setState(() => _validationMessage = null);
     final shipping = _collectShippingAddress();
     final lineItems = _resolvedCheckoutItems();
@@ -202,13 +235,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  List<CartItem> _resolvedCheckoutItems() {
-    if (widget.checkoutItems != null && widget.checkoutItems!.isNotEmpty) {
-      return List<CartItem>.from(widget.checkoutItems!);
-    }
-    return List<CartItem>.from(CartScope.of(context).items);
-  }
-
   String get _orderButtonLabel {
     final base = tr(CheckoutStringKeys.placeOrder);
     final productsTotal = formatWon(_payableProductsTotal);
@@ -221,7 +247,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final cart = CartScope.of(context);
 
+    return ListenableBuilder(
+      listenable: cart,
+      builder: (context, _) => _buildScaffold(context, bottomInset),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, double bottomInset) {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -481,8 +515,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   const SizedBox(height: 8),
                   _SummaryRow(
                     label: tr(CheckoutStringKeys.productsTotal),
-                    value: formatWon(widget.productsTotal),
+                    value: formatWon(_checkoutSaleSubtotal),
                   ),
+                  if (_checkoutPromoDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    _SummaryRow(
+                      label: 'Промокод',
+                      value: '- ${formatWon(_checkoutPromoDiscount)}',
+                      valueColor: AppColors.accent,
+                    ),
+                  ],
+                  if (_checkoutBonusDeduction > 0) ...[
+                    const SizedBox(height: 8),
+                    _SummaryRow(
+                      label: 'Списание бонусов (до 15%)',
+                      value: '- ${formatWon(_checkoutBonusDeduction)}',
+                      valueColor: AppColors.accent,
+                    ),
+                  ],
                   if (_referralDiscountKrw > 0) ...[
                     const SizedBox(height: 8),
                     _SummaryRow(

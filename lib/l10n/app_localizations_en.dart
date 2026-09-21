@@ -123,4 +123,34 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get filterSilver => 'Silver';
+
+  @override
+  String get productAddedToCart => 'Added to cart';
+
+  @override
+  String productWeightGrams(String weight) {
+    return '$weight g';
+  }
+
+  @override
+  String get homeCollectionsComingSoon => 'New collections coming soon';
+
+  @override
+  String get exitAppDialogTitle => 'Exit the app?';
+
+  @override
+  String get exitAppDialogMessage => 'Are you sure you want to exit?';
+
+  @override
+  String get exitAppConfirm => 'Yes';
+
+  @override
+  String get exitAppCancel => 'No';
+
+  @override
+  String get cartBonusLimitHint =>
+      'Bonuses can cover up to 15% of the product total';
+
+  @override
+  String get cartBonusDiscountLabel => 'Bonus discount';
 }

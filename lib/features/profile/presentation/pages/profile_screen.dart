@@ -27,6 +27,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _adminTapCount = 0;
   DateTime? _lastAdminTapAt;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshBonusFromCloud());
+  }
+
+  Future<void> _refreshBonusFromCloud() async {
+    if (!mounted) return;
+    final profile = ProfileScope.of(context);
+    if (!profile.isAuthenticated || profile.user.isAdmin) return;
+    await profile.refreshWalletFromCloud();
+    if (!mounted) return;
+    await CartScope.of(context).syncBonusBalanceFromProfile();
+  }
+
   Future<void> _signInWithGoogle() async {
     try {
       await ProfileScope.of(context).signInCustomer();

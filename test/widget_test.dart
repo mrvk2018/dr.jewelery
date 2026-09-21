@@ -129,7 +129,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Добавить в корзину'), findsOneWidget);
-    expect(find.textContaining('Оплата Долями'), findsOneWidget);
 
     await tester.tap(find.text('Добавить в корзину'));
     await tester.pumpAndSettle();

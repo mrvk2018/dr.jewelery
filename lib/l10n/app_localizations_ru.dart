@@ -123,4 +123,34 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get filterSilver => 'Серебро';
+
+  @override
+  String get productAddedToCart => 'Товар добавлен в корзину';
+
+  @override
+  String productWeightGrams(String weight) {
+    return '$weight г';
+  }
+
+  @override
+  String get homeCollectionsComingSoon => 'Скоро появятся новые коллекции';
+
+  @override
+  String get exitAppDialogTitle => 'Выйти из приложения?';
+
+  @override
+  String get exitAppDialogMessage => 'Вы действительно хотите выйти?';
+
+  @override
+  String get exitAppConfirm => 'Да';
+
+  @override
+  String get exitAppCancel => 'Нет';
+
+  @override
+  String get cartBonusLimitHint =>
+      'Бонусами можно оплатить до 15% от стоимости товаров заказа';
+
+  @override
+  String get cartBonusDiscountLabel => 'Скидка за бонусы';
 }

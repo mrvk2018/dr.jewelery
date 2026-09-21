@@ -89,7 +89,8 @@ class ProductItem {
       insert: json['insert'] as String? ?? '',
       iconIndex: json['iconIndex'] as int? ?? 0,
       availableSizes: (json['availableSizes'] as List<dynamic>? ?? const [])
-          .map((size) => (size as num).toDouble())
+          .map((size) => double.tryParse(size.toString()) ?? 0.0)
+          .where((size) => size > 0.0)
           .toList(),
       imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
       weightGrams: (json['weightGrams'] as num?)?.toDouble() ??
@@ -145,6 +146,28 @@ class ProductItem {
 int calculateOldPriceFromDiscount(int salePrice, int discountPercent) {
   if (discountPercent <= 0 || discountPercent >= 100) return salePrice;
   return (salePrice / (1 - discountPercent / 100)).round();
+}
+
+/// Перечёркнутая «старая» цена для витрины (fallback ~30% маркетинг).
+int displayOldPriceForProduct(ProductItem product) {
+  final sale = product.salePrice;
+  if (product.oldPrice == 0 || product.oldPrice == sale) {
+    return (sale * 1.3).round();
+  }
+  return product.oldPrice;
+}
+
+/// Процент скидки для бейджа (из БД или из displayOld/sale).
+int displayDiscountPercentForProduct(ProductItem product) {
+  final sale = product.salePrice;
+  if (product.discountPercent > 0 &&
+      product.oldPrice != 0 &&
+      product.oldPrice != sale) {
+    return product.discountPercent;
+  }
+  final old = displayOldPriceForProduct(product);
+  if (old <= sale) return 0;
+  return (((old - sale) / old) * 100).round();
 }
 
 ProductItem _demoProduct({

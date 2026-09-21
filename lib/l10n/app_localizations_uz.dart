@@ -123,4 +123,34 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get filterSilver => 'Kumush';
+
+  @override
+  String get productAddedToCart => 'Mahsulot savatga qo\'shildi';
+
+  @override
+  String productWeightGrams(String weight) {
+    return '$weight g';
+  }
+
+  @override
+  String get homeCollectionsComingSoon => 'Tez orada yangi kolleksiyalar';
+
+  @override
+  String get exitAppDialogTitle => 'Ilovadan chiqilsinmi?';
+
+  @override
+  String get exitAppDialogMessage => 'Haqiqatan ham chiqmoqchimisiz?';
+
+  @override
+  String get exitAppConfirm => 'Ha';
+
+  @override
+  String get exitAppCancel => 'Yo\'q';
+
+  @override
+  String get cartBonusLimitHint =>
+      'Bonuslar bilan buyurtma summasining 15% gacha to‘lash mumkin';
+
+  @override
+  String get cartBonusDiscountLabel => 'Bonus chegirmasi';
 }

@@ -37,5 +37,21 @@
   "buyNow": "Sotib olish",
   "filterAll": "Hammasi",
   "filterGold": "Oltin",
-  "filterSilver": "Kumush"
+  "filterSilver": "Kumush",
+  "productAddedToCart": "Mahsulot savatga qo'shildi",
+  "productWeightGrams": "{weight} g",
+  "@productWeightGrams": {
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCollectionsComingSoon": "Tez orada yangi kolleksiyalar",
+  "exitAppDialogTitle": "Ilovadan chiqilsinmi?",
+  "exitAppDialogMessage": "Haqiqatan ham chiqmoqchimisiz?",
+  "exitAppConfirm": "Ha",
+  "exitAppCancel": "Yo'q",
+  "cartBonusLimitHint": "Bonuslar bilan buyurtma summasining 15% gacha to‘lash mumkin",
+  "cartBonusDiscountLabel": "Bonus chegirmasi"
 }

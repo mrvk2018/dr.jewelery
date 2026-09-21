@@ -37,5 +37,21 @@
   "buyNow": "Buy Now",
   "filterAll": "All",
   "filterGold": "Gold",
-  "filterSilver": "Silver"
+  "filterSilver": "Silver",
+  "productAddedToCart": "Added to cart",
+  "productWeightGrams": "{weight} g",
+  "@productWeightGrams": {
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCollectionsComingSoon": "New collections coming soon",
+  "exitAppDialogTitle": "Exit the app?",
+  "exitAppDialogMessage": "Are you sure you want to exit?",
+  "exitAppConfirm": "Yes",
+  "exitAppCancel": "No",
+  "cartBonusLimitHint": "Bonuses can cover up to 15% of the product total",
+  "cartBonusDiscountLabel": "Bonus discount"
 }

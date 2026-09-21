@@ -8,13 +8,18 @@ import '../../../../shared/models/product_item.dart';
 const defaultDetailRingSizes = <double>[16, 16.5, 17, 17.5];
 
 List<double> resolveProductSizes(ProductItem product) {
-  if (product.category != 'Кольца') return const [];
+  if (product.category != 'Кольца' && product.category != 'Кольцо') {
+    return const [];
+  }
   if (product.availableSizes.isEmpty) return defaultDetailRingSizes;
-  final filtered = product.availableSizes
-      .where(defaultDetailRingSizes.contains)
-      .toList()
-    ..sort();
-  return filtered.isEmpty ? defaultDetailRingSizes : filtered;
+  return List<double>.from(product.availableSizes)..sort();
+}
+
+/// Размер по умолчанию для корзины/чекаута (один складской размер или первый из списка).
+double? defaultSelectedProductSize(ProductItem product) {
+  final sizes = resolveProductSizes(product);
+  if (sizes.isEmpty) return null;
+  return sizes.first;
 }
 
 String formatSizeLabel(double size) {

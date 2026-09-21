@@ -10,6 +10,7 @@ import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/widgets/out_of_stock_plaque.dart';
 import '../../../../shared/widgets/product_image.dart';
 import '../../../product/presentation/pages/product_detail_screen.dart';
+import '../../../product/presentation/widgets/product_size_selector.dart';
 
 /// Карточка товара для сетки рекомендаций на главном экране.
 class ProductCard extends StatefulWidget {
@@ -31,7 +32,7 @@ class ProductCard extends StatefulWidget {
 }
 
 class _ProductCardState extends State<ProductCard> {
-  static String? _sizeWeightLabel(ProductItem product) {
+  String? _sizeWeightLabel(BuildContext context, ProductItem product) {
     final parts = <String>[];
     if (product.availableSizes.isNotEmpty) {
       parts.add(product.availableSizes.first.toString());
@@ -41,7 +42,7 @@ class _ProductCardState extends State<ProductCard> {
       final rounded = grams == grams.roundToDouble()
           ? grams.toInt().toString()
           : grams.toString();
-      parts.add('$rounded г');
+      parts.add(context.l10n.productWeightGrams(rounded));
     }
     if (parts.isEmpty) return null;
     return parts.join(' · ');
@@ -66,15 +67,14 @@ class _ProductCardState extends State<ProductCard> {
       return;
     }
 
-    final sizes = widget.product.availableSizes;
     CartScope.of(context).addProduct(
       product: widget.product,
-      selectedSize: sizes.isNotEmpty ? sizes.first : null,
+      selectedSize: defaultSelectedProductSize(widget.product),
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Товар добавлен в корзину'),
+        content: Text(context.l10n.productAddedToCart),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -123,7 +123,8 @@ class _ProductCardState extends State<ProductCard> {
                       top: 8,
                       left: 8,
                       child: _DiscountBadge(
-                        label: '-${product.discountPercent}%',
+                        label:
+                            '-${displayDiscountPercentForProduct(product)}%',
                       ),
                     ),
                     Positioned(
@@ -149,7 +150,7 @@ class _ProductCardState extends State<ProductCard> {
                     children: [
                       _PriceRow(
                         salePrice: product.salePrice,
-                        oldPrice: product.oldPrice,
+                        displayOldPrice: displayOldPriceForProduct(product),
                       ),
                       const SizedBox(height: 4),
                       Expanded(
@@ -176,11 +177,11 @@ class _ProductCardState extends State<ProductCard> {
                                 style: AppTypography.productMetaStyle,
                               ),
                             ),
-                            if (_sizeWeightLabel(product) != null) ...[
+                            if (_sizeWeightLabel(context, product) != null) ...[
                               const SizedBox(height: 2),
                               Flexible(
                                 child: Text(
-                                  _sizeWeightLabel(product)!,
+                                  _sizeWeightLabel(context, product)!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: AppTypography.productMetaStyle,
@@ -278,26 +279,37 @@ class _FavoriteButton extends StatelessWidget {
 class _PriceRow extends StatelessWidget {
   const _PriceRow({
     required this.salePrice,
-    required this.oldPrice,
+    required this.displayOldPrice,
   });
 
   final int salePrice;
-  final int oldPrice;
+  final int displayOldPrice;
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 6,
-      runSpacing: 2,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          formatWon(salePrice),
-          style: AppTypography.productPrice,
+          formatWon(displayOldPrice),
+          style: AppTypography.productOldPrice.copyWith(
+            color: Colors.grey,
+            decoration: TextDecoration.lineThrough,
+            decorationColor: Colors.grey,
+          ),
         ),
-        Text(
-          formatWon(oldPrice),
-          style: AppTypography.productOldPrice,
+        const SizedBox(height: 2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            formatWon(salePrice),
+            style: AppTypography.productPrice.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.accent,
+            ),
+          ),
         ),
       ],
     );

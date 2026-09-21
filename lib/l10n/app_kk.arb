@@ -37,5 +37,21 @@
   "buyNow": "Сатып алу",
   "filterAll": "Барлығы",
   "filterGold": "Алтын",
-  "filterSilver": "Күміс"
+  "filterSilver": "Күміс",
+  "productAddedToCart": "Тауар себетке қосылды",
+  "productWeightGrams": "{weight} г",
+  "@productWeightGrams": {
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCollectionsComingSoon": "Жаңа коллекциялар жақында",
+  "exitAppDialogTitle": "Қосымшadan шығу керек пе?",
+  "exitAppDialogMessage": "Шынымен шығыңыз келе ме?",
+  "exitAppConfirm": "Иә",
+  "exitAppCancel": "Жоқ",
+  "cartBonusLimitHint": "Бонустармен тапсырыс сомасының 15%-ға дейін төлеуге болады",
+  "cartBonusDiscountLabel": "Бонус жеңілдігі"
 }

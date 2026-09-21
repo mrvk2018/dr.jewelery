@@ -318,7 +318,7 @@ class _BonusBalanceCard extends StatelessWidget {
                   ).copyWith(fontSize: 12),
                 ),
                 Text(
-                  '$balance бонусов',
+                  formatWon(balance),
                   style: AppTypography.heading(
                     fontSize: 22,
                     color: AppColors.textOnPrimary,

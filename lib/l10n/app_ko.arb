@@ -37,5 +37,21 @@
   "buyNow": "바로 구매",
   "filterAll": "전체",
   "filterGold": "골드",
-  "filterSilver": "실버"
+  "filterSilver": "실버",
+  "productAddedToCart": "장바구니에 담았습니다",
+  "productWeightGrams": "{weight}g",
+  "@productWeightGrams": {
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCollectionsComingSoon": "새로운 컬렉션이 곧 공개됩니다",
+  "exitAppDialogTitle": "앱을 종료하시겠습니까?",
+  "exitAppDialogMessage": "정말 종료하시겠습니까?",
+  "exitAppConfirm": "예",
+  "exitAppCancel": "아니요",
+  "cartBonusLimitHint": "보너스로 상품 금액의 최대 15%까지 결제할 수 있습니다",
+  "cartBonusDiscountLabel": "보너스 할인"
 }

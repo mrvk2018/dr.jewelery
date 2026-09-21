@@ -37,5 +37,21 @@
   "buyNow": "Купить",
   "filterAll": "Все",
   "filterGold": "Золото",
-  "filterSilver": "Серебро"
+  "filterSilver": "Серебро",
+  "productAddedToCart": "Товар добавлен в корзину",
+  "productWeightGrams": "{weight} г",
+  "@productWeightGrams": {
+    "placeholders": {
+      "weight": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCollectionsComingSoon": "Скоро появятся новые коллекции",
+  "exitAppDialogTitle": "Выйти из приложения?",
+  "exitAppDialogMessage": "Вы действительно хотите выйти?",
+  "exitAppConfirm": "Да",
+  "exitAppCancel": "Нет",
+  "cartBonusLimitHint": "Бонусами можно оплатить до 15% от стоимости товаров заказа",
+  "cartBonusDiscountLabel": "Скидка за бонусы"
 }

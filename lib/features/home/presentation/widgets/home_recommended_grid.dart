@@ -25,7 +25,7 @@ class HomeRecommendedGrid extends StatelessWidget {
               border: Border.all(color: const Color(0xFFE0E0E0)),
             ),
             child: Text(
-              'Скоро появятся новые коллекции',
+              context.l10n.homeCollectionsComingSoon,
               textAlign: TextAlign.center,
               style: AppTypography.productMetaStyle.copyWith(fontSize: 14),
             ),

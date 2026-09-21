@@ -36,9 +36,22 @@ abstract final class LocalizedText {
 
   /// Целая строка атрибута каталога (металл, категория, вставка).
   static String attribute(String value, {required String languageCode}) {
-    final map = catalogAttributeTranslations[value];
-    if (map == null) return value;
-    return resolve(map, languageCode: languageCode);
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return trimmed;
+
+    final direct = catalogAttributeTranslations[trimmed];
+    if (direct != null) {
+      return resolve(direct, languageCode: languageCode);
+    }
+
+    final normalized = trimmed.toLowerCase();
+    for (final entry in catalogAttributeTranslations.entries) {
+      if (entry.key.trim().toLowerCase() == normalized) {
+        return resolve(entry.value, languageCode: languageCode);
+      }
+    }
+
+    return trimmed;
   }
 
   static String productDetail(String key, {required String languageCode}) {

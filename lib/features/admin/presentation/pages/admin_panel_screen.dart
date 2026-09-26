@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../../core/services/database_service.dart';
@@ -32,7 +33,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
-    _orders = List<OrderItem>.from(demoAdminOrders);
+    _orders = const [];
   }
   @override
   void dispose() {
@@ -77,6 +78,38 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ),
     );
   }
+  Future<void> _triggerSyncCatalog(BuildContext context) async {
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Запуск синхронизации... Пожалуйста, подождите.',
+          ),
+        ),
+      );
+
+      await Supabase.instance.client.functions.invoke('sync-catalog');
+
+      if (context.mounted) {
+        await CatalogScope.of(context).load();
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Синхронизация успешно выполнена! Каталог обновлен.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ошибка синхронизации: $e')),
+        );
+      }
+    }
+  }
+
   void _deleteFeedbackMessage(String id) {
     FeedbackScope.of(context).removeMessage(id);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -140,6 +173,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
                 },
                 onAddProduct: _addProduct,
                 onDeleteProduct: _deleteProduct,
+                onSyncCatalog: () => _triggerSyncCatalog(context),
               );
             },
           ),
@@ -266,6 +300,7 @@ class _ProductsTab extends StatelessWidget {
     required this.onCategoryChanged,
     required this.onAddProduct,
     required this.onDeleteProduct,
+    required this.onSyncCatalog,
   });
 
   final List<ProductItem> products;
@@ -274,11 +309,32 @@ class _ProductsTab extends StatelessWidget {
   final ValueChanged<String> onCategoryChanged;
   final ValueChanged<ProductItem> onAddProduct;
   final ValueChanged<String> onDeleteProduct;
+  final VoidCallback onSyncCatalog;
   @override
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.cardBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: ListTile(
+            leading: Icon(Icons.sync_rounded, color: AppColors.primary),
+            title: Text(
+              'Синхронизировать базу товаров',
+              style: AppTypography.productName(),
+            ),
+            subtitle: Text(
+              'Принудительный импорт изделий и фото из складской БД',
+              style: AppTypography.productMeta(),
+            ),
+            onTap: onSyncCatalog,
+          ),
+        ),
+        const SizedBox(height: 16),
         AdminProductForm(
           database: database,
           selectedCategory: selectedCategory,

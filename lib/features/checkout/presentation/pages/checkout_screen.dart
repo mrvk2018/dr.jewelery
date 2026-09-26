@@ -14,6 +14,7 @@ import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../domain/models/delivery_method.dart';
 import '../../domain/models/shipping_address.dart';
+import 'daum_postcode_web_view_page.dart';
 
 /// Экран оформления заказа с корейской логистикой (PIPA / Daum Postcode).
 class CheckoutScreen extends StatefulWidget {
@@ -162,12 +163,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      final result = await lookupDemoAddress();
+      final result = await Navigator.of(context).push<KoreanAddressLookupResult>(
+        MaterialPageRoute(
+          builder: (_) => const DaumPostcodeWebViewPage(),
+        ),
+      );
+
       if (!mounted) return;
-      setState(() {
-        _postalCodeController.text = result.postalCode;
-        _roadAddressController.text = result.roadAddress;
-      });
+      if (result != null) {
+        setState(() {
+          _postalCodeController.text = result.postalCode;
+          _roadAddressController.text = result.roadAddress;
+        });
+      }
     } finally {
       if (mounted) setState(() => _isSearchingAddress = false);
     }

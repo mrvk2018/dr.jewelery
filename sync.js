@@ -1,6 +1,6 @@
 /**
  * DrJaw (MSSQL) → Supabase public.products
- * Cron/server: npm run sync
+ * Cron/server: npm run sync (polls sync_tasks; runs import only if sync_requested)
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  */
@@ -35,6 +35,11 @@ const STORAGE_FOLDER = 'products';
 /** Бизнес «В наличии»; в DrJaw фактически `InStock` (кириллица в БД не используется). */
 const IN_STOCK_STATUSES = ['InStock', 'В наличии'];
 const TARGET_LANGS = ['ko', 'kk', 'uz', 'en'];
+
+/** Не перезаписывать из MSSQL и не удалять при cleanup (checkout / продажи / скрытые). */
+const SYNC_SKIP_STATUSES = new Set(['reserved', 'sold', 'hidden']);
+
+const SYNC_TASK_ID = 'catalog_sync';
 
 /** Кэш переводов: Type|Articul|Stones → name jsonb */
 const translationCache = Object.create(null);
@@ -228,10 +233,10 @@ function buildWarehouseAttributes(row, extra = {}) {
   };
 }
 
-function logProgress(processed, total, photosUploaded, skippedSold) {
+function logProgress(processed, total, photosUploaded, skippedProtected) {
   console.log(
     `[Синхронизация] Обработано: ${processed} из ${total} товаров... ` +
-      `Загружено фото: ${photosUploaded}... Пропущено (sold в Supabase): ${skippedSold}`,
+      `Загружено фото: ${photosUploaded}... Пропущено (защищённые статусы): ${skippedProtected}`,
   );
 }
 
@@ -312,7 +317,7 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
   );
 
   let upserted = 0;
-  let skippedSold = 0;
+  let skippedProtected = 0;
   let photosUploaded = 0;
   let translationApiCalls = 0;
   const total = rowsToProcess.length;
@@ -323,79 +328,85 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
     const sku = String(row.Articul || '').trim();
     if (!id || !sku) continue;
 
-    if (statusMap.get(id) === 'sold') {
-      skippedSold += 1;
+    if (SYNC_SKIP_STATUSES.has(statusMap.get(id))) {
+      skippedProtected += 1;
+      continue;
+    }
+
+    const { russianTitle, name, fromCache } = await getNameMapForRow(row);
+    if (!fromCache) translationApiCalls += 1;
+
+    const { status, stock_quantity } = mapWarehouseStatus(row.Status);
+    const imageBuffer = await fetchArticulImageBuffer(pool, sku);
+    const imageUrl = await uploadArticulImage(supabase, sku, imageBuffer);
+    if (imageUrl) photosUploaded += 1;
+
+    const weightGrams = parseWeight(row.Weight);
+    const salePrice = parsePriceKrw(row.Price);
+
+    const payload = {
+      id,
+      sku,
+      stock_quantity,
+      status,
+      name,
+      description: {
+        ru: russianTitle,
+        ko: name.ko,
+        kk: name.kk,
+        uz: name.uz,
+        en: name.en,
+      },
+      metal: String(row.Metall || '').trim() || '—',
+      sale_price: salePrice,
+      old_price: salePrice,
+      discount_percent: 0,
+      category: String(row.Type || '').trim() || 'Изделие',
+      insert: String(row.Stones || '').trim() || '—',
+      icon_index: 0,
+      available_sizes: parseSizeArray(row.Size),
+      warehouse_attributes: buildWarehouseAttributes(row),
+      image_url: imageUrl,
+      weight_grams: weightGrams,
+    };
+
+    const { error } = await supabase.from('products').upsert(payload, {
+      onConflict: 'id',
+    });
+    if (error) {
+      console.error(`upsert id=${id} sku=${sku}:`, error.message);
     } else {
-      const { russianTitle, name, fromCache } = await getNameMapForRow(row);
-      if (!fromCache) translationApiCalls += 1;
-
-      const { status, stock_quantity } = mapWarehouseStatus(row.Status);
-      const imageBuffer = await fetchArticulImageBuffer(pool, sku);
-      const imageUrl = await uploadArticulImage(supabase, sku, imageBuffer);
-      if (imageUrl) photosUploaded += 1;
-
-      const weightGrams = parseWeight(row.Weight);
-      const salePrice = parsePriceKrw(row.Price);
-
-      const payload = {
-        id,
-        sku,
-        stock_quantity,
-        status,
-        name,
-        description: {
-          ru: russianTitle,
-          ko: name.ko,
-          kk: name.kk,
-          uz: name.uz,
-          en: name.en,
-        },
-        metal: String(row.Metall || '').trim() || '—',
-        sale_price: salePrice,
-        old_price: salePrice,
-        discount_percent: 0,
-        category: String(row.Type || '').trim() || 'Изделие',
-        insert: String(row.Stones || '').trim() || '—',
-        icon_index: 0,
-        available_sizes: parseSizeArray(row.Size),
-        warehouse_attributes: buildWarehouseAttributes(row),
-        image_url: imageUrl,
-        weight_grams: weightGrams,
-      };
-
-      const { error } = await supabase.from('products').upsert(payload, {
-        onConflict: 'id',
-      });
-      if (error) {
-        console.error(`upsert id=${id} sku=${sku}:`, error.message);
-      } else {
-        upserted += 1;
-      }
+      upserted += 1;
     }
 
     const processed = index + 1;
     if (processed % PROGRESS_EVERY === 0 || processed === total) {
-      logProgress(processed, total, photosUploaded, skippedSold);
+      logProgress(processed, total, photosUploaded, skippedProtected);
     }
   }
 
   return {
     mssqlIds,
     upserted,
-    skippedSold,
+    skippedProtected,
     photosUploaded,
     translationApiCalls,
     cacheSize: Object.keys(translationCache).length,
+    statusMap,
   };
 }
 
-async function cleanupRemovedFromMssql(supabase, mssqlIds) {
+async function cleanupRemovedFromMssql(supabase, mssqlIds, statusMap) {
   const { data, error } = await supabase.from('products').select('id');
   if (error) throw error;
 
   const toDelete = (data || [])
-    .map((r) => r.id)
-    .filter((id) => !mssqlIds.has(id));
+    .map((r) => String(r.id))
+    .filter((id) => {
+      if (mssqlIds.has(id)) return false;
+      if (SYNC_SKIP_STATUSES.has(statusMap.get(id))) return false;
+      return true;
+    });
 
   if (toDelete.length === 0) return 0;
 
@@ -412,6 +423,29 @@ async function applyDropSkuUniqueConstraint() {
   console.log('[Schema] products.sku без UNIQUE — upsert по Items.Id (products.id).');
 }
 
+async function fetchSyncTaskRequested(supabase) {
+  const { data, error } = await supabase
+    .from('sync_tasks')
+    .select('sync_requested')
+    .eq('id', SYNC_TASK_ID)
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data?.sync_requested);
+}
+
+async function clearSyncTaskRequested(supabase) {
+  const { error } = await supabase
+    .from('sync_tasks')
+    .update({
+      sync_requested: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', SYNC_TASK_ID);
+
+  if (error) throw error;
+}
+
 async function main() {
   requireEnv();
   await applyDropSkuUniqueConstraint();
@@ -420,7 +454,16 @@ async function main() {
     realtime: { transport: ws },
   });
 
+  const syncRequested = await fetchSyncTaskRequested(supabase);
+  if (!syncRequested) {
+    console.log('No sync requested. Exit.');
+    process.exit(0);
+  }
+
+  console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=true — starting import…`);
+
   let pool;
+  let syncSucceeded = false;
   try {
     pool = await sql.connect(MSSQL_CONFIG);
     console.log('MSSQL DrJaw: connected');
@@ -436,18 +479,27 @@ async function main() {
 
     const stats = await syncProducts(supabase, pool, allInStockRows, rowsToProcess);
 
-    const deleted = await cleanupRemovedFromMssql(supabase, stats.mssqlIds);
+    const deleted = await cleanupRemovedFromMssql(
+      supabase,
+      stats.mssqlIds,
+      stats.statusMap,
+    );
 
     console.log('---');
     console.log(
-      `Sync done: upserted=${stats.upserted}, skipped_sold=${stats.skippedSold}, ` +
+      `Sync done: upserted=${stats.upserted}, skipped_protected=${stats.skippedProtected}, ` +
         `photos=${stats.photosUploaded}, deleted=${deleted}`,
     );
     console.log(
       `Переводы: уникальных в кэше=${stats.cacheSize}, API-вызовов (новых ключей)=${stats.translationApiCalls}`,
     );
+    syncSucceeded = true;
   } finally {
     if (pool) await pool.close();
+    if (syncSucceeded) {
+      await clearSyncTaskRequested(supabase);
+      console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=false`);
+    }
   }
 }
 

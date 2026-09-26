@@ -46,6 +46,7 @@ abstract final class SkladAvailabilityRpc {
   static const checkAvailability = 'check_sklad_availability';
   static const reserveForCheckout = 'reserve_product_for_checkout';
   static const releaseCheckout = 'release_product_checkout';
+  static const confirmProductPaid = 'confirm_product_paid';
   static const skuParam = 'p_sku';
   static const productIdParam = 'p_id';
 }
@@ -219,6 +220,9 @@ abstract class DatabaseService {
 
   /// Отмена брони после ошибки/отмены Toss (возврат `active` в Supabase).
   Future<void> releaseProductCheckout(String productId);
+
+  /// Подтверждение оплаты: перевод `reservation` → `paid` на сервере.
+  Future<bool> confirmProductPaid(String productId);
 
   /// UUID текущего Supabase Auth пользователя или `null`.
   Future<String?> currentAuthUserId();
@@ -699,6 +703,21 @@ class LocalDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<bool> confirmProductPaid(String productId) async {
+    if (productId.trim().isEmpty) return false;
+    try {
+      final result = await Supabase.instance.client.rpc(
+        SkladAvailabilityRpc.confirmProductPaid,
+        params: {SkladAvailabilityRpc.productIdParam: productId},
+      );
+      return result as bool? ?? false;
+    } catch (e) {
+      debugPrint('Ошибка confirmProductPaid: $e');
+      return false;
+    }
+  }
+
+  @override
   Future<String?> currentAuthUserId() async => null;
 
   @override
@@ -1125,18 +1144,47 @@ class CloudDatabaseService implements DatabaseService {
 
   @override
   Future<List<OrderItem>> getOrders(String userId) async {
-    final maps = _readCloudOrderMaps(await _localPrefs());
-    final orders = maps.map(OrderItem.fromJson).toList();
-    if (userId.isEmpty) return orders;
-    return orders;
+    if (userId.isEmpty) return [];
+    try {
+      final response = await _supabaseClient
+          .from('orders')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+      return (response as List)
+          .map(
+            (row) => OrderItem.fromSupabase(
+              Map<String, dynamic>.from(row as Map),
+            ),
+          )
+          .toList();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getOrders failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
   }
 
   @override
   Future<void> createOrder(OrderItem order) async {
-    final orders = await getOrders('');
-    orders.removeWhere((existing) => existing.id == order.id);
-    orders.insert(0, order);
-    await _writeCloudOrders(orders);
+    final userId = _supabaseClient.auth.currentUser?.id;
+    if (userId == null) {
+      throw StateError('createOrder: нет auth user для user_id');
+    }
+    try {
+      await _supabaseClient.from('orders').insert({
+        'id': order.id,
+        'user_id': userId,
+        'product_name': order.productName,
+        'amount': order.amount,
+        'status': OrderItem.statusToSupabase(order.status),
+        'customer_name': order.customerName,
+      });
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.createOrder failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
   }
 
   @override
@@ -1190,30 +1238,11 @@ class CloudDatabaseService implements DatabaseService {
 
   Future<SharedPreferences> _localPrefs() => SharedPreferences.getInstance();
 
-  List<Map<String, dynamic>> _readCloudOrderMaps(SharedPreferences prefs) {
-    final raw = prefs.getString(DatabaseCollections.orders);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) return [];
-    return decoded
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
-
   Future<void> _writeCloudFeedback(List<FeedbackItem> messages) async {
     final prefs = await _localPrefs();
     await prefs.setString(
       DatabaseCollections.feedback,
       jsonEncode(messages.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  Future<void> _writeCloudOrders(List<OrderItem> orders) async {
-    final prefs = await _localPrefs();
-    await prefs.setString(
-      DatabaseCollections.orders,
-      jsonEncode(orders.map((item) => item.toJson()).toList()),
     );
   }
 
@@ -1307,6 +1336,20 @@ class CloudDatabaseService implements DatabaseService {
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.releaseProductCheckout failed: $error');
       debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<bool> confirmProductPaid(String productId) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SkladAvailabilityRpc.confirmProductPaid,
+        params: {SkladAvailabilityRpc.productIdParam: productId},
+      );
+      return result as bool? ?? false;
+    } catch (e) {
+      debugPrint('Ошибка confirmProductPaid: $e');
+      return false;
     }
   }
 

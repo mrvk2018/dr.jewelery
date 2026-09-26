@@ -264,6 +264,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       switch (webViewResult) {
         case TossPaymentWebViewResult.success:
+          final database = CatalogScope.of(context).database;
+          for (final item in _checkoutLineItems) {
+            await database.confirmProductPaid(item.product.id);
+          }
+          if (!mounted) return;
           final cart = CartScope.of(context);
           final purchased = _checkoutLineItems;
           await retailNotificationService.sendTelegramOrderNotification(

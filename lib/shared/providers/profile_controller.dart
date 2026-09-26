@@ -52,13 +52,6 @@ class ProfileController extends ChangeNotifier {
       _orders
         ..clear()
         ..addAll(stored);
-
-      if (_orders.isEmpty && isAuthenticated) {
-        for (final order in demoProfileOrders) {
-          await _database.createOrder(order);
-          _orders.add(order);
-        }
-      }
     } finally {
       _isLoading = false;
       notifyListeners();

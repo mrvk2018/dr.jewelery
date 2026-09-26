@@ -50,52 +50,33 @@ class OrderItem {
       customerName: json['customerName'] as String? ?? '',
     );
   }
+
+  factory OrderItem.fromSupabase(Map<String, dynamic> json) {
+    final createdAt = json['created_at'] != null
+        ? DateTime.parse(json['created_at'].toString())
+        : DateTime.now();
+    final dateStr = '${createdAt.day}.${createdAt.month}.${createdAt.year}';
+    final statusRaw = json['status'] as String? ?? '';
+    final status = statusRaw == 'delivered'
+        ? OrderStatus.delivered
+        : statusRaw == 'paid'
+            ? OrderStatus.paid
+            : OrderStatus.newOrder;
+    return OrderItem(
+      id: json['id'].toString(),
+      productName: json['product_name'] as String? ?? 'Ювелирное изделие',
+      amount: (json['amount'] as num? ?? 0).toInt(),
+      status: status,
+      dateLabel: dateStr,
+      customerName: json['customer_name'] as String? ?? 'Покупатель',
+    );
+  }
+
+  static String statusToSupabase(OrderStatus status) {
+    return switch (status) {
+      OrderStatus.delivered => 'delivered',
+      OrderStatus.paid => 'paid',
+      OrderStatus.newOrder => 'new',
+    };
+  }
 }
-
-/// Демонстрационные заказы для профиля и админки.
-const demoProfileOrders = <OrderItem>[
-  OrderItem(
-    id: 'ORD-1042',
-    productName: 'Кольцо из белого золота с бриллиантом',
-    amount: 890000,
-    status: OrderStatus.delivered,
-    dateLabel: '28 авг 2026',
-    customerName: 'Анна Иванова',
-  ),
-  OrderItem(
-    id: 'ORD-1087',
-    productName: 'Серьги с изумрудом',
-    amount: 1250000,
-    status: OrderStatus.paid,
-    dateLabel: '3 сен 2026',
-    customerName: 'Анна Иванова',
-  ),
-];
-
-const demoAdminOrders = <OrderItem>[
-  OrderItem(
-    id: 'ORD-1101',
-    productName: 'Подвеска «Сердце»',
-    amount: 320000,
-    status: OrderStatus.newOrder,
-    dateLabel: '5 сен 2026',
-    customerName: 'Мария Петрова',
-  ),
-  OrderItem(
-    id: 'ORD-1098',
-    productName: 'Браслет с фианитами',
-    amount: 125000,
-    status: OrderStatus.paid,
-    dateLabel: '4 сен 2026',
-    customerName: 'Елена Смирнова',
-  ),
-  OrderItem(
-    id: 'ORD-1091',
-    productName: 'Часы «Dr. Jewelry Classic»',
-    amount: 980000,
-    status: OrderStatus.delivered,
-    dateLabel: '1 сен 2026',
-    customerName: 'Олег Кузнецов',
-  ),
-  ...demoProfileOrders,
-];

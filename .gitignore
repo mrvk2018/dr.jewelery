@@ -76,3 +76,5 @@ service-account*.json
 # Generated platform files
 *.g.dart.bak
 *.freezed.dart.bak
+
+supabase/.temp/

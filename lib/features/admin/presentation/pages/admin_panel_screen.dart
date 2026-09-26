@@ -315,23 +315,57 @@ class _ProductsTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: ListTile(
-            leading: Icon(Icons.sync_rounded, color: AppColors.primary),
-            title: Text(
-              'Синхронизировать базу товаров',
-              style: AppTypography.productName(),
-            ),
-            subtitle: Text(
-              'Принудительный импорт изделий и фото из складской БД',
-              style: AppTypography.productMeta(),
-            ),
+        Material(
+          color: Colors.green.shade600,
+          elevation: 3,
+          shadowColor: Colors.green.shade900.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
             onTap: onSyncCatalog,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.sync_rounded,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Синхронизировать базу товаров',
+                          style: AppTypography.productName().copyWith(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Нажмите на зелёную кнопку — импорт изделий и фото со склада',
+                          style: AppTypography.productMeta().copyWith(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            fontSize: 14,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.touch_app_rounded,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 16),

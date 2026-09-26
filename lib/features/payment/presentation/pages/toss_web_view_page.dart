@@ -208,8 +208,10 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
       }
     }
 
-    // Вызываем инициализацию вручную, когда функция гарантированно объявлена в DOM
-    initToss();
+    // Гарантируем, что <body> и все контейнеры уже созданы в памяти браузера
+    window.addEventListener('DOMContentLoaded', () => {
+      initToss();
+    });
   </script>
 </head>
 <body>

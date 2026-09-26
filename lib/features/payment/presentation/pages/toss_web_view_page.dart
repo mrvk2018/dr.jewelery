@@ -151,7 +151,7 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <script src="https://js.tosspayments.com/v2/standard" onload="initToss()" onerror="console.error('Не удалось загрузить Toss SDK')"></script>
+  <script src="https://js.tosspayments.com/v2/standard" onerror="console.error('Не удалось загрузить Toss SDK')"></script>
   <script>
     var tossWidgets = null;
 
@@ -207,6 +207,9 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
         console.error("Ошибка requestPayment:", msg);
       }
     }
+
+    // Вызываем инициализацию вручную, когда функция гарантированно объявлена в DOM
+    initToss();
   </script>
 </head>
 <body>

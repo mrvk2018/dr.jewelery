@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../payment/presentation/pages/payment_screen.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/checkout_localizations.dart';
+import '../../../../core/services/checkout_address_storage.dart';
 import '../../../../core/services/korean_address_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -51,6 +54,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String tr(String key) => checkoutTr(key, context.langCode);
 
   int get _deliveryFee => _deliveryMethod.feeKrw;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCachedCheckoutAddress());
+  }
+
+  Future<void> _loadCachedCheckoutAddress() async {
+    final storage = await CheckoutAddressStorage.create();
+    if (!mounted) return;
+    setState(() {
+      _postalCodeController.text = storage.postalCode;
+      _roadAddressController.text = storage.roadAddress;
+      _detailAddressController.text = storage.detailAddress;
+      _nameController.text = storage.recipientName;
+      _phoneController.text = storage.phone;
+    });
+  }
+
+  Future<void> _persistCachedCheckoutAddress() async {
+    final storage = await CheckoutAddressStorage.create();
+    await storage.save(
+      postalCode: _postalCodeController.text.trim(),
+      roadAddress: _roadAddressController.text.trim(),
+      detailAddress: _detailAddressController.text.trim(),
+      recipientName: _nameController.text.trim(),
+      phone: _phoneController.text.trim(),
+    );
+  }
+
+  void _onCheckoutFieldChanged() {
+    if (_validationMessage != null) {
+      setState(() => _validationMessage = null);
+    }
+    unawaited(_persistCachedCheckoutAddress());
+  }
 
   @override
   void dispose() {
@@ -175,6 +214,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _postalCodeController.text = result.postalCode;
           _roadAddressController.text = result.roadAddress;
         });
+        unawaited(_persistCachedCheckoutAddress());
       }
     } finally {
       if (mounted) setState(() => _isSearchingAddress = false);
@@ -306,11 +346,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             FilteringTextInputFormatter.digitsOnly,
                             LengthLimitingTextInputFormatter(5),
                           ],
-                          onChanged: (_) {
-                            if (_validationMessage != null) {
-                              setState(() => _validationMessage = null);
-                            }
-                          },
+                          onChanged: (_) => _onCheckoutFieldChanged(),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -365,11 +401,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: _CheckoutTextField(
                       controller: _detailAddressController,
                       hint: tr(CheckoutStringKeys.detailAddressHint),
-                      onChanged: (_) {
-                        if (_validationMessage != null) {
-                          setState(() => _validationMessage = null);
-                        }
-                      },
+                      onChanged: (_) => _onCheckoutFieldChanged(),
                     ),
                   ),
                 ],
@@ -387,11 +419,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       controller: _nameController,
                       hint: tr(CheckoutStringKeys.recipientNameHint),
                       textCapitalization: TextCapitalization.words,
-                      onChanged: (_) {
-                        if (_validationMessage != null) {
-                          setState(() => _validationMessage = null);
-                        }
-                      },
+                      onChanged: (_) => _onCheckoutFieldChanged(),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -402,11 +430,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       hint: tr(CheckoutStringKeys.phoneHint),
                       keyboardType: TextInputType.phone,
                       inputFormatters: [KoreanPhoneInputFormatter()],
-                      onChanged: (_) {
-                        if (_validationMessage != null) {
-                          setState(() => _validationMessage = null);
-                        }
-                      },
+                      onChanged: (_) => _onCheckoutFieldChanged(),
                     ),
                   ),
                 ],

@@ -60,6 +60,16 @@ abstract final class ProfileBonusRpc {
   static const welcomeAmountParam = 'p_welcome_bonus_amount';
 }
 
+/// SECURITY DEFINER RPC для админ-панели (обход RLS при anonymous JWT на клиенте).
+abstract final class AdminOrdersRpc {
+  static const adminEmail = 'dr.jewelry.korea@gmail.com';
+  static const getAllOrders = 'get_all_orders_for_admin';
+  static const updateOrderStatus = 'update_order_status_by_admin';
+  static const adminEmailParam = 'p_admin_email';
+  static const orderIdParam = 'p_order_id';
+  static const newStatusParam = 'p_new_status';
+}
+
 bool _parseSkladAvailabilityCheckResult(dynamic result) {
   if (result is num) return result.toInt() > 0;
   if (result is bool) return result;
@@ -174,6 +184,16 @@ abstract class DatabaseService {
 
   /// Заказы пользователя. На облаке: `WHERE user_id = :userId`.
   Future<List<OrderItem>> getOrders(String userId);
+
+  /// Все заказы для админ-панели (`created_at` DESC).
+  Future<List<OrderItem>> getAllOrders(UserRole actorRole);
+
+  /// Смена статуса доставки (админ).
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status,
+    UserRole actorRole,
+  );
 
   /// Создание заказа после успешной оплаты.
   Future<void> createOrder(OrderItem order);
@@ -466,6 +486,29 @@ class LocalDatabaseService implements DatabaseService {
     final orders = await getOrders('');
     orders.removeWhere((existing) => existing.id == order.id);
     orders.insert(0, order);
+    await _writeOrders(orders);
+  }
+
+  @override
+  Future<List<OrderItem>> getAllOrders(UserRole actorRole) async {
+    _assertAdminRead(actorRole, action: 'getAllOrders');
+    final orders = await getOrders('');
+    orders.sort((a, b) => b.dateLabel.compareTo(a.dateLabel));
+    return orders;
+  }
+
+  @override
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status,
+    UserRole actorRole,
+  ) async {
+    _assertAdminWrite(actorRole, action: 'updateOrderStatus');
+    final orders = await getOrders('');
+    final index = orders.indexWhere((o) => o.id == orderId);
+    if (index < 0) return;
+    final mapped = OrderStatus.fromSupabaseStatus(status);
+    orders[index] = orders[index].copyWith(status: mapped);
     await _writeOrders(orders);
   }
 
@@ -1166,20 +1209,75 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<List<OrderItem>> getAllOrders(UserRole actorRole) async {
+    _assertAdminRead(actorRole, action: 'getAllOrders');
+    try {
+      final response = await _supabaseClient.rpc(
+        AdminOrdersRpc.getAllOrders,
+        params: {AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail},
+      );
+      if (response is! List) return [];
+      return response
+          .map(
+            (row) => OrderItem.fromSupabase(
+              Map<String, dynamic>.from(row as Map),
+            ),
+          )
+          .toList();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getAllOrders failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
+  }
+
+  @override
+  Future<void> updateOrderStatus(
+    String orderId,
+    String status,
+    UserRole actorRole,
+  ) async {
+    _assertAdminWrite(actorRole, action: 'updateOrderStatus');
+    try {
+      await _supabaseClient.rpc(
+        AdminOrdersRpc.updateOrderStatus,
+        params: {
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+          AdminOrdersRpc.orderIdParam: orderId,
+          AdminOrdersRpc.newStatusParam: status,
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.updateOrderStatus failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  Map<String, dynamic> _orderInsertRow(OrderItem order, String userId) {
+    return {
+      'id': order.id,
+      'user_id': userId,
+      'product_name': order.productName,
+      'amount': order.amount,
+      'status': OrderItem.statusToSupabase(order.status),
+      'customer_name': order.customerName,
+      'shipping_postal_code': order.shippingPostalCode,
+      'shipping_road_address': order.shippingRoadAddress,
+      'shipping_detail_address': order.shippingDetailAddress,
+      'recipient_name': order.recipientName,
+      'recipient_phone': order.recipientPhone,
+    };
+  }
+
+  @override
   Future<void> createOrder(OrderItem order) async {
     final userId = _supabaseClient.auth.currentUser?.id;
     if (userId == null) {
       throw StateError('createOrder: нет auth user для user_id');
     }
     try {
-      await _supabaseClient.from('orders').insert({
-        'id': order.id,
-        'user_id': userId,
-        'product_name': order.productName,
-        'amount': order.amount,
-        'status': OrderItem.statusToSupabase(order.status),
-        'customer_name': order.customerName,
-      });
+      await _supabaseClient.from('orders').insert(_orderInsertRow(order, userId));
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.createOrder failed: $error');
       debugPrint('$stackTrace');

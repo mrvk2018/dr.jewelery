@@ -16,12 +16,16 @@ class PaymentSuccessScreen extends StatefulWidget {
     super.key,
     required this.status,
     this.orderId,
+    this.skipOrderPersistence = false,
   });
 
   final OrderPaymentStatus status;
 
   /// Идентификатор заказа с бэкенда / Toss (если уже создан до WebView).
   final String? orderId;
+
+  /// Заказ уже записан в Supabase на [PaymentScreen] (Toss success).
+  final bool skipOrderPersistence;
 
   @override
   State<PaymentSuccessScreen> createState() => _PaymentSuccessScreenState();
@@ -63,6 +67,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
   }
 
   void _persistPaidOrder() {
+    if (widget.skipOrderPersistence) return;
     final cart = CartScope.of(context);
     if (cart.items.isEmpty) return;
 

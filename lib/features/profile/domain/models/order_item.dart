@@ -2,11 +2,21 @@
 enum OrderStatus {
   newOrder('Новый'),
   paid('Оплачен'),
+  inTransit('В пути'),
   delivered('Доставлен');
 
   const OrderStatus(this.label);
 
   final String label;
+
+  static OrderStatus fromSupabaseStatus(String? raw) {
+    return switch (raw) {
+      'delivered' => OrderStatus.delivered,
+      'in_transit' => OrderStatus.inTransit,
+      'paid' => OrderStatus.paid,
+      _ => OrderStatus.newOrder,
+    };
+  }
 }
 
 /// Модель заказа для истории и админ-панели.
@@ -18,6 +28,11 @@ class OrderItem {
     required this.status,
     required this.dateLabel,
     required this.customerName,
+    this.shippingPostalCode = '',
+    this.shippingRoadAddress = '',
+    this.shippingDetailAddress = '',
+    this.recipientName = '',
+    this.recipientPhone = '',
   });
 
   final String id;
@@ -26,6 +41,46 @@ class OrderItem {
   final OrderStatus status;
   final String dateLabel;
   final String customerName;
+  final String shippingPostalCode;
+  final String shippingRoadAddress;
+  final String shippingDetailAddress;
+  final String recipientName;
+  final String recipientPhone;
+
+  bool get hasShippingAddress =>
+      shippingPostalCode.isNotEmpty ||
+      shippingRoadAddress.isNotEmpty ||
+      shippingDetailAddress.isNotEmpty;
+
+  /// Формат для буфера обмена (админ «Скопировать адрес»).
+  String get formattedShippingAddressKr {
+    final lines = <String>[
+      if (recipientName.isNotEmpty) recipientName,
+      if (recipientPhone.isNotEmpty) recipientPhone,
+      if (shippingPostalCode.isNotEmpty) '($shippingPostalCode)',
+      if (shippingRoadAddress.isNotEmpty) shippingRoadAddress,
+      if (shippingDetailAddress.isNotEmpty) shippingDetailAddress,
+    ];
+    return lines.join('\n');
+  }
+
+  OrderItem copyWith({
+    OrderStatus? status,
+  }) {
+    return OrderItem(
+      id: id,
+      productName: productName,
+      amount: amount,
+      status: status ?? this.status,
+      dateLabel: dateLabel,
+      customerName: customerName,
+      shippingPostalCode: shippingPostalCode,
+      shippingRoadAddress: shippingRoadAddress,
+      shippingDetailAddress: shippingDetailAddress,
+      recipientName: recipientName,
+      recipientPhone: recipientPhone,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -34,6 +89,11 @@ class OrderItem {
         'status': status.name,
         'dateLabel': dateLabel,
         'customerName': customerName,
+        'shippingPostalCode': shippingPostalCode,
+        'shippingRoadAddress': shippingRoadAddress,
+        'shippingDetailAddress': shippingDetailAddress,
+        'recipientName': recipientName,
+        'recipientPhone': recipientPhone,
       };
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -48,6 +108,11 @@ class OrderItem {
       ),
       dateLabel: json['dateLabel'] as String? ?? '',
       customerName: json['customerName'] as String? ?? '',
+      shippingPostalCode: json['shippingPostalCode'] as String? ?? '',
+      shippingRoadAddress: json['shippingRoadAddress'] as String? ?? '',
+      shippingDetailAddress: json['shippingDetailAddress'] as String? ?? '',
+      recipientName: json['recipientName'] as String? ?? '',
+      recipientPhone: json['recipientPhone'] as String? ?? '',
     );
   }
 
@@ -57,26 +122,36 @@ class OrderItem {
         : DateTime.now();
     final dateStr = '${createdAt.day}.${createdAt.month}.${createdAt.year}';
     final statusRaw = json['status'] as String? ?? '';
-    final status = statusRaw == 'delivered'
-        ? OrderStatus.delivered
-        : statusRaw == 'paid'
-            ? OrderStatus.paid
-            : OrderStatus.newOrder;
     return OrderItem(
       id: json['id'].toString(),
       productName: json['product_name'] as String? ?? 'Ювелирное изделие',
       amount: (json['amount'] as num? ?? 0).toInt(),
-      status: status,
+      status: OrderStatus.fromSupabaseStatus(statusRaw),
       dateLabel: dateStr,
       customerName: json['customer_name'] as String? ?? 'Покупатель',
+      shippingPostalCode: json['shipping_postal_code'] as String? ?? '',
+      shippingRoadAddress: json['shipping_road_address'] as String? ?? '',
+      shippingDetailAddress: json['shipping_detail_address'] as String? ?? '',
+      recipientName: json['recipient_name'] as String? ?? '',
+      recipientPhone: json['recipient_phone'] as String? ?? '',
     );
   }
 
   static String statusToSupabase(OrderStatus status) {
     return switch (status) {
       OrderStatus.delivered => 'delivered',
+      OrderStatus.inTransit => 'in_transit',
       OrderStatus.paid => 'paid',
       OrderStatus.newOrder => 'new',
     };
+  }
+
+  /// Значения для админ-dropdown (после оплаты).
+  static const adminFulfillmentStatuses = ['paid', 'in_transit', 'delivered'];
+
+  String get adminStatusDropdownValue {
+    final raw = statusToSupabase(status);
+    if (adminFulfillmentStatuses.contains(raw)) return raw;
+    return 'paid';
   }
 }

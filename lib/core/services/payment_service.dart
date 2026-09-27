@@ -96,12 +96,12 @@ class PaymentService {
 
   /// Готовит параметры Toss Payments Widget v2 для WebView ([loadHtmlString] + SDK).
   ///
-  /// Возвращает `false`, если способ оплаты не поддерживается виджетом Toss
-  /// (например, банковский перевод) или не задан client key.
+  /// Способ оплаты пользователь выбирает внутри Toss (`renderPaymentMethods`).
+  /// [method] — legacy-метка для конфига; по умолчанию универсальный виджет.
   Future<bool> initializeTossPayment({
     required String orderId,
     required int amount,
-    required PaymentMethodType method,
+    PaymentMethodType method = PaymentMethodType.tossPay,
   }) async {
     _lastTossLaunchConfig = null;
 
@@ -109,16 +109,7 @@ class PaymentService {
       return false;
     }
 
-    if (method == PaymentMethodType.bankTransfer) {
-      return false;
-    }
-
     if (_config.tossClientKey.isEmpty) {
-      return false;
-    }
-
-    final tossMethod = _tossEasyPayMethod(method);
-    if (tossMethod == null) {
       return false;
     }
 
@@ -132,19 +123,6 @@ class PaymentService {
     );
 
     return true;
-  }
-
-  String? _tossEasyPayMethod(PaymentMethodType method) {
-    switch (method) {
-      case PaymentMethodType.tossPay:
-        return 'TOSSPAY';
-      case PaymentMethodType.kakaoPay:
-        return 'KAKAOPAY';
-      case PaymentMethodType.appCard:
-        return 'CARD';
-      case PaymentMethodType.bankTransfer:
-        return null;
-    }
   }
 }
 

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
@@ -6,11 +5,9 @@ import '../../../../core/l10n/onboarding_localizations.dart';
 import '../../../../core/services/onboarding_storage.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../profile/presentation/widgets/social_auth_button.dart';
-import '../../../support/presentation/widgets/feedback_bottom_sheet.dart';
 import '../../../../shared/providers/locale_provider.dart';
 
-/// Премиальный онбординг: язык → PIPA compliance → авторизация.
+/// Премиальный онбординг: язык → PIPA compliance.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({
     super.key,
@@ -46,15 +43,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     setState(() => _step = 1);
   }
 
-  void _goToStep(int step) => setState(() => _step = step);
-
   Future<void> _finishOnboarding() async {
     await widget.onComplete();
-  }
-
-  bool get _showAppleSignIn {
-    return defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS;
   }
 
   @override
@@ -72,7 +62,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 labels: [
                   tr(OnboardingStringKeys.stepLanguage),
                   tr(OnboardingStringKeys.stepCompliance),
-                  tr(OnboardingStringKeys.stepAuth),
                 ],
               ),
               const SizedBox(height: 16),
@@ -81,33 +70,23 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   duration: const Duration(milliseconds: 300),
                   switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeInCubic,
-                  child: switch (_step) {
-                    0 => _LanguageStep(
-                        key: const ValueKey('lang'),
-                        language: _language,
-                        title: tr(OnboardingStringKeys.chooseLanguageTitle),
-                        onLanguageSelected: _selectLanguage,
-                      ),
-                    1 => _ComplianceStep(
-                        key: const ValueKey('compliance'),
-                        tr: tr,
-                        agreed: _agreed,
-                        scrollController: _complianceScrollController,
-                        onAgreedChanged: (value) {
-                          setState(() => _agreed = value);
-                        },
-                        onContinue: _agreed ? () => _goToStep(2) : null,
-                      ),
-                    _ => _AuthStep(
-                        key: const ValueKey('auth'),
-                        tr: tr,
-                        language: _language,
-                        showApple: _showAppleSignIn,
-                        onGoogle: _finishOnboarding,
-                        onApple: _finishOnboarding,
-                        onSkip: _finishOnboarding,
-                      ),
-                  },
+                  child: _step == 0
+                      ? _LanguageStep(
+                          key: const ValueKey('lang'),
+                          language: _language,
+                          title: tr(OnboardingStringKeys.chooseLanguageTitle),
+                          onLanguageSelected: _selectLanguage,
+                        )
+                      : _ComplianceStep(
+                          key: const ValueKey('compliance'),
+                          tr: tr,
+                          agreed: _agreed,
+                          scrollController: _complianceScrollController,
+                          onAgreedChanged: (value) {
+                            setState(() => _agreed = value);
+                          },
+                          onContinue: _agreed ? _finishOnboarding : null,
+                        ),
                 ),
               ),
             ],
@@ -590,146 +569,6 @@ class _AgreementCheckbox extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _AuthStep extends StatelessWidget {
-  const _AuthStep({
-    super.key,
-    required this.tr,
-    required this.language,
-    required this.showApple,
-    required this.onGoogle,
-    required this.onApple,
-    required this.onSkip,
-  });
-
-  final String Function(String key) tr;
-  final AppLanguage language;
-  final bool showApple;
-  final VoidCallback onGoogle;
-  final VoidCallback onApple;
-  final VoidCallback onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBackground,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.06),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.background,
-                          border: Border.all(color: AppColors.accent, width: 1.5),
-                        ),
-                        child: const Icon(
-                          Icons.diamond_outlined,
-                          size: 36,
-                          color: AppColors.accent,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        tr(OnboardingStringKeys.authTitle),
-                        style: AppTypography.heading(fontSize: 24),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        tr(OnboardingStringKeys.authSubtitle),
-                        textAlign: TextAlign.center,
-                        style: AppTypography.productMeta().copyWith(fontSize: 14),
-                      ),
-                      const SizedBox(height: 24),
-                      SocialAuthButton(
-                        label: tr(OnboardingStringKeys.signInGoogle),
-                        onPressed: onGoogle,
-                        icon: Container(
-                          width: 22,
-                          height: 22,
-                          alignment: Alignment.center,
-                          child: Text(
-                            'G',
-                            style: AppTypography.caption(fontWeight: FontWeight.w700)
-                                .copyWith(
-                              fontSize: 14,
-                              color: const Color(0xFF4285F4),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (showApple) ...[
-                        const SizedBox(height: 12),
-                        SocialAuthButton(
-                          label: tr(OnboardingStringKeys.signInApple),
-                          onPressed: onApple,
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.textOnPrimary,
-                          borderColor: AppColors.primary,
-                          icon: const Icon(
-                            Icons.apple,
-                            size: 22,
-                            color: AppColors.textOnPrimary,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 48,
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: onSkip,
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.textPrimary,
-                            side: const BorderSide(color: AppColors.border),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Text(
-                            tr(OnboardingStringKeys.skipGuest),
-                            style: AppTypography.caption(
-                              fontWeight: FontWeight.w600,
-                            ).copyWith(fontSize: 14),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(child: FeedbackButton(language: language)),
-                const SizedBox(height: 16),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

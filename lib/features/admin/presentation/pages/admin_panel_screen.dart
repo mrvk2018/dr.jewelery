@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../profile/domain/models/user_profile.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/feedback_item.dart';
@@ -25,7 +27,8 @@ class AdminPanelScreen extends StatefulWidget {
 class _AdminPanelScreenState extends State<AdminPanelScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late List<OrderItem> _orders;
+  List<OrderItem> _orders = const [];
+  bool _ordersLoading = true;
 
   String _selectedCategory = CatalogCategories.rings;
 
@@ -33,7 +36,48 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
-    _orders = const [];
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAdminOrders());
+  }
+
+  Future<void> _loadAdminOrders() async {
+    if (!mounted) return;
+    setState(() => _ordersLoading = true);
+    try {
+      final database = CatalogScope.of(context).database;
+      final loaded = await database.getAllOrders(UserRole.admin);
+      if (!mounted) return;
+      setState(() {
+        _orders = loaded;
+        _ordersLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _ordersLoading = false);
+    }
+  }
+
+  Future<void> _onAdminOrderStatusChanged(String orderId, String newStatus) async {
+    final database = CatalogScope.of(context).database;
+    try {
+      await database.updateOrderStatus(orderId, newStatus, UserRole.admin);
+      if (!mounted) return;
+      setState(() {
+        _orders = _orders
+            .map(
+              (order) => order.id == orderId
+                  ? order.copyWith(
+                      status: OrderStatus.fromSupabaseStatus(newStatus),
+                    )
+                  : order,
+            )
+            .toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось обновить статус: $e')),
+      );
+    }
   }
   @override
   void dispose() {
@@ -201,7 +245,12 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _OrdersTab(orders: _orders),
+          _OrdersTab(
+            orders: _orders,
+            loading: _ordersLoading,
+            onRefresh: _loadAdminOrders,
+            onStatusChanged: _onAdminOrderStatusChanged,
+          ),
           AnimatedBuilder(
             animation: catalog,
             builder: (context, _) {
@@ -235,100 +284,186 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
 }
 class _OrdersTab extends StatelessWidget {
-  const _OrdersTab({required this.orders});
+  const _OrdersTab({
+    required this.orders,
+    required this.loading,
+    required this.onRefresh,
+    required this.onStatusChanged,
+  });
 
   final List<OrderItem> orders;
+  final bool loading;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function(String orderId, String newStatus) onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: orders.length,
-      separatorBuilder: (context, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final order = orders[index];
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      order.id,
-                      style: AppTypography.caption(fontWeight: FontWeight.w700)
-                          .copyWith(fontSize: 13),
-                    ),
-                  ),
-                  _AdminStatusBadge(status: order.status),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                order.productName,
-                style: AppTypography.productName(),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Клиент: ${order.customerName}',
-                style: AppTypography.productMeta(),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(order.dateLabel, style: AppTypography.productMeta()),
-                  Text(
-                    formatWon(order.amount),
-                    style: AppTypography.price(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
+    if (loading && orders.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (orders.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: const [
+            SizedBox(height: 120),
+            Center(child: Text('Заказов пока нет')),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: orders.length,
+        separatorBuilder: (context, _) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final order = orders[index];
+          return _AdminOrderCard(
+            order: order,
+            onStatusChanged: (status) => onStatusChanged(order.id, status),
+          );
+        },
+      ),
     );
   }
 }
 
-class _AdminStatusBadge extends StatelessWidget {
-  const _AdminStatusBadge({required this.status});
+class _AdminOrderCard extends StatelessWidget {
+  const _AdminOrderCard({
+    required this.order,
+    required this.onStatusChanged,
+  });
 
-  final OrderStatus status;
-
-  Color get _color {
-    return switch (status) {
-      OrderStatus.newOrder => AppColors.saleRed,
-      OrderStatus.paid => AppColors.accent,
-      OrderStatus.delivered => AppColors.textSecondary,
-    };
-  }
+  final OrderItem order;
+  final ValueChanged<String> onStatusChanged;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
       ),
-      child: Text(
-        status.label,
-        style: AppTypography.caption(
-          color: _color,
-          fontWeight: FontWeight.w700,
-        ).copyWith(fontSize: 11),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  order.id,
+                  style: AppTypography.caption(fontWeight: FontWeight.w700)
+                      .copyWith(fontSize: 13),
+                ),
+              ),
+              _AdminOrderStatusDropdown(
+                value: order.adminStatusDropdownValue,
+                onChanged: onStatusChanged,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(order.productName, style: AppTypography.productName()),
+          const SizedBox(height: 6),
+          Text(
+            'Клиент: ${order.customerName}',
+            style: AppTypography.productMeta(),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(order.dateLabel, style: AppTypography.productMeta()),
+              Text(
+                formatWon(order.amount),
+                style: AppTypography.price(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          if (order.hasShippingAddress) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Доставка (KR)',
+              style: AppTypography.caption(fontWeight: FontWeight.w700)
+                  .copyWith(fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              order.formattedShippingAddressKr,
+              style: AppTypography.productMeta().copyWith(height: 1.45),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Clipboard.setData(
+                    ClipboardData(text: order.formattedShippingAddressKr),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Адрес скопирован'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                label: const Text('Скопировать адрес'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accent,
+                  side: const BorderSide(color: AppColors.accent),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
+    );
+  }
+}
+
+class _AdminOrderStatusDropdown extends StatelessWidget {
+  const _AdminOrderStatusDropdown({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  static const _labels = {
+    'paid': 'Оплачен',
+    'in_transit': 'В пути',
+    'delivered': 'Доставлен',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButton<String>(
+      value: value,
+      underline: const SizedBox.shrink(),
+      borderRadius: BorderRadius.circular(8),
+      items: OrderItem.adminFulfillmentStatuses
+          .map(
+            (status) => DropdownMenuItem<String>(
+              value: status,
+              child: Text(_labels[status] ?? status),
+            ),
+          )
+          .toList(),
+      onChanged: (next) {
+        if (next != null && next != value) onChanged(next);
+      },
     );
   }
 }

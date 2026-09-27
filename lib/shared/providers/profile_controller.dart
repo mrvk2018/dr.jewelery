@@ -24,30 +24,7 @@ class ProfileController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final cloudUser = await _database.refreshCustomerProfileFromCloud();
-      if (cloudUser != null) {
-        isAuthenticated = true;
-        user = cloudUser;
-        await _persistSession();
-      } else {
-        final session = await _database.loadProfileSession();
-        if (session != null) {
-          isAuthenticated = session['isAuthenticated'] as bool? ?? false;
-          user = UserProfile.fromJson(
-            Map<String, dynamic>.from(session['user'] as Map? ?? const {}),
-          );
-          if (!isAuthenticated || user.role == UserRole.admin) {
-            isAuthenticated = false;
-            user = UserProfile.demoGuest;
-          } else if (user.role == UserRole.customer) {
-            final refreshed = await _database.refreshCustomerProfileFromCloud();
-            if (refreshed != null) {
-              user = refreshed;
-            }
-          }
-        }
-      }
-
+      await _ensureSupabaseCustomerSession();
       final stored = await _database.getOrders(user.id);
       _orders
         ..clear()
@@ -56,6 +33,15 @@ class ProfileController extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Восстанавливает Supabase-сессию или создаёт silent anonymous JWT.
+  Future<void> _ensureSupabaseCustomerSession() async {
+    var cloudUser = await _database.refreshCustomerProfileFromCloud();
+    cloudUser ??= await _database.signInCustomerWithSupabase();
+    isAuthenticated = true;
+    user = cloudUser;
+    await _persistSession();
   }
 
   Future<void> signInCustomer() async {
@@ -104,11 +90,22 @@ class ProfileController extends ChangeNotifier {
       _database.verifyAdminPin(pin);
 
   Future<void> logout() async {
+    if (user.isAdmin) {
+      final refreshed = await _database.refreshCustomerProfileFromCloud();
+      if (refreshed != null) {
+        user = refreshed;
+      } else {
+        await _ensureSupabaseCustomerSession();
+      }
+      isAuthenticated = true;
+      notifyListeners();
+      await _persistSession();
+      return;
+    }
+
     await _database.signOutSupabaseAuth();
-    isAuthenticated = false;
-    user = UserProfile.demoGuest;
+    await _ensureSupabaseCustomerSession();
     notifyListeners();
-    await _persistSession();
   }
 
   void addOrder(OrderItem order) {

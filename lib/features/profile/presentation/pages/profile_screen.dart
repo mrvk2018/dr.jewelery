@@ -14,7 +14,7 @@ import '../../../admin/presentation/widgets/admin_first_claim_dialog.dart';
 import '../../../admin/presentation/widgets/admin_unlock_dialog.dart';
 import '../widgets/profile_auth_views.dart';
 
-/// Экран профиля с гостевым и авторизованным режимами.
+/// Экран профиля покупателя (silent Supabase anonymous session).
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -41,21 +41,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await profile.refreshWalletFromCloud();
     if (!mounted) return;
     await CartScope.of(context).syncBonusBalanceFromProfile();
-  }
-
-  Future<void> _signInWithGoogle() async {
-    try {
-      await ProfileScope.of(context).signInCustomer();
-      if (!mounted) return;
-      await CartScope.of(context).syncBonusBalanceFromProfile();
-    } catch (_) {
-      if (!mounted) return;
-      _showAdminSnack('Не удалось войти. Проверьте Supabase Auth (anonymous).');
-    }
-  }
-
-  Future<void> _signInWithApple() async {
-    await _signInWithGoogle();
   }
 
   Future<void> _logout() async {
@@ -220,18 +205,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             titleTextStyle: AppTypography.heading(fontSize: 24),
           ),
           body: SafeArea(
-            child: profile.isAuthenticated
-                ? ProfileAuthenticatedView(
+            child: profile.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ProfileAuthenticatedView(
                     user: profile.user,
                     orders: profile.orders,
                     onLogout: _logout,
                     onOpenAdminPanel: _openAdminPanel,
-                    onLanguageTap: _showLanguageDialog,
-                    onSecretAdminTap: _onSecretAdminTap,
-                  )
-                : ProfileGuestView(
-                    onGoogleSignIn: _signInWithGoogle,
-                    onAppleSignIn: _signInWithApple,
                     onLanguageTap: _showLanguageDialog,
                     onSecretAdminTap: _onSecretAdminTap,
                   ),

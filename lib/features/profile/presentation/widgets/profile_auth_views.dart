@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
@@ -11,101 +10,6 @@ import '../../../support/presentation/widgets/feedback_bottom_sheet.dart';
 import '../../domain/models/order_item.dart';
 import '../../domain/models/user_profile.dart';
 import 'loyalty_qr_card.dart';
-import 'social_auth_button.dart';
-
-/// Экран профиля для неавторизованного пользователя (гость).
-class ProfileGuestView extends StatelessWidget {
-  const ProfileGuestView({
-    super.key,
-    required this.onGoogleSignIn,
-    required this.onAppleSignIn,
-    required this.onLanguageTap,
-    required this.onSecretAdminTap,
-  });
-
-  final VoidCallback onGoogleSignIn;
-  final VoidCallback onAppleSignIn;
-  final VoidCallback onLanguageTap;
-  final VoidCallback onSecretAdminTap;
-
-  bool get _showAppleSignIn {
-    return defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.06),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              GestureDetector(
-                key: const Key('profile_secret_avatar'),
-                onTap: onSecretAdminTap,
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.background,
-                    border: Border.all(color: AppColors.accent, width: 1.5),
-                  ),
-                  child: const Icon(
-                    Icons.person_outline_rounded,
-                    size: 36,
-                    color: AppColors.accent,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Добро пожаловать',
-                style: AppTypography.heading(fontSize: 24),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Войдите, чтобы копить бонусы и оформлять заказы',
-                textAlign: TextAlign.center,
-                style: AppTypography.productMeta().copyWith(fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              SocialAuthButton.google(onPressed: onGoogleSignIn),
-              if (_showAppleSignIn) ...[
-                const SizedBox(height: 12),
-                SocialAuthButton.apple(onPressed: onAppleSignIn),
-              ],
-              const SizedBox(height: 16),
-              FeedbackButton(
-                language: context.appLanguage,
-              ),
-              const SizedBox(height: 8),
-              ProfileLanguageTile(onTap: onLanguageTap),
-              const SizedBox(height: 8),
-              ProfileVersionLabel(onSecretTap: onSecretAdminTap),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// Экран профиля для авторизованного пользователя.
 class ProfileAuthenticatedView extends StatelessWidget {

@@ -14,18 +14,48 @@ const translate = require('google-translate-api-x');
 
 const PROGRESS_EVERY = 15;
 
+/** Подключение и лёгкие SELECT (каталог). */
+const MSSQL_TIMEOUT_MS = Number(process.env.MSSQL_TIMEOUT_MS || 5000);
+/** BLOB Articuls.Image — отдельный лимит на скачивание. */
+const MSSQL_BLOB_TIMEOUT_MS = Number(process.env.MSSQL_BLOB_TIMEOUT_MS || 25000);
+
 const MSSQL_CONFIG = {
   server: process.env.MSSQL_HOST || '211.176.43.226',
   port: Number(process.env.MSSQL_PORT || 1433),
   user: process.env.MSSQL_USER || 'DrJ_Reader',
   password: process.env.MSSQL_PASSWORD || 'Read_only11!',
   database: process.env.MSSQL_DATABASE || 'DrJaw',
+  connectionTimeout: MSSQL_TIMEOUT_MS,
+  /** Верхняя граница для tedious; точные лимиты — request.timeout в каждом запросе. */
+  requestTimeout: MSSQL_BLOB_TIMEOUT_MS,
   options: {
     encrypt: false,
     trustServerCertificate: true,
   },
   pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
 };
+
+/**
+ * MSSQL-операция с Promise.race (на случай зависания ниже драйвера).
+ * @param {string} label
+ * @param {(import('mssql').ConnectionPool) => Promise<T>} operation
+ * @param {import('mssql').ConnectionPool | null} pool
+ * @param {number} [timeoutMs=MSSQL_TIMEOUT_MS]
+ * @returns {Promise<T>}
+ */
+async function runMssqlWithTimeout(label, operation, pool, timeoutMs = MSSQL_TIMEOUT_MS) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label}: MSSQL timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([operation(pool), timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -263,25 +293,35 @@ async function uploadArticulImage(supabase, articul, imageBuffer) {
 }
 
 async function fetchArticulImageBuffer(pool, articul) {
-  const result = await pool
-    .request()
-    .input('articul', sql.NVarChar, articul)
-    .query(`
+  return runMssqlWithTimeout(
+    `fetchArticulImageBuffer(${articul})`,
+    async (activePool) => {
+      const request = activePool.request();
+      request.timeout = MSSQL_BLOB_TIMEOUT_MS;
+      const result = await request
+        .input('articul', sql.NVarChar, articul)
+        .query(`
       SELECT TOP 1 a.Image
       FROM Articuls AS a
       WHERE a.Articul = @articul
     `);
-  const row = result.recordset?.[0];
-  if (!row?.Image) return null;
-  return Buffer.isBuffer(row.Image) ? row.Image : Buffer.from(row.Image);
+      const row = result.recordset?.[0];
+      if (!row?.Image) return null;
+      return Buffer.isBuffer(row.Image) ? row.Image : Buffer.from(row.Image);
+    },
+    pool,
+    MSSQL_BLOB_TIMEOUT_MS,
+  );
 }
 
 async function fetchDrJawRows(pool) {
-  const result = await pool
-    .request()
-    .input('inStockEn', sql.NVarChar, 'InStock')
-    .input('inStockRu', sql.NVarChar, 'В наличии')
-    .query(`
+  return runMssqlWithTimeout('fetchDrJawRows', async (activePool) => {
+    const request = activePool.request();
+    request.timeout = MSSQL_TIMEOUT_MS;
+    const result = await request
+      .input('inStockEn', sql.NVarChar, 'InStock')
+      .input('inStockRu', sql.NVarChar, 'В наличии')
+      .query(`
     SELECT
       i.Id,
       i.Articul,
@@ -297,7 +337,8 @@ async function fetchDrJawRows(pool) {
     INNER JOIN Articuls AS a ON i.Articul = a.Articul
     WHERE i.Status IN (@inStockEn, @inStockRu)
   `);
-  return result.recordset || [];
+    return result.recordset || [];
+  }, pool);
 }
 
 async function fetchSupabaseStatusMap(supabase) {
@@ -320,6 +361,7 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
 
   let upserted = 0;
   let skippedProtected = 0;
+  let rowErrors = 0;
   let photosUploaded = 0;
   let translationApiCalls = 0;
   const total = rowsToProcess.length;
@@ -335,50 +377,72 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
       continue;
     }
 
-    const { russianTitle, name, fromCache } = await getNameMapForRow(row);
-    if (!fromCache) translationApiCalls += 1;
+    try {
+      const { russianTitle, name, fromCache } = await getNameMapForRow(row);
+      if (!fromCache) translationApiCalls += 1;
 
-    const { status, stock_quantity } = mapWarehouseStatus(row.Status);
-    const imageBuffer = await fetchArticulImageBuffer(pool, sku);
-    const imageUrl = await uploadArticulImage(supabase, sku, imageBuffer);
-    if (imageUrl) photosUploaded += 1;
+      const { status, stock_quantity } = mapWarehouseStatus(row.Status);
 
-    const weightGrams = parseWeight(row.Weight);
-    const salePrice = parsePriceKrw(row.Price);
+      let imageUrl = null;
+      try {
+        const imageBuffer = await fetchArticulImageBuffer(pool, sku);
+        imageUrl = await uploadArticulImage(supabase, sku, imageBuffer);
+        if (imageUrl) photosUploaded += 1;
+      } catch (imageErr) {
+        rowErrors += 1;
+        const imageMessage =
+          imageErr instanceof Error ? imageErr.message : String(imageErr);
+        console.warn(
+          `[sync image skip] id=${id} sku=${sku}: ${imageMessage}`,
+        );
+      }
 
-    const payload = {
-      id,
-      sku,
-      stock_quantity,
-      status,
-      name,
-      description: {
-        ru: russianTitle,
-        ko: name.ko,
-        kk: name.kk,
-        uz: name.uz,
-        en: name.en,
-      },
-      metal: String(row.Metall || '').trim() || '—',
-      sale_price: salePrice,
-      old_price: salePrice,
-      discount_percent: 0,
-      category: String(row.Type || '').trim() || 'Изделие',
-      insert: String(row.Stones || '').trim() || '—',
-      icon_index: 0,
-      available_sizes: parseSizeArray(row.Size),
-      warehouse_attributes: buildWarehouseAttributes(row),
-      image_url: imageUrl,
-      weight_grams: weightGrams,
-    };
+      const weightGrams = parseWeight(row.Weight);
+      const salePrice = parsePriceKrw(row.Price);
 
-    const { error } = await supabase.from('products').upsert(payload, {
-      onConflict: 'id',
-    });
-    if (error) {
-      console.error(`upsert id=${id} sku=${sku}:`, error.message);
-    } else {
-      upserted += 1;
+      const payload = {
+        id,
+        sku,
+        stock_quantity,
+        status,
+        name,
+        description: {
+          ru: russianTitle,
+          ko: name.ko,
+          kk: name.kk,
+          uz: name.uz,
+          en: name.en,
+        },
+        metal: String(row.Metall || '').trim() || '—',
+        sale_price: salePrice,
+        old_price: salePrice,
+        discount_percent: 0,
+        category: String(row.Type || '').trim() || 'Изделие',
+        insert: String(row.Stones || '').trim() || '—',
+        icon_index: 0,
+        available_sizes: parseSizeArray(row.Size),
+        warehouse_attributes: buildWarehouseAttributes(row),
+        image_url: imageUrl,
+        weight_grams: weightGrams,
+      };
+
+      const { error } = await supabase.from('products').upsert(payload, {
+        onConflict: 'id',
+      });
+      if (error) {
+        console.error(`upsert id=${id} sku=${sku}:`, error.message);
+        rowErrors += 1;
+      } else {
+        upserted += 1;
+      }
+    } catch (err) {
+      rowErrors += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[sync row skip] id=${id} sku=${sku}: ${message}`,
+        err instanceof Error ? err.stack : '',
+      );
+      continue;
     }
 
     const processed = index + 1;
@@ -387,10 +451,15 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
     }
   }
 
+  if (rowErrors > 0) {
+    console.warn(`[sync] строк с ошибками (пропущено): ${rowErrors}`);
+  }
+
   return {
     mssqlIds,
     upserted,
     skippedProtected,
+    rowErrors,
     photosUploaded,
     translationApiCalls,
     cacheSize: Object.keys(translationCache).length,
@@ -464,10 +533,12 @@ async function main() {
 
   console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=true — starting import…`);
 
+  let importStarted = true;
   let pool;
-  let syncSucceeded = false;
+  let fatalError = null;
+
   try {
-    pool = await sql.connect(MSSQL_CONFIG);
+    pool = await runMssqlWithTimeout('sql.connect', () => sql.connect(MSSQL_CONFIG), null);
     console.log('MSSQL DrJaw: connected');
 
     console.log(
@@ -490,18 +561,38 @@ async function main() {
     console.log('---');
     console.log(
       `Sync done: upserted=${stats.upserted}, skipped_protected=${stats.skippedProtected}, ` +
-        `photos=${stats.photosUploaded}, deleted=${deleted}`,
+        `row_errors=${stats.rowErrors ?? 0}, photos=${stats.photosUploaded}, deleted=${deleted}`,
     );
     console.log(
       `Переводы: уникальных в кэше=${stats.cacheSize}, API-вызовов (новых ключей)=${stats.translationApiCalls}`,
     );
-    syncSucceeded = true;
+  } catch (err) {
+    fatalError = err;
+    console.error('sync.js import fatal:', err);
   } finally {
-    if (pool) await pool.close();
-    if (syncSucceeded) {
-      await clearSyncTaskRequested(supabase);
-      console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=false`);
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (closeErr) {
+        console.warn('MSSQL pool close:', closeErr);
+      }
     }
+
+    if (importStarted) {
+      try {
+        await clearSyncTaskRequested(supabase);
+        console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=false`);
+      } catch (clearErr) {
+        console.error(
+          `[sync_tasks] не удалось сбросить sync_requested:`,
+          clearErr instanceof Error ? clearErr.message : clearErr,
+        );
+      }
+    }
+  }
+
+  if (fatalError) {
+    throw fatalError;
   }
 }
 

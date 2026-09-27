@@ -29,7 +29,7 @@ abstract final class DatabaseCollections {
   static const profileSession = 'dj_profile_session_v1';
   static const appMarketing = 'local_app_marketing_settings_v1';
   static const localReferralSeller = 'local_referred_by_seller_v1';
-  static const adminPasswordHash = DeviceSecretKeys.adminPasswordHash;
+  static const adminPinHash = DeviceSecretKeys.adminPinHash;
   static const adminDeviceClaimed = DeviceSecretKeys.adminDeviceClaimed;
   static const posApiKey = DeviceSecretKeys.posApiKey;
   static const tossApiKey = DeviceSecretKeys.tossApiKey;
@@ -193,11 +193,11 @@ abstract class DatabaseService {
   /// First Claim: владелец уже назначен на этом устройстве.
   Future<bool> isAdminDeviceClaimed();
 
-  /// Первый вход: сохранить хэш пароля и поднять флаг claimed.
-  Future<void> claimAdminDevice(String password);
+  /// First Claim: сохранить хэш 4-значного PIN и поднять флаг claimed.
+  Future<void> claimAdminDevicePin(String pin);
 
-  /// Проверка пароля владельца (после First Claim).
-  Future<bool> verifyAdminPassword(String password);
+  /// Проверка локального PIN (после First Claim).
+  Future<bool> verifyAdminPin(String pin);
 
   Future<IntegrationKeys> loadIntegrationKeys();
 
@@ -585,13 +585,13 @@ class LocalDatabaseService implements DatabaseService {
   Future<bool> isAdminDeviceClaimed() async => _secrets.isAdminDeviceClaimed;
 
   @override
-  Future<void> claimAdminDevice(String password) {
-    return _secrets.claimAdminDevice(password);
+  Future<void> claimAdminDevicePin(String pin) {
+    return _secrets.claimAdminDevicePin(pin);
   }
 
   @override
-  Future<bool> verifyAdminPassword(String password) async {
-    return _secrets.verifyAdminPassword(password);
+  Future<bool> verifyAdminPin(String pin) async {
+    return _secrets.verifyAdminPin(pin);
   }
 
   @override
@@ -1258,13 +1258,13 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<void> claimAdminDevice(String password) async {
-    await (await _deviceSecrets()).claimAdminDevice(password);
+  Future<void> claimAdminDevicePin(String pin) async {
+    await (await _deviceSecrets()).claimAdminDevicePin(pin);
   }
 
   @override
-  Future<bool> verifyAdminPassword(String password) async {
-    return (await _deviceSecrets()).verifyAdminPassword(password);
+  Future<bool> verifyAdminPin(String pin) async {
+    return (await _deviceSecrets()).verifyAdminPin(pin);
   }
 
   @override

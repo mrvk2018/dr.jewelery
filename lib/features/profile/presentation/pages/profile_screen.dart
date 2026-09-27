@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/constants/supabase_config.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
-import '../../../../core/services/admin_auth_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
-import '../../../admin/presentation/pages/admin_owner_init_page.dart';
 import '../../../admin/presentation/pages/admin_panel_screen.dart';
+import '../../../admin/presentation/widgets/admin_first_claim_dialog.dart';
 import '../../../admin/presentation/widgets/admin_unlock_dialog.dart';
 import '../widgets/profile_auth_views.dart';
 
@@ -92,22 +93,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (!mounted) return;
 
     if (!claimed) {
-      final password = await Navigator.of(context).push<String>(
-        MaterialPageRoute<String>(
-          fullscreenDialog: true,
-          builder: (_) => const AdminOwnerInitPage(),
-        ),
-      );
-      if (password == null || !mounted) return;
-      await profile.claimAdminAndSignIn(password);
-      if (!mounted) return;
-      _showAdminSnack('Режим администратора Dr. Jewelry активирован');
+      await _runAdminFirstClaim();
       return;
     }
 
-    final unlocked = await showAdminUnlockDialog(context);
+    final unlocked = await showAdminPinUnlockDialog(context);
     if (!mounted || !unlocked) return;
-    _showAdminSnack('Режим администратора Dr. Jewelry активирован');
+    _showAdminSnack('Режим администратора успешно активирован!');
+  }
+
+  Future<void> _runAdminFirstClaim() async {
+    final creds = await showAdminFirstClaimDialog(context);
+    if (creds == null || !mounted) return;
+
+    // Отдельный клиент: signInWithPassword не затрагивает сессию Supabase.instance.
+    final verifyClient = SupabaseClient(
+      SupabaseConfig.projectUrl,
+      SupabaseConfig.anonKey,
+    );
+
+    try {
+      final response = await verifyClient.auth.signInWithPassword(
+        email: creds.email.trim(),
+        password: creds.password,
+      );
+
+      if (response.user == null) {
+        if (!mounted) return;
+        _showAdminSnack('Доступ запрещен: неверные данные администратора');
+        return;
+      }
+
+      await verifyClient.auth.signOut();
+      if (!mounted) return;
+
+      await ProfileScope.of(context).completeAdminFirstClaim(creds.pin);
+      if (!mounted) return;
+      _showAdminSnack('Режим администратора успешно активирован!');
+    } catch (_) {
+      if (!mounted) return;
+      _showAdminSnack('Доступ запрещен: неверные данные администратора');
+    } finally {
+      verifyClient.dispose();
+    }
   }
 
   void _showAdminSnack(String message) {
@@ -164,27 +192,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profile = ProfileScope.of(context);
     if (!profile.user.isAdmin) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Запрос биометрии...',
-          style: AppTypography.caption(
-            color: AppColors.textOnPrimary,
-            fontWeight: FontWeight.w600,
-          ).copyWith(fontSize: 14),
-        ),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        margin: const EdgeInsets.all(16),
-        duration: const Duration(seconds: 2),
-      ),
+    final verified = await showAdminPinUnlockDialog(
+      context,
+      forPanelAccess: true,
     );
-
-    final isVerified = await authenticateAdmin();
-    if (!mounted || !isVerified) return;
+    if (!mounted || !verified) return;
 
     await Navigator.of(context).push(
       MaterialPageRoute<void>(

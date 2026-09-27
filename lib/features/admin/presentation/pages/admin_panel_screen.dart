@@ -78,29 +78,70 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ),
     );
   }
+  static const _catalogSyncTaskId = 'catalog_sync';
+  static const _syncPollInterval = Duration(seconds: 3);
+  static const _syncPollMaxAttempts = 7;
+
+  Future<bool> _isCatalogSyncTaskComplete() async {
+    final row = await Supabase.instance.client
+        .from('sync_tasks')
+        .select('sync_requested')
+        .eq('id', _catalogSyncTaskId)
+        .maybeSingle();
+    if (row == null) return false;
+    final requested = row['sync_requested'];
+    if (requested is bool) return !requested;
+    return false;
+  }
+
+  Future<void> _waitForWarehouseSyncImport(BuildContext context) async {
+    for (var attempt = 0; attempt < _syncPollMaxAttempts; attempt++) {
+      await Future<void>.delayed(_syncPollInterval);
+      if (!context.mounted) return;
+
+      try {
+        if (await _isCatalogSyncTaskComplete()) {
+          if (!context.mounted) return;
+          await CatalogScope.of(context).load();
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Данные успешно импортированы со склада! Каталог обновлен.',
+              ),
+            ),
+          );
+          return;
+        }
+      } catch (_) {
+        // RLS/сеть — повторяем опрос до лимита попыток.
+      }
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Сервер склада долго отвечает. Проверьте статус импорта позже.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _triggerSyncCatalog(BuildContext context) async {
     try {
+      await Supabase.instance.client.functions.invoke('sync-catalog');
+
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Запуск синхронизации... Пожалуйста, подождите.',
+            'Запрос на синхронизацию отправлен на склад. Пожалуйста, подождите...',
           ),
         ),
       );
 
-      await Supabase.instance.client.functions.invoke('sync-catalog');
-
-      if (context.mounted) {
-        await CatalogScope.of(context).load();
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Синхронизация успешно выполнена! Каталог обновлен.',
-            ),
-          ),
-        );
-      }
+      await _waitForWarehouseSyncImport(context);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

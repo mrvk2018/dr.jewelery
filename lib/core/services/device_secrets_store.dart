@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Ключи SharedPreferences для First Claim и интеграций.
 abstract final class DeviceSecretKeys {
-  static const adminPasswordHash = 'dj_admin_password_hash';
+  static const adminPinHash = 'dj_admin_pin_hash';
   static const adminDeviceClaimed = 'dj_admin_device_claimed';
   static const posApiKey = 'dj_pos_api_key';
   static const tossApiKey = 'dj_toss_api_key';
@@ -31,30 +31,36 @@ class DeviceSecretsStore {
 
   final SharedPreferences _prefs;
 
-  bool get isAdminDeviceClaimed =>
-      _prefs.getBool(DeviceSecretKeys.adminDeviceClaimed) ?? false;
+  bool get isAdminDeviceClaimed {
+    final claimed = _prefs.getBool(DeviceSecretKeys.adminDeviceClaimed) ?? false;
+    if (!claimed) return false;
+    final pinHash = _prefs.getString(DeviceSecretKeys.adminPinHash);
+    return pinHash != null && pinHash.isNotEmpty;
+  }
 
-  Future<void> claimAdminDevice(String password) async {
-    final trimmed = password.trim();
-    if (trimmed.isEmpty) {
-      throw ArgumentError('Пароль администратора не может быть пустым');
+  static bool isValidAdminPin(String pin) => RegExp(r'^\d{4}$').hasMatch(pin);
+
+  Future<void> claimAdminDevicePin(String pin) async {
+    if (!isValidAdminPin(pin)) {
+      throw ArgumentError('PIN должен состоять из 4 цифр');
     }
     if (isAdminDeviceClaimed) {
       throw StateError('Владелец на этом устройстве уже назначен');
     }
 
     await _prefs.setString(
-      DeviceSecretKeys.adminPasswordHash,
-      hashAdminPassword(trimmed),
+      DeviceSecretKeys.adminPinHash,
+      hashAdminPassword(pin),
     );
     await _prefs.setBool(DeviceSecretKeys.adminDeviceClaimed, true);
   }
 
-  bool verifyAdminPassword(String password) {
+  bool verifyAdminPin(String pin) {
     if (!isAdminDeviceClaimed) return false;
-    final stored = _prefs.getString(DeviceSecretKeys.adminPasswordHash);
+    if (!isValidAdminPin(pin)) return false;
+    final stored = _prefs.getString(DeviceSecretKeys.adminPinHash);
     if (stored == null || stored.isEmpty) return false;
-    return verifyAdminPasswordHash(password.trim(), stored);
+    return verifyAdminPasswordHash(pin, stored);
   }
 
   IntegrationKeys loadIntegrationKeys() {

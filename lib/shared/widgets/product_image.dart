@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -50,6 +51,22 @@ class ProductImage extends StatelessWidget {
     );
   }
 
+  Widget _loadingPlaceholder() {
+    return ColoredBox(
+      color: AppColors.cardBackground,
+      child: Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.accent,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final url = _url;
@@ -57,32 +74,14 @@ class ProductImage extends StatelessWidget {
       return _placeholder();
     }
 
-    return Image.network(
-      url,
+    return CachedNetworkImage(
+      imageUrl: url,
+      cacheKey: url,
       fit: fit,
       width: double.infinity,
       height: double.infinity,
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) return child;
-        return ColoredBox(
-          color: AppColors.cardBackground,
-          child: Center(
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.accent,
-                value: loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                    : null,
-              ),
-            ),
-          ),
-        );
-      },
-      errorBuilder: (context, error, stackTrace) => _placeholder(),
+      placeholder: (context, _) => _loadingPlaceholder(),
+      errorWidget: (context, url, error) => _placeholder(),
     );
   }
 }

@@ -1,27 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../../../core/services/device_secrets_store.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/profile_scope.dart';
 
-/// Запрос пароля владельца после First Claim.
-Future<bool> showAdminUnlockDialog(BuildContext context) async {
+/// Локальная проверка PIN (без сети). [forPanelAccess] — только сверка PIN, без signInAdmin.
+Future<bool> showAdminPinUnlockDialog(
+  BuildContext context, {
+  bool forPanelAccess = false,
+}) async {
   final ok = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (dialogContext) => const _AdminUnlockDialog(),
+    builder: (dialogContext) => _AdminPinUnlockDialog(forPanelAccess: forPanelAccess),
   );
   return ok ?? false;
 }
 
-class _AdminUnlockDialog extends StatefulWidget {
-  const _AdminUnlockDialog();
+class _AdminPinUnlockDialog extends StatefulWidget {
+  const _AdminPinUnlockDialog({required this.forPanelAccess});
+
+  final bool forPanelAccess;
 
   @override
-  State<_AdminUnlockDialog> createState() => _AdminUnlockDialogState();
+  State<_AdminPinUnlockDialog> createState() => _AdminPinUnlockDialogState();
 }
 
-class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
+class _AdminPinUnlockDialogState extends State<_AdminPinUnlockDialog> {
   final _controller = TextEditingController();
   String? _error;
   bool _busy = false;
@@ -33,9 +40,9 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
   }
 
   Future<void> _submit() async {
-    final password = _controller.text;
-    if (password.trim().isEmpty) {
-      setState(() => _error = 'Введите пароль');
+    final pin = _controller.text.trim();
+    if (!DeviceSecretsStore.isValidAdminPin(pin)) {
+      setState(() => _error = 'Введите 4-значный PIN');
       return;
     }
 
@@ -44,7 +51,11 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
       _error = null;
     });
 
-    final unlocked = await ProfileScope.of(context).unlockAdmin(password);
+    final profile = ProfileScope.of(context);
+    final unlocked = widget.forPanelAccess
+        ? await profile.verifyAdminPinForPanel(pin)
+        : await profile.unlockAdminWithPin(pin);
+
     if (!mounted) return;
     if (unlocked) {
       Navigator.of(context).pop(true);
@@ -53,7 +64,7 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
 
     setState(() {
       _busy = false;
-      _error = 'Неверный пароль. Доступ в админку запрещён.';
+      _error = 'Неверный PIN. Доступ запрещён.';
     });
   }
 
@@ -63,7 +74,7 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
       backgroundColor: AppColors.background,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Text(
-        'Вход владельца',
+        widget.forPanelAccess ? 'Доступ к панели' : 'Вход администратора',
         style: AppTypography.heading(fontSize: 20),
       ),
       content: Column(
@@ -71,19 +82,24 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Устройство уже закреплено за владельцем. '
-            'Введите пароль администратора.',
+            widget.forPanelAccess
+                ? 'Введите PIN администратора для открытия панели управления.'
+                : 'Введите PIN администратора, заданный при первой привязке.',
             style: AppTypography.productMeta().copyWith(fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 16),
           TextField(
-            key: const Key('admin_unlock_password'),
+            key: const Key('admin_unlock_pin'),
             controller: _controller,
             obscureText: true,
             enabled: !_busy,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onSubmitted: (_) => _submit(),
             decoration: InputDecoration(
-              labelText: 'Пароль администратора',
+              labelText: 'PIN (4 цифры)',
+              counterText: '',
               filled: true,
               fillColor: AppColors.cardBackground,
               border: OutlineInputBorder(
@@ -119,7 +135,7 @@ class _AdminUnlockDialogState extends State<_AdminUnlockDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Войти'),
+              : const Text('Продолжить'),
         ),
       ],
     );

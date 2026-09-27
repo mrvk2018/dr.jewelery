@@ -88,17 +88,20 @@ class ProfileController extends ChangeNotifier {
 
   Future<bool> isAdminDeviceClaimed() => _database.isAdminDeviceClaimed();
 
-  Future<void> claimAdminAndSignIn(String password) async {
-    await _database.claimAdminDevice(password);
+  Future<void> completeAdminFirstClaim(String pin) async {
+    await _database.claimAdminDevicePin(pin);
     signInAdmin();
   }
 
-  Future<bool> unlockAdmin(String password) async {
-    final ok = await _database.verifyAdminPassword(password);
+  Future<bool> unlockAdminWithPin(String pin) async {
+    final ok = await _database.verifyAdminPin(pin);
     if (!ok) return false;
     signInAdmin();
     return true;
   }
+
+  Future<bool> verifyAdminPinForPanel(String pin) =>
+      _database.verifyAdminPin(pin);
 
   Future<void> logout() async {
     await _database.signOutSupabaseAuth();

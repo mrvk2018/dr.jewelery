@@ -257,7 +257,9 @@ async function uploadArticulImage(supabase, articul, imageBuffer) {
     return null;
   }
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
-  return data.publicUrl || null;
+  const publicUrl = data.publicUrl?.trim();
+  if (!publicUrl) return null;
+  return `${publicUrl}?v=${Date.now()}`;
 }
 
 async function fetchArticulImageBuffer(pool, articul) {

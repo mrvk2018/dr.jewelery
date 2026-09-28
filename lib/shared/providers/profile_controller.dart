@@ -29,6 +29,10 @@ class ProfileController extends ChangeNotifier {
       _orders
         ..clear()
         ..addAll(stored);
+    } catch (error, stackTrace) {
+      debugPrint('ProfileController.load failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -37,8 +41,23 @@ class ProfileController extends ChangeNotifier {
 
   /// Восстанавливает Supabase-сессию или создаёт silent anonymous JWT.
   Future<void> _ensureSupabaseCustomerSession() async {
-    var cloudUser = await _database.refreshCustomerProfileFromCloud();
-    cloudUser ??= await _database.signInCustomerWithSupabase();
+    try {
+      final refreshed = await _database.refreshCustomerProfileFromCloud();
+      if (refreshed != null) {
+        isAuthenticated = true;
+        user = refreshed;
+        await _persistSession();
+        return;
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'ProfileController: refreshCustomerProfile failed, reset auth: $error',
+      );
+      debugPrint('$stackTrace');
+      await _database.signOutSupabaseAuth();
+    }
+
+    final cloudUser = await _database.signInCustomerWithSupabase();
     isAuthenticated = true;
     user = cloudUser;
     await _persistSession();

@@ -124,7 +124,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
   static const _catalogSyncTaskId = 'catalog_sync';
   static const _syncPollInterval = Duration(seconds: 3);
-  static const _syncPollMaxAttempts = 7;
+  /// Полный импорт с фото/переводами может занимать несколько минут.
+  static const _syncPollMaxAttempts = 60;
 
   Future<bool> _isCatalogSyncTaskComplete() async {
     final row = await Supabase.instance.client
@@ -166,7 +167,9 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Сервер склада долго отвечает. Проверьте статус импорта позже.',
+          'Импорт ещё не завершён (sync_requested=true). '
+          'Убедитесь, что на ПК склада запущен cron «npm run sync», '
+          'и проверьте логи sync.js (MSSQL connect/query timeout).',
         ),
       ),
     );

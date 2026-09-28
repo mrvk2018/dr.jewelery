@@ -1474,7 +1474,9 @@ class CloudDatabaseService implements DatabaseService {
         .eq('id', userId)
         .maybeSingle();
     if (row == null) {
-      await _supabaseClient.from('profiles').insert({'id': userId});
+      await _supabaseClient
+          .from('profiles')
+          .upsert({'id': userId}, onConflict: 'id');
       return _supabaseClient
           .from('profiles')
           .select('bonus_balance, referred_by_seller')
@@ -1493,12 +1495,32 @@ class CloudDatabaseService implements DatabaseService {
   Future<UserProfile> signInCustomerWithSupabase() async {
     final auth = _supabaseClient.auth;
     if (auth.currentUser == null) {
-      await auth.signInAnonymously();
+      try {
+        await auth.signInAnonymously();
+      } on AuthException catch (error, stackTrace) {
+        debugPrint(
+          'CloudDatabaseService.signInAnonymously failed: '
+          '${error.message} status=${error.statusCode}',
+        );
+        debugPrint('$stackTrace');
+        rethrow;
+      } catch (error, stackTrace) {
+        debugPrint('CloudDatabaseService.signInAnonymously failed: $error');
+        debugPrint('$stackTrace');
+        rethrow;
+      }
     }
     final authUser = auth.currentUser;
     if (authUser == null) {
+      debugPrint(
+        'CloudDatabaseService.signInCustomerWithSupabase: '
+        'currentUser null after signInAnonymously',
+      );
       throw StateError('Supabase auth session missing after sign-in');
     }
+    debugPrint(
+      'CloudDatabaseService.signInCustomerWithSupabase: session uid=${authUser.id}',
+    );
     final row = await _fetchProfileRow(authUser.id);
     return _userProfileFromAuth(authUser, row);
   }

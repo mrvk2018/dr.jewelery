@@ -40,6 +40,8 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
   LocaleProvider? _localeProvider;
   OnboardingStorage? _storage;
   bool _ready = false;
+  String? _bootstrapError;
+  bool _isBootstrapping = false;
 
   @override
   void initState() {
@@ -48,40 +50,67 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
   }
 
   Future<void> _bootstrap() async {
-    final storage = await OnboardingStorage.create();
-    final localeProvider = LocaleProvider(storage);
-    final DatabaseService database = JewelrySunlightApp.useCloudBackend
-        ? CloudDatabaseService(
-            supabaseUrl: SupabaseConfig.projectUrl,
-            anonKey: SupabaseConfig.anonKey,
-          )
-        : await LocalDatabaseService.create();
-    final catalogController = CatalogController(database);
-    final feedbackController = FeedbackController(database);
-    final cartController = CartController(database);
-    final favoritesController = FavoritesController(database);
-    final profileController = ProfileController(database);
-    await Future.wait<void>([
-      catalogController.load(),
-      feedbackController.load(),
-      favoritesController.load(),
-      profileController.load(),
-    ]);
-    await cartController.load();
-    if (profileController.isAuthenticated) {
-      await cartController.syncBonusBalanceFromProfile();
+    if (_isBootstrapping) return;
+    _isBootstrapping = true;
+    if (mounted) {
+      setState(() => _bootstrapError = null);
     }
-    if (!mounted) return;
-    setState(() {
-      _storage = storage;
-      _localeProvider = localeProvider;
-      _catalogController = catalogController;
-      _feedbackController = feedbackController;
-      _cartController = cartController;
-      _favoritesController = favoritesController;
-      _profileController = profileController;
-      _ready = true;
-    });
+
+    _cartController?.dispose();
+    _catalogController?.dispose();
+    _feedbackController?.dispose();
+    _favoritesController?.dispose();
+    _profileController?.dispose();
+    _localeProvider?.dispose();
+
+    try {
+      final storage = await OnboardingStorage.create();
+      final localeProvider = LocaleProvider(storage);
+      final DatabaseService database = JewelrySunlightApp.useCloudBackend
+          ? CloudDatabaseService(
+              supabaseUrl: SupabaseConfig.projectUrl,
+              anonKey: SupabaseConfig.anonKey,
+            )
+          : await LocalDatabaseService.create();
+      final catalogController = CatalogController(database);
+      final feedbackController = FeedbackController(database);
+      final cartController = CartController(database);
+      final favoritesController = FavoritesController(database);
+      final profileController = ProfileController(database);
+
+      await profileController.load();
+      await Future.wait<void>([
+        catalogController.load(),
+        feedbackController.load(),
+        favoritesController.load(),
+      ]);
+      await cartController.load();
+      if (profileController.isAuthenticated) {
+        await cartController.syncBonusBalanceFromProfile();
+      }
+      if (!mounted) return;
+      setState(() {
+        _storage = storage;
+        _localeProvider = localeProvider;
+        _catalogController = catalogController;
+        _feedbackController = feedbackController;
+        _cartController = cartController;
+        _favoritesController = favoritesController;
+        _profileController = profileController;
+        _ready = true;
+        _bootstrapError = null;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('JewelrySunlightApp._bootstrap failed: $error');
+      debugPrint('$stackTrace');
+      if (!mounted) return;
+      setState(() {
+        _ready = false;
+        _bootstrapError = error.toString();
+      });
+    } finally {
+      _isBootstrapping = false;
+    }
   }
 
   @override
@@ -105,9 +134,45 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
         _cartController == null ||
         _favoritesController == null ||
         _profileController == null) {
-      return const MaterialApp(
+      return MaterialApp(
+        theme: AppTheme.light,
         home: Scaffold(
-          body: Center(child: CircularProgressIndicator()),
+          body: Center(
+            child: _bootstrapError != null
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.cloud_off_outlined,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Не удалось подключиться к серверу',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _bootstrapError!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        const SizedBox(height: 24),
+                        FilledButton(
+                          onPressed: _isBootstrapping ? null : _bootstrap,
+                          child: const Text('Повторить'),
+                        ),
+                      ],
+                    ),
+                  )
+                : const CircularProgressIndicator(),
+          ),
         ),
       );
     }

@@ -14,8 +14,14 @@ const translate = require('google-translate-api-x');
 
 const PROGRESS_EVERY = 15;
 
-/** Подключение и лёгкие SELECT (каталог). */
-const MSSQL_TIMEOUT_MS = Number(process.env.MSSQL_TIMEOUT_MS || 5000);
+/** TCP/login к MSSQL (склад часто отвечает дольше 5 с). */
+const MSSQL_CONNECT_TIMEOUT_MS = Number(
+  process.env.MSSQL_CONNECT_TIMEOUT_MS ||
+    process.env.MSSQL_TIMEOUT_MS ||
+    30000,
+);
+/** SELECT каталога Items ⨝ Articuls. */
+const MSSQL_QUERY_TIMEOUT_MS = Number(process.env.MSSQL_QUERY_TIMEOUT_MS || 60000);
 /** BLOB Articuls.Image — отдельный лимит на скачивание. */
 const MSSQL_BLOB_TIMEOUT_MS = Number(process.env.MSSQL_BLOB_TIMEOUT_MS || 25000);
 
@@ -25,7 +31,7 @@ const MSSQL_CONFIG = {
   user: process.env.MSSQL_USER || 'DrJ_Reader',
   password: process.env.MSSQL_PASSWORD || 'Read_only11!',
   database: process.env.MSSQL_DATABASE || 'DrJaw',
-  connectionTimeout: MSSQL_TIMEOUT_MS,
+  connectionTimeout: MSSQL_CONNECT_TIMEOUT_MS,
   /** Верхняя граница для tedious; точные лимиты — request.timeout в каждом запросе. */
   requestTimeout: MSSQL_BLOB_TIMEOUT_MS,
   options: {
@@ -40,10 +46,10 @@ const MSSQL_CONFIG = {
  * @param {string} label
  * @param {(import('mssql').ConnectionPool) => Promise<T>} operation
  * @param {import('mssql').ConnectionPool | null} pool
- * @param {number} [timeoutMs=MSSQL_TIMEOUT_MS]
+ * @param {number} [timeoutMs=MSSQL_QUERY_TIMEOUT_MS]
  * @returns {Promise<T>}
  */
-async function runMssqlWithTimeout(label, operation, pool, timeoutMs = MSSQL_TIMEOUT_MS) {
+async function runMssqlWithTimeout(label, operation, pool, timeoutMs = MSSQL_QUERY_TIMEOUT_MS) {
   let timer;
   const timeoutPromise = new Promise((_, reject) => {
     timer = setTimeout(() => {
@@ -317,7 +323,7 @@ async function fetchArticulImageBuffer(pool, articul) {
 async function fetchDrJawRows(pool) {
   return runMssqlWithTimeout('fetchDrJawRows', async (activePool) => {
     const request = activePool.request();
-    request.timeout = MSSQL_TIMEOUT_MS;
+    request.timeout = MSSQL_QUERY_TIMEOUT_MS;
     const result = await request
       .input('inStockEn', sql.NVarChar, 'InStock')
       .input('inStockRu', sql.NVarChar, 'В наличии')
@@ -533,12 +539,17 @@ async function main() {
 
   console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=true — starting import…`);
 
-  let importStarted = true;
   let pool;
   let fatalError = null;
+  let syncSucceeded = false;
 
   try {
-    pool = await runMssqlWithTimeout('sql.connect', () => sql.connect(MSSQL_CONFIG), null);
+    pool = await runMssqlWithTimeout(
+      'sql.connect',
+      () => sql.connect(MSSQL_CONFIG),
+      null,
+      MSSQL_CONNECT_TIMEOUT_MS,
+    );
     console.log('MSSQL DrJaw: connected');
 
     console.log(
@@ -566,6 +577,7 @@ async function main() {
     console.log(
       `Переводы: уникальных в кэше=${stats.cacheSize}, API-вызовов (новых ключей)=${stats.translationApiCalls}`,
     );
+    syncSucceeded = true;
   } catch (err) {
     fatalError = err;
     console.error('sync.js import fatal:', err);
@@ -578,16 +590,20 @@ async function main() {
       }
     }
 
-    if (importStarted) {
+    if (syncSucceeded) {
       try {
         await clearSyncTaskRequested(supabase);
-        console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=false`);
+        console.log(`[sync_tasks] ${SYNC_TASK_ID}: sync_requested=false (success)`);
       } catch (clearErr) {
         console.error(
           `[sync_tasks] не удалось сбросить sync_requested:`,
           clearErr instanceof Error ? clearErr.message : clearErr,
         );
       }
+    } else {
+      console.warn(
+        `[sync_tasks] ${SYNC_TASK_ID}: import failed — sync_requested остаётся true для повторного cron`,
+      );
     }
   }
 

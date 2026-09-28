@@ -15,6 +15,8 @@ class ProfileController extends ChangeNotifier {
   UserProfile user = UserProfile.demoGuest;
   final List<OrderItem> _orders = [];
   bool _isLoading = false;
+  bool isAnonymousAccount = false;
+  bool isLinkingSocialAccount = false;
 
   List<OrderItem> get orders => List.unmodifiable(_orders);
 
@@ -25,6 +27,7 @@ class ProfileController extends ChangeNotifier {
     notifyListeners();
     try {
       await _ensureSupabaseCustomerSession();
+      await _syncAnonymousFlag();
       final stored = await _database.getOrders(user.id);
       _orders
         ..clear()
@@ -60,6 +63,7 @@ class ProfileController extends ChangeNotifier {
     final cloudUser = await _database.signInCustomerWithSupabase();
     isAuthenticated = true;
     user = cloudUser;
+    await _syncAnonymousFlag();
     await _persistSession();
   }
 
@@ -74,6 +78,36 @@ class ProfileController extends ChangeNotifier {
       debugPrint('$stackTrace');
       rethrow;
     }
+  }
+
+  Future<void> linkGoogleAccount() =>
+      _linkSocialAccount(OAuthLinkProvider.google);
+
+  Future<void> linkAppleAccount() =>
+      _linkSocialAccount(OAuthLinkProvider.apple);
+
+  Future<void> _linkSocialAccount(OAuthLinkProvider provider) async {
+    if (isLinkingSocialAccount) return;
+    isLinkingSocialAccount = true;
+    notifyListeners();
+    try {
+      user = await _database.linkOAuthProvider(provider);
+      isAuthenticated = true;
+      await _syncAnonymousFlag();
+      notifyListeners();
+      await _persistSession();
+    } catch (error, stackTrace) {
+      debugPrint('ProfileController._linkSocialAccount failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    } finally {
+      isLinkingSocialAccount = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncAnonymousFlag() async {
+    isAnonymousAccount = await _database.isCurrentAuthAnonymous();
   }
 
   /// Обновляет баланс и реферал из Supabase (после checkout / RPC).

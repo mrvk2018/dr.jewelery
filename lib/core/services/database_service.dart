@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -68,6 +69,12 @@ abstract final class AdminOrdersRpc {
   static const adminEmailParam = 'p_admin_email';
   static const orderIdParam = 'p_order_id';
   static const newStatusParam = 'p_new_status';
+}
+
+/// OAuth-провайдер для link identity (аноним → постоянный аккаунт).
+enum OAuthLinkProvider {
+  google,
+  apple,
 }
 
 bool _parseSkladAvailabilityCheckResult(dynamic result) {
@@ -252,6 +259,12 @@ abstract class DatabaseService {
 
   /// Выход из Supabase Auth (покупатель).
   Future<void> signOutSupabaseAuth();
+
+  /// Текущая сессия — anonymous (до привязки Google/Apple).
+  Future<bool> isCurrentAuthAnonymous();
+
+  /// Link Identity: привязать OAuth к текущему UUID без смены `user.id`.
+  Future<UserProfile> linkOAuthProvider(OAuthLinkProvider provider);
 
   /// Актуальный профиль из `profiles` для текущей сессии.
   Future<UserProfile?> refreshCustomerProfileFromCloud();
@@ -770,6 +783,16 @@ class LocalDatabaseService implements DatabaseService {
 
   @override
   Future<void> signOutSupabaseAuth() async {}
+
+  @override
+  Future<bool> isCurrentAuthAnonymous() async => false;
+
+  @override
+  Future<UserProfile> linkOAuthProvider(OAuthLinkProvider provider) async {
+    throw UnimplementedError(
+      'linkOAuthProvider доступен только с CloudDatabaseService',
+    );
+  }
 
   @override
   Future<UserProfile?> refreshCustomerProfileFromCloud() async => null;
@@ -1528,6 +1551,81 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<void> signOutSupabaseAuth() async {
     await _supabaseClient.auth.signOut();
+  }
+
+  static bool isAnonymousAuthUser(User? authUser) {
+    if (authUser == null) return false;
+    if (authUser.isAnonymous) return true;
+    final provider = authUser.appMetadata['provider'];
+    return provider == 'anonymous';
+  }
+
+  @override
+  Future<bool> isCurrentAuthAnonymous() async {
+    return isAnonymousAuthUser(_supabaseClient.auth.currentUser);
+  }
+
+  @override
+  Future<UserProfile> linkOAuthProvider(OAuthLinkProvider provider) async {
+    final current = _supabaseClient.auth.currentUser;
+    if (current == null) {
+      throw StateError('linkOAuthProvider: нет активной сессии');
+    }
+    if (!isAnonymousAuthUser(current)) {
+      throw StateError('linkOAuthProvider: аккаунт уже привязан');
+    }
+
+    final oauthProvider = switch (provider) {
+      OAuthLinkProvider.google => OAuthProvider.google,
+      OAuthLinkProvider.apple => OAuthProvider.apple,
+    };
+
+    final completer = Completer<void>();
+    late final StreamSubscription<AuthState> subscription;
+    subscription = _supabaseClient.auth.onAuthStateChange.listen((data) {
+      final linked = data.session?.user;
+      if (linked == null) return;
+      if (!isAnonymousAuthUser(linked)) {
+        if (!completer.isCompleted) completer.complete();
+      }
+    });
+
+    try {
+      final launched = await _supabaseClient.auth.linkIdentity(
+        oauthProvider,
+        redirectTo: SupabaseConfig.oauthRedirectUrl,
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        throw StateError('linkOAuthProvider: не удалось открыть OAuth');
+      }
+
+      await completer.future.timeout(
+        const Duration(minutes: 5),
+        onTimeout: () {
+          throw TimeoutException(
+            'linkOAuthProvider: истекло время ожидания OAuth',
+          );
+        },
+      );
+    } on AuthException catch (error, stackTrace) {
+      debugPrint(
+        'linkOAuthProvider failed: ${error.message} status=${error.statusCode}',
+      );
+      debugPrint('$stackTrace');
+      rethrow;
+    } finally {
+      await subscription.cancel();
+    }
+
+    final refreshed = await refreshCustomerProfileFromCloud();
+    if (refreshed == null) {
+      throw StateError('linkOAuthProvider: профиль недоступен после link');
+    }
+    debugPrint(
+      'linkOAuthProvider: linked uid=${refreshed.id} provider=$provider',
+    );
+    return refreshed;
   }
 
   @override

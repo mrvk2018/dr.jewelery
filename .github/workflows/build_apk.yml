@@ -5,6 +5,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      build_release:
+        description: Also build release APK
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build-debug:

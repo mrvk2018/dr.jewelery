@@ -47,5 +47,16 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нам нужен доступ к галерее для загрузки фотографий ювелирных изделий в админ-панели.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.jewelrysunlight.jewelry_sunlight_store</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

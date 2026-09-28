@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
+import '../../../../core/l10n/profile_localizations.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../../../core/l10n/support_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,6 +12,7 @@ import '../../../support/presentation/widgets/feedback_bottom_sheet.dart';
 import '../../domain/models/order_item.dart';
 import '../../domain/models/user_profile.dart';
 import 'loyalty_qr_card.dart';
+import 'profile_social_link_button.dart';
 
 /// Экран профиля для авторизованного пользователя.
 class ProfileAuthenticatedView extends StatelessWidget {
@@ -21,6 +24,10 @@ class ProfileAuthenticatedView extends StatelessWidget {
     required this.onOpenAdminPanel,
     required this.onLanguageTap,
     required this.onSecretAdminTap,
+    this.showAccountLinkBanner = false,
+    this.isLinkingSocialAccount = false,
+    this.onLinkGoogle,
+    this.onLinkApple,
   });
 
   final UserProfile user;
@@ -29,6 +36,15 @@ class ProfileAuthenticatedView extends StatelessWidget {
   final VoidCallback onOpenAdminPanel;
   final VoidCallback onLanguageTap;
   final VoidCallback onSecretAdminTap;
+  final bool showAccountLinkBanner;
+  final bool isLinkingSocialAccount;
+  final VoidCallback? onLinkGoogle;
+  final VoidCallback? onLinkApple;
+
+  bool get _showAppleLink {
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +59,16 @@ class ProfileAuthenticatedView extends StatelessWidget {
           cardNumber: user.loyaltyCardNumber,
           ownerName: user.name,
         ),
+        if (showAccountLinkBanner) ...[
+          const SizedBox(height: 16),
+          _AccountLinkPremiumBanner(
+            languageCode: context.langCode,
+            isLinking: isLinkingSocialAccount,
+            showApple: _showAppleLink,
+            onLinkGoogle: onLinkGoogle,
+            onLinkApple: onLinkApple,
+          ),
+        ],
         const SizedBox(height: 16),
         Text(
           'Мои заказы',
@@ -133,6 +159,89 @@ class ProfileAuthenticatedView extends StatelessWidget {
         const SizedBox(height: 8),
         ProfileVersionLabel(onSecretTap: onSecretAdminTap),
       ],
+    );
+  }
+}
+
+class _AccountLinkPremiumBanner extends StatelessWidget {
+  const _AccountLinkPremiumBanner({
+    required this.languageCode,
+    required this.isLinking,
+    required this.showApple,
+    this.onLinkGoogle,
+    this.onLinkApple,
+  });
+
+  final String languageCode;
+  final bool isLinking;
+  final bool showApple;
+  final VoidCallback? onLinkGoogle;
+  final VoidCallback? onLinkApple;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.accent.withValues(alpha: 0.12),
+            AppColors.cardBackground,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.verified_user_outlined,
+                color: AppColors.accent,
+                size: 28,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  profileTr(ProfileStringKeys.linkAccountMessage, languageCode),
+                  style: AppTypography.productMeta().copyWith(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ProfileSocialLinkButton.google(
+            label: profileTr(ProfileStringKeys.linkGoogle, languageCode),
+            onPressed: onLinkGoogle,
+            isLoading: isLinking,
+          ),
+          if (showApple) ...[
+            const SizedBox(height: 12),
+            ProfileSocialLinkButton.apple(
+              label: profileTr(ProfileStringKeys.linkApple, languageCode),
+              onPressed: onLinkApple,
+              isLoading: isLinking,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

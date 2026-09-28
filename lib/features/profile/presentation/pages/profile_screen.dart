@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/constants/supabase_config.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
+import '../../../../core/l10n/profile_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/cart_scope.dart';
@@ -41,6 +42,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await profile.refreshWalletFromCloud();
     if (!mounted) return;
     await CartScope.of(context).syncBonusBalanceFromProfile();
+  }
+
+  Future<void> _linkGoogleAccount() async {
+    final profile = ProfileScope.of(context);
+    final langCode = context.langCode;
+    if (profile.isLinkingSocialAccount) return;
+    try {
+      await profile.linkGoogleAccount();
+      if (!mounted) return;
+      await CartScope.of(context).syncBonusBalanceFromProfile();
+      _showAdminSnack(profileTr(ProfileStringKeys.linkSuccess, langCode));
+    } catch (_) {
+      if (!mounted) return;
+      _showAdminSnack(profileTr(ProfileStringKeys.linkFailed, langCode));
+    }
+  }
+
+  Future<void> _linkAppleAccount() async {
+    final profile = ProfileScope.of(context);
+    final langCode = context.langCode;
+    if (profile.isLinkingSocialAccount) return;
+    try {
+      await profile.linkAppleAccount();
+      if (!mounted) return;
+      await CartScope.of(context).syncBonusBalanceFromProfile();
+      _showAdminSnack(profileTr(ProfileStringKeys.linkSuccess, langCode));
+    } catch (_) {
+      if (!mounted) return;
+      _showAdminSnack(profileTr(ProfileStringKeys.linkFailed, langCode));
+    }
   }
 
   Future<void> _logout() async {
@@ -214,6 +245,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onOpenAdminPanel: _openAdminPanel,
                     onLanguageTap: _showLanguageDialog,
                     onSecretAdminTap: _onSecretAdminTap,
+                    showAccountLinkBanner:
+                        profile.isAnonymousAccount && !profile.user.isAdmin,
+                    isLinkingSocialAccount: profile.isLinkingSocialAccount,
+                    onLinkGoogle: _linkGoogleAccount,
+                    onLinkApple: _linkAppleAccount,
                   ),
           ),
         );

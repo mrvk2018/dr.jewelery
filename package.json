@@ -4,6 +4,7 @@
   "description": "DrJaw MSSQL → Supabase ETL (server/cron only)",
   "scripts": {
     "sync": "node sync.js",
+    "sync:daemon": "node sync-daemon.js",
     "translate:backfill": "node scripts/backfill-product-translations.js"
   },
   "engines": {

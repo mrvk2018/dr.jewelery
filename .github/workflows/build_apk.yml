@@ -51,6 +51,7 @@ jobs:
 
   build-release:
     name: Flutter Release APK
+    if: github.event_name == 'workflow_dispatch' && inputs.build_release == true
     runs-on: ubuntu-latest
 
     steps:

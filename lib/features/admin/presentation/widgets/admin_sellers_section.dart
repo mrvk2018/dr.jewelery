@@ -84,9 +84,9 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
       return;
     }
 
-    final bonus = int.tryParse(_buyerBonusController.text.trim()) ?? 0;
-    if (bonus < 0) {
-      _showSnack('Бонус покупателю не может быть отрицательным', isError: true);
+    final percent = int.tryParse(_buyerBonusController.text.trim()) ?? 0;
+    if (percent < 0 || percent > 100) {
+      _showSnack('Скидка покупателю: от 0 до 100 %', isError: true);
       return;
     }
 
@@ -95,7 +95,7 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
       final item = SellerItem(
         promoCode: promo,
         name: name,
-        buyerBonusKrw: bonus,
+        buyerBonusPercent: percent,
       );
       await widget.database.saveSeller(item, UserRole.admin);
       _promoController.clear();
@@ -214,7 +214,7 @@ class _AdminSellersSectionState extends State<AdminSellersSection> {
             enabled: !_saving,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: _fieldDecoration('Бонус покупателю (KRW)'),
+            decoration: _fieldDecoration('Скидка покупателю (%, 0–100)'),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -314,11 +314,11 @@ class _SellerRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(seller.name, style: AppTypography.productName()),
-                  if (seller.buyerBonusKrw > 0)
+                  if (seller.buyerBonusPercent > 0)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Бонус покупателю: ${seller.buyerBonusKrw} KRW',
+                        'Скидка покупателю: ${seller.buyerBonusPercent}%',
                         style: AppTypography.productMeta().copyWith(fontSize: 12),
                       ),
                     ),

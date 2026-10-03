@@ -11,6 +11,7 @@ import '../../../../core/services/korean_address_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../shared/models/seller_item.dart';
 import '../../../../shared/providers/cart_controller.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/catalog_scope.dart';
@@ -49,7 +50,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isApplyingSellerPromo = false;
   String? _validationMessage;
   String? _sellerPromoInfoMessage;
-  int _referralDiscountKrw = 0;
+  int _referralDiscountPercent = 0;
+  String _appliedSellerCode = '';
 
   String tr(String key) => checkoutTr(key, context.langCode);
 
@@ -123,8 +125,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       CartScope.of(context).checkoutTotalFor(_resolvedCheckoutItems());
 
   int get _payableProductsTotal {
-    final discounted = _liveProductsTotal - _referralDiscountKrw;
-    return discounted < 0 ? 0 : discounted;
+    if (_referralDiscountPercent <= 0) return _liveProductsTotal;
+    final discount =
+        _liveProductsTotal * (_referralDiscountPercent / 100.0);
+    final intermediateTotal = _liveProductsTotal - discount.floor();
+    final finalPayable = ((intermediateTotal + 99) ~/ 100) * 100;
+    return finalPayable > _liveProductsTotal
+        ? _liveProductsTotal
+        : finalPayable;
+  }
+
+  int get _referralDiscountAmountKrw {
+    if (_referralDiscountPercent <= 0) return 0;
+    final payable = _payableProductsTotal;
+    return _liveProductsTotal > payable ? _liveProductsTotal - payable : 0;
   }
 
   Future<void> _applySellerPromo() async {
@@ -133,7 +147,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _sellerPromoInfoMessage =
             'Войдите в профиль, чтобы применить промокод продавца.';
-        _referralDiscountKrw = 0;
+        _referralDiscountPercent = 0;
+        _appliedSellerCode = '';
       });
       return;
     }
@@ -142,7 +157,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (code.isEmpty) {
       setState(() {
         _sellerPromoInfoMessage = 'Введите промокод продавца.';
-        _referralDiscountKrw = 0;
+        _referralDiscountPercent = 0;
+        _appliedSellerCode = '';
       });
       return;
     }
@@ -159,7 +175,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (!result.ok) {
         setState(() {
-          _referralDiscountKrw = 0;
+          _referralDiscountPercent = 0;
+          _appliedSellerCode = '';
           _sellerPromoInfoMessage = switch (result.errorCode) {
             'not_authenticated' => 'Войдите в профиль для применения промокода.',
             'invalid_code' => 'Промокод не найден или неактивен.',
@@ -169,11 +186,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
-      if (result.alreadyReferred) {
+      if (result.alreadyReferred && result.discountPercent <= 0) {
         setState(() {
-          _referralDiscountKrw = 0;
+          _referralDiscountPercent = 0;
+          _appliedSellerCode = '';
           _sellerPromoInfoMessage = result.message ??
-              'Промокод применен для привязки к продавцу, но приветственный бонус уже был получен вами ранее';
+              'У вас уже привязан другой промокод продавца';
         });
         await profile.refreshWalletFromCloud();
         if (!mounted) return;
@@ -182,9 +200,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
 
       setState(() {
-        _referralDiscountKrw = result.discountKrw;
-        _sellerPromoInfoMessage = result.discountKrw > 0
-            ? 'Промокод продавца применён.'
+        _referralDiscountPercent = result.discountPercent;
+        _appliedSellerCode =
+            result.sellerCode ?? SellerItem.normalizePromoCode(code);
+        _sellerPromoInfoMessage = result.discountPercent > 0
+            ? 'Промокод продавца применён (−${result.discountPercent}%).'
             : 'Промокод продавца привязан к профилю.';
       });
       await profile.refreshWalletFromCloud();
@@ -278,6 +298,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           deliveryFeeKrw: _deliveryFee,
           shippingAddress: shipping,
           checkoutItems: lineItems,
+          sellerCode: _appliedSellerCode,
         ),
       ),
     );
@@ -565,11 +586,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       valueColor: AppColors.accent,
                     ),
                   ],
-                  if (_referralDiscountKrw > 0) ...[
+                  if (_referralDiscountPercent > 0) ...[
                     const SizedBox(height: 8),
                     _SummaryRow(
-                      label: 'Реферальный бонус',
-                      value: '- ${formatWon(_referralDiscountKrw)}',
+                      label:
+                          'Скидка продавца (−$_referralDiscountPercent%)',
+                      value: '- ${formatWon(_referralDiscountAmountKrw)}',
                       valueColor: AppColors.accent,
                     ),
                   ],

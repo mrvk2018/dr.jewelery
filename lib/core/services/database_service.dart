@@ -810,17 +810,6 @@ class LocalDatabaseService implements DatabaseService {
   Future<SellerReferralApplyResult> applySellerReferralPromo(
     String promoCode,
   ) async {
-    const alreadyMessage =
-        'Промокод применен для привязки к продавцу, но приветственный бонус уже был получен вами ранее';
-    final existing = _prefs.getString(DatabaseCollections.localReferralSeller);
-    if (existing != null && existing.isNotEmpty) {
-      return const SellerReferralApplyResult(
-        ok: true,
-        alreadyReferred: true,
-        message: alreadyMessage,
-      );
-    }
-
     final code = SellerItem.normalizePromoCode(promoCode);
     if (code.isEmpty) {
       return const SellerReferralApplyResult(
@@ -843,10 +832,23 @@ class LocalDatabaseService implements DatabaseService {
       );
     }
 
-    await _prefs.setString(DatabaseCollections.localReferralSeller, code);
+    final existing = _prefs.getString(DatabaseCollections.localReferralSeller);
+    if (existing != null && existing.isNotEmpty && existing != code) {
+      return const SellerReferralApplyResult(
+        ok: true,
+        alreadyReferred: true,
+        discountPercent: 0,
+        message: 'У вас уже привязан другой промокод продавца',
+      );
+    }
+
+    if (existing == null || existing.isEmpty) {
+      await _prefs.setString(DatabaseCollections.localReferralSeller, code);
+    }
+
     return SellerReferralApplyResult(
       ok: true,
-      discountKrw: seller.buyerBonusKrw,
+      discountPercent: seller.buyerBonusPercent,
       sellerCode: code,
     );
   }
@@ -1122,6 +1124,7 @@ class CloudDatabaseService implements DatabaseService {
       name: (row['name'] as String).trim(),
       isActive: row['is_active'] as bool? ?? true,
       buyerBonusKrw: (row['buyer_bonus_krw'] as num?)?.toInt() ?? 0,
+      buyerBonusPercent: (row['buyer_bonus_percent'] as num?)?.toInt() ?? 0,
       createdAt: createdAt,
     );
   }
@@ -1175,6 +1178,7 @@ class CloudDatabaseService implements DatabaseService {
         'name': seller.name.trim(),
         'is_active': seller.isActive,
         'buyer_bonus_krw': seller.buyerBonusKrw,
+        'buyer_bonus_percent': seller.buyerBonusPercent,
       });
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.saveSeller failed: $error');
@@ -1290,6 +1294,7 @@ class CloudDatabaseService implements DatabaseService {
       'shipping_detail_address': order.shippingDetailAddress,
       'recipient_name': order.recipientName,
       'recipient_phone': order.recipientPhone,
+      if (order.sellerCode.isNotEmpty) 'seller_code': order.sellerCode,
     };
   }
 

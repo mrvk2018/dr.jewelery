@@ -33,6 +33,7 @@ class OrderItem {
     this.shippingDetailAddress = '',
     this.recipientName = '',
     this.recipientPhone = '',
+    this.sellerCode = '',
   });
 
   final String id;
@@ -46,6 +47,7 @@ class OrderItem {
   final String shippingDetailAddress;
   final String recipientName;
   final String recipientPhone;
+  final String sellerCode;
 
   bool get hasShippingAddress =>
       shippingPostalCode.isNotEmpty ||
@@ -79,6 +81,7 @@ class OrderItem {
       shippingDetailAddress: shippingDetailAddress,
       recipientName: recipientName,
       recipientPhone: recipientPhone,
+      sellerCode: sellerCode,
     );
   }
 
@@ -94,6 +97,7 @@ class OrderItem {
         'shippingDetailAddress': shippingDetailAddress,
         'recipientName': recipientName,
         'recipientPhone': recipientPhone,
+        'sellerCode': sellerCode,
       };
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -113,6 +117,7 @@ class OrderItem {
       shippingDetailAddress: json['shippingDetailAddress'] as String? ?? '',
       recipientName: json['recipientName'] as String? ?? '',
       recipientPhone: json['recipientPhone'] as String? ?? '',
+      sellerCode: json['sellerCode'] as String? ?? '',
     );
   }
 
@@ -134,6 +139,7 @@ class OrderItem {
       shippingDetailAddress: json['shipping_detail_address'] as String? ?? '',
       recipientName: json['recipient_name'] as String? ?? '',
       recipientPhone: json['recipient_phone'] as String? ?? '',
+      sellerCode: json['seller_code'] as String? ?? '',
     );
   }
 

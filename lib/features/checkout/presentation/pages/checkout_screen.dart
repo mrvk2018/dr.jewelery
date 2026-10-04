@@ -52,6 +52,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String? _sellerPromoInfoMessage;
   int _referralDiscountPercent = 0;
   String _appliedSellerCode = '';
+  String _appliedSellerName = '';
 
   String tr(String key) => checkoutTr(key, context.langCode);
 
@@ -149,6 +150,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             'Войдите в профиль, чтобы применить промокод продавца.';
         _referralDiscountPercent = 0;
         _appliedSellerCode = '';
+        _appliedSellerName = '';
       });
       return;
     }
@@ -159,6 +161,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _sellerPromoInfoMessage = 'Введите промокод продавца.';
         _referralDiscountPercent = 0;
         _appliedSellerCode = '';
+        _appliedSellerName = '';
       });
       return;
     }
@@ -177,6 +180,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() {
           _referralDiscountPercent = 0;
           _appliedSellerCode = '';
+          _appliedSellerName = '';
           _sellerPromoInfoMessage = switch (result.errorCode) {
             'not_authenticated' => 'Войдите в профиль для применения промокода.',
             'invalid_code' => 'Промокод не найден или неактивен.',
@@ -190,6 +194,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         setState(() {
           _referralDiscountPercent = 0;
           _appliedSellerCode = '';
+          _appliedSellerName = '';
           _sellerPromoInfoMessage = result.message ??
               'У вас уже привязан другой промокод продавца';
         });
@@ -203,6 +208,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _referralDiscountPercent = result.discountPercent;
         _appliedSellerCode =
             result.sellerCode ?? SellerItem.normalizePromoCode(code);
+        _appliedSellerName = result.sellerName?.trim() ?? '';
         _sellerPromoInfoMessage = result.discountPercent > 0
             ? 'Промокод продавца применён (−${result.discountPercent}%).'
             : 'Промокод продавца привязан к профилю.';
@@ -291,6 +297,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     setState(() => _validationMessage = null);
     final shipping = _collectShippingAddress();
     final lineItems = _resolvedCheckoutItems();
+    final profile = ProfileScope.of(context);
+    final sellerCode = _appliedSellerCode.trim().isNotEmpty
+        ? _appliedSellerCode.trim()
+        : (profile.user.referredBySeller?.trim() ?? '');
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => PaymentScreen(
@@ -298,7 +308,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           deliveryFeeKrw: _deliveryFee,
           shippingAddress: shipping,
           checkoutItems: lineItems,
-          sellerCode: _appliedSellerCode,
+          sellerCode: sellerCode,
+          sellerName: _appliedSellerName,
         ),
       ),
     );

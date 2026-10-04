@@ -185,6 +185,8 @@ GRANT EXECUTE ON FUNCTION public.apply_seller_referral_promo(text) TO authentica
 -- ---------------------------------------------------------------------------
 -- RPC: маркетинг (админ-панель, тот же контур что sellers upsert)
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.save_app_marketing_settings(boolean, integer);
+
 CREATE OR REPLACE FUNCTION public.save_app_marketing_settings(
   p_welcome_bonus_enabled boolean,
   p_welcome_bonus_amount integer

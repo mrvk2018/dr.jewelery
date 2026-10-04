@@ -1173,13 +1173,15 @@ class CloudDatabaseService implements DatabaseService {
     _assertAdminWrite(actorRole, action: 'saveSeller');
     final code = SellerItem.normalizePromoCode(seller.promoCode);
     try {
-      await _supabaseClient.from('sellers').upsert({
-        'promo_code': code,
-        'name': seller.name.trim(),
-        'is_active': seller.isActive,
-        'buyer_bonus_krw': seller.buyerBonusKrw,
-        'buyer_bonus_percent': seller.buyerBonusPercent,
-      });
+      await _supabaseClient.from('sellers').upsert(
+        {
+          'promo_code': code,
+          'name': seller.name.trim(),
+          'is_active': seller.isActive,
+          'buyer_bonus_percent': seller.buyerBonusPercent.clamp(0, 100),
+        },
+        onConflict: 'promo_code',
+      );
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.saveSeller failed: $error');
       debugPrint('$stackTrace');
@@ -1295,6 +1297,7 @@ class CloudDatabaseService implements DatabaseService {
       'recipient_name': order.recipientName,
       'recipient_phone': order.recipientPhone,
       if (order.sellerCode.isNotEmpty) 'seller_code': order.sellerCode,
+      if (order.sellerName.isNotEmpty) 'seller_name': order.sellerName,
     };
   }
 

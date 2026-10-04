@@ -28,6 +28,7 @@ class PaymentScreen extends StatefulWidget {
     required this.shippingAddress,
     this.checkoutItems,
     this.sellerCode = '',
+    this.sellerName = '',
   });
 
   final int productsTotalKrw;
@@ -39,6 +40,9 @@ class PaymentScreen extends StatefulWidget {
 
   /// Промокод продавца после apply_seller_referral_promo на checkout.
   final String sellerCode;
+
+  /// Имя продавца (снимок для заказа и Telegram).
+  final String sellerName;
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
@@ -164,6 +168,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       recipientName: shipping.recipientName,
       recipientPhone: shipping.phone,
       sellerCode: widget.sellerCode.trim(),
+      sellerName: widget.sellerName.trim(),
     );
   }
 
@@ -281,6 +286,8 @@ class _PaymentScreenState extends State<PaymentScreen> {
             orderId: orderId,
             cartItems: purchased,
             totalAmountKrw: total,
+            sellerCode: paidOrder.sellerCode,
+            sellerName: paidOrder.sellerName,
           );
 
           for (final item in purchased) {

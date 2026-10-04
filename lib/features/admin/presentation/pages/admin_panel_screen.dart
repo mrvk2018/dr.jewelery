@@ -379,6 +379,15 @@ class _AdminOrderCard extends StatelessWidget {
             'Клиент: ${order.customerName}',
             style: AppTypography.productMeta(),
           ),
+          if (order.hasSellerAttribution) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Продавец: ${order.sellerAttributionLabel}',
+              style: AppTypography.productMeta().copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

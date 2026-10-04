@@ -24,6 +24,7 @@ type OrderNotificationPayload = {
   order_id: string;
   total_amount_krw?: number;
   seller_code?: string;
+  seller_name?: string;
   items: OrderLineItem[];
 };
 
@@ -65,8 +66,14 @@ function buildWhatsAppMessageText(payload: OrderNotificationPayload): string {
     lines.push(`Всего к оплате: ${payload.total_amount_krw} KRW`);
   }
 
-  if (payload.seller_code?.trim()) {
-    lines.push(`👤 Продавец (Промокод): ${payload.seller_code.trim()}`);
+  const sellerCode = payload.seller_code?.trim() ?? "";
+  const sellerName = payload.seller_name?.trim() ?? "";
+  if (sellerName && sellerCode) {
+    lines.push(`👤 Продавец: ${sellerName} · промокод ${sellerCode}`);
+  } else if (sellerName) {
+    lines.push(`👤 Продавец: ${sellerName}`);
+  } else if (sellerCode) {
+    lines.push(`👤 Промокод продавца: ${sellerCode}`);
   }
 
   return lines.join("\n");

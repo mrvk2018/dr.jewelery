@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../shared/models/seller_item.dart';
 import '../../shared/providers/cart_controller.dart';
 
 /// Telegram-группа розничной сети (5 магазинов).
@@ -26,10 +27,18 @@ class RetailNotificationService {
     required String orderId,
     required List<CartItem> cartItems,
     int? totalAmountKrw,
+    String? sellerCode,
+    String? sellerName,
   }) async {
     if (orderId.trim().isEmpty || cartItems.isEmpty) {
       debugPrint('sendTelegramOrderNotification: пустой orderId или корзина');
       return false;
+    }
+
+    final code = sellerCode?.trim() ?? '';
+    var name = sellerName?.trim() ?? '';
+    if (code.isNotEmpty && name.isEmpty) {
+      name = await _lookupSellerNameByPromoCode(code) ?? '';
     }
 
     final payload = <String, dynamic>{
@@ -37,6 +46,8 @@ class RetailNotificationService {
       'order_id': orderId,
       'total_amount_krw': ?totalAmountKrw,
       'items': cartItems.map(_cartLinePayload).toList(),
+      if (code.isNotEmpty) 'seller_code': code,
+      if (name.isNotEmpty) 'seller_name': name,
     };
 
     try {
@@ -59,6 +70,23 @@ class RetailNotificationService {
       debugPrint('$stackTrace');
     }
     return false;
+  }
+
+  Future<String?> _lookupSellerNameByPromoCode(String promoCode) async {
+    try {
+      final row = await _client
+          .from('sellers')
+          .select('name')
+          .eq('promo_code', SellerItem.normalizePromoCode(promoCode))
+          .maybeSingle();
+      if (row == null) return null;
+      final name = (row['name'] as String?)?.trim();
+      return name == null || name.isEmpty ? null : name;
+    } catch (error, stackTrace) {
+      debugPrint('_lookupSellerNameByPromoCode failed: $error');
+      debugPrint('$stackTrace');
+      return null;
+    }
   }
 
   /// Поля карточки для розницы (SKU, вес, размер, камни, фото).

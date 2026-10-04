@@ -6,6 +6,7 @@ class SellerReferralApplyResult {
     this.discountPercent = 0,
     this.message,
     this.sellerCode,
+    this.sellerName,
     this.errorCode,
   });
 
@@ -14,6 +15,7 @@ class SellerReferralApplyResult {
   final int discountPercent;
   final String? message;
   final String? sellerCode;
+  final String? sellerName;
   final String? errorCode;
 
   factory SellerReferralApplyResult.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class SellerReferralApplyResult {
       discountPercent: (json['discount_percent'] as num?)?.toInt() ?? 0,
       message: json['message'] as String?,
       sellerCode: json['seller_code'] as String?,
+      sellerName: json['seller_name'] as String?,
       errorCode: json['error'] as String?,
     );
   }

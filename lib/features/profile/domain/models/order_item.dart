@@ -34,6 +34,7 @@ class OrderItem {
     this.recipientName = '',
     this.recipientPhone = '',
     this.sellerCode = '',
+    this.sellerName = '',
   });
 
   final String id;
@@ -48,6 +49,20 @@ class OrderItem {
   final String recipientName;
   final String recipientPhone;
   final String sellerCode;
+  final String sellerName;
+
+  bool get hasSellerAttribution =>
+      sellerCode.trim().isNotEmpty || sellerName.trim().isNotEmpty;
+
+  /// Для админки и отчётов по продавцам.
+  String get sellerAttributionLabel {
+    final code = sellerCode.trim();
+    final name = sellerName.trim();
+    if (name.isNotEmpty && code.isNotEmpty) return '$name · $code';
+    if (name.isNotEmpty) return name;
+    if (code.isNotEmpty) return code;
+    return '';
+  }
 
   bool get hasShippingAddress =>
       shippingPostalCode.isNotEmpty ||
@@ -82,6 +97,7 @@ class OrderItem {
       recipientName: recipientName,
       recipientPhone: recipientPhone,
       sellerCode: sellerCode,
+      sellerName: sellerName,
     );
   }
 
@@ -98,6 +114,7 @@ class OrderItem {
         'recipientName': recipientName,
         'recipientPhone': recipientPhone,
         'sellerCode': sellerCode,
+        'sellerName': sellerName,
       };
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
@@ -118,6 +135,7 @@ class OrderItem {
       recipientName: json['recipientName'] as String? ?? '',
       recipientPhone: json['recipientPhone'] as String? ?? '',
       sellerCode: json['sellerCode'] as String? ?? '',
+      sellerName: json['sellerName'] as String? ?? '',
     );
   }
 
@@ -140,6 +158,7 @@ class OrderItem {
       recipientName: json['recipient_name'] as String? ?? '',
       recipientPhone: json['recipient_phone'] as String? ?? '',
       sellerCode: json['seller_code'] as String? ?? '',
+      sellerName: json['seller_name'] as String? ?? '',
     );
   }
 

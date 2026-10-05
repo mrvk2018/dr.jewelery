@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -8,6 +9,7 @@ import '../../../../core/l10n/profile_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/providers/cart_scope.dart';
+import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../admin/presentation/pages/admin_panel_screen.dart';
@@ -80,6 +82,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await ProfileScope.of(context).logout();
     if (!mounted) return;
     await CartScope.of(context).syncBonusBalanceFromProfile();
+  }
+
+  Future<void> _deleteAccount() async {
+    final profile = ProfileScope.of(context);
+    final langCode = context.langCode;
+    try {
+      await profile.deleteAccount();
+      if (!mounted) return;
+      await CartScope.of(context).syncBonusBalanceFromProfile();
+      await FavoritesScope.of(context).load();
+      _showAdminSnack(
+        profileTr(ProfileStringKeys.deleteAccountSuccess, langCode),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('ProfileScreen._deleteAccount failed: $error');
+      debugPrint('$stackTrace');
+      if (!mounted) return;
+      _showAdminSnack(
+        profileTr(ProfileStringKeys.deleteAccountFailed, langCode),
+      );
+    }
   }
 
   /// Скрытый вход: 5 быстрых тапов по аватару / версии.
@@ -242,6 +265,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     user: profile.user,
                     orders: profile.orders,
                     onLogout: _logout,
+                    onDeleteAccount: _deleteAccount,
                     onOpenAdminPanel: _openAdminPanel,
                     onLanguageTap: _showLanguageDialog,
                     onSecretAdminTap: _onSecretAdminTap,

@@ -260,6 +260,9 @@ abstract class DatabaseService {
   /// Выход из Supabase Auth (покупатель).
   Future<void> signOutSupabaseAuth();
 
+  /// Удаление аккаунта и персональных данных (RPC / локальная очистка).
+  Future<void> deleteCustomerAccount();
+
   /// Текущая сессия — anonymous (до привязки Google/Apple).
   Future<bool> isCurrentAuthAnonymous();
 
@@ -783,6 +786,17 @@ class LocalDatabaseService implements DatabaseService {
 
   @override
   Future<void> signOutSupabaseAuth() async {}
+
+  @override
+  Future<void> deleteCustomerAccount() async {
+    await _writeOrders([]);
+    await saveProfileSession({
+      'isAuthenticated': false,
+      'user': UserProfile.demoGuest.toJson(),
+    });
+    await saveCartSnapshot({});
+    await saveFavoriteIds([]);
+  }
 
   @override
   Future<bool> isCurrentAuthAnonymous() async => false;
@@ -1559,6 +1573,24 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<void> signOutSupabaseAuth() async {
     await _supabaseClient.auth.signOut();
+  }
+
+  @override
+  Future<void> deleteCustomerAccount() async {
+    if (_supabaseClient.auth.currentUser == null) {
+      throw StateError('deleteCustomerAccount: нет активной сессии');
+    }
+    try {
+      await _supabaseClient.rpc('delete_my_account');
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteCustomerAccount failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    } finally {
+      await signOutSupabaseAuth();
+    }
+    await saveCartSnapshot({});
+    await saveFavoriteIds([]);
   }
 
   static bool isAnonymousAuthUser(User? authUser) {

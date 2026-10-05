@@ -29,6 +29,12 @@ class RetailNotificationService {
     int? totalAmountKrw,
     String? sellerCode,
     String? sellerName,
+    String? recipientName,
+    String? recipientPhone,
+    String? shippingPostalCode,
+    String? shippingRoadAddress,
+    String? shippingDetailAddress,
+    String? deliveryMethod,
   }) async {
     if (orderId.trim().isEmpty || cartItems.isEmpty) {
       debugPrint('sendTelegramOrderNotification: пустой orderId или корзина');
@@ -48,6 +54,12 @@ class RetailNotificationService {
       'items': cartItems.map(_cartLinePayload).toList(),
       if (code.isNotEmpty) 'seller_code': code,
       if (name.isNotEmpty) 'seller_name': name,
+      ..._optionalPayloadField('recipient_name', recipientName),
+      ..._optionalPayloadField('recipient_phone', recipientPhone),
+      ..._optionalPayloadField('shipping_postal_code', shippingPostalCode),
+      ..._optionalPayloadField('shipping_road_address', shippingRoadAddress),
+      ..._optionalPayloadField('shipping_detail_address', shippingDetailAddress),
+      ..._optionalPayloadField('delivery_method', deliveryMethod),
     };
 
     try {
@@ -87,6 +99,15 @@ class RetailNotificationService {
       debugPrint('$stackTrace');
       return null;
     }
+  }
+
+  static Map<String, dynamic> _optionalPayloadField(
+    String key,
+    String? value,
+  ) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return const {};
+    return {key: trimmed};
   }
 
   /// Поля карточки для розницы (SKU, вес, размер, камни, фото).

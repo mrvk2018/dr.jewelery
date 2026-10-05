@@ -25,8 +25,8 @@ class PaymentServiceConfig {
   const PaymentServiceConfig({
     this.tossClientKey = '',
     this.createOrderDraftUrl,
-    this.successRedirectUrl = 'sunlight://payment/success',
-    this.failRedirectUrl = 'sunlight://payment/fail',
+    this.successRedirectUrl = 'drjewelry://payment/success',
+    this.failRedirectUrl = 'drjewelry://payment/fail',
   });
 
   /// Toss Payments client key (test/live) — только публичный ключ.

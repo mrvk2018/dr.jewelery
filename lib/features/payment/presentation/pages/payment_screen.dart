@@ -282,12 +282,19 @@ class _PaymentScreenState extends State<PaymentScreen> {
           );
           ProfileScope.of(context).addOrder(paidOrder);
 
+          final shipping = widget.shippingAddress;
           await retailNotificationService.sendTelegramOrderNotification(
             orderId: orderId,
             cartItems: purchased,
             totalAmountKrw: total,
             sellerCode: paidOrder.sellerCode,
             sellerName: paidOrder.sellerName,
+            recipientName: paidOrder.recipientName,
+            recipientPhone: paidOrder.recipientPhone,
+            shippingPostalCode: paidOrder.shippingPostalCode,
+            shippingRoadAddress: paidOrder.shippingRoadAddress,
+            shippingDetailAddress: paidOrder.shippingDetailAddress,
+            deliveryMethod: shipping.deliveryMethod,
           );
 
           for (final item in purchased) {

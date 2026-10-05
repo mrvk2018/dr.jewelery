@@ -21,6 +21,7 @@ class ProfileAuthenticatedView extends StatelessWidget {
     required this.user,
     required this.orders,
     required this.onLogout,
+    required this.onDeleteAccount,
     required this.onOpenAdminPanel,
     required this.onLanguageTap,
     required this.onSecretAdminTap,
@@ -33,6 +34,7 @@ class ProfileAuthenticatedView extends StatelessWidget {
   final UserProfile user;
   final List<OrderItem> orders;
   final VoidCallback onLogout;
+  final Future<void> Function() onDeleteAccount;
   final VoidCallback onOpenAdminPanel;
   final VoidCallback onLanguageTap;
   final VoidCallback onSecretAdminTap;
@@ -156,11 +158,79 @@ class ProfileAuthenticatedView extends StatelessWidget {
             child: Text(user.isAdmin ? 'Выйти из админки' : 'Выйти'),
           ),
         ),
+        if (!user.isAdmin) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: TextButton(
+              onPressed: () => _confirmDeleteAccount(
+                context,
+                onDeleteAccount: onDeleteAccount,
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.saleRed,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                profileTr(
+                  ProfileStringKeys.deleteAccountButton,
+                  context.langCode,
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         ProfileVersionLabel(onSecretTap: onSecretAdminTap),
       ],
     );
   }
+}
+
+Future<void> _confirmDeleteAccount(
+  BuildContext context, {
+  required Future<void> Function() onDeleteAccount,
+}) async {
+  final lang = context.langCode;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(
+          profileTr(ProfileStringKeys.deleteAccountTitle, lang),
+          style: AppTypography.heading(fontSize: 18),
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            profileTr(ProfileStringKeys.deleteAccountWarning, lang),
+            style: AppTypography.productMeta().copyWith(height: 1.45),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              profileTr(ProfileStringKeys.deleteAccountCancel, lang),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.saleRed),
+            child: Text(
+              profileTr(ProfileStringKeys.deleteAccountConfirm, lang),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  if (confirmed != true || !context.mounted) return;
+  await onDeleteAccount();
 }
 
 class _AccountLinkPremiumBanner extends StatelessWidget {

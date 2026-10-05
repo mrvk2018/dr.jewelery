@@ -25,6 +25,12 @@ type OrderNotificationPayload = {
   total_amount_krw?: number;
   seller_code?: string;
   seller_name?: string;
+  recipient_name?: string;
+  recipient_phone?: string;
+  shipping_postal_code?: string;
+  shipping_road_address?: string;
+  shipping_detail_address?: string;
+  delivery_method?: string;
   items: OrderLineItem[];
 };
 
@@ -74,6 +80,32 @@ function buildWhatsAppMessageText(payload: OrderNotificationPayload): string {
     lines.push(`👤 Продавец: ${sellerName}`);
   } else if (sellerCode) {
     lines.push(`👤 Промокод продавца: ${sellerCode}`);
+  }
+
+  const isPickup = payload.delivery_method?.trim() === "pickup";
+  const hasAddr =
+    payload.shipping_road_address?.trim() ||
+    payload.shipping_postal_code?.trim();
+  const hasRecipient = payload.recipient_name?.trim();
+
+  if (isPickup || hasAddr || hasRecipient) {
+    lines.push(SEPARATOR);
+    lines.push("📦 Доставка:");
+    if (isPickup) {
+      lines.push("Самовывоз");
+    } else {
+      if (hasRecipient) {
+        lines.push(`Получатель: ${payload.recipient_name!.trim()}`);
+      }
+      const phone = payload.recipient_phone?.trim() ?? "";
+      if (phone) lines.push(`Тел.: ${phone}`);
+      const postal = payload.shipping_postal_code?.trim() ?? "";
+      if (postal) lines.push(`(${postal})`);
+      const road = payload.shipping_road_address?.trim() ?? "";
+      if (road) lines.push(road);
+      const detail = payload.shipping_detail_address?.trim() ?? "";
+      if (detail) lines.push(detail);
+    }
   }
 
   return lines.join("\n");

@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to the camera to scan product QR codes and verify jewelry details.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Нам нужен доступ к галерее для загрузки фотографий ювелирных изделий в админ-панели.</string>
 	<key>CFBundleURLTypes</key>
@@ -55,6 +57,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.jewelrysunlight.jewelry_sunlight_store</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>Dr. Jewelry Toss Payments</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>drjewelry</string>
 			</array>
 		</dict>
 	</array>

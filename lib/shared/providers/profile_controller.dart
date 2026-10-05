@@ -161,6 +161,20 @@ class ProfileController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Удаление аккаунта (Supabase RPC + новая anonymous-сессия).
+  Future<void> deleteAccount() async {
+    if (user.isAdmin) {
+      throw StateError('deleteAccount: недоступно в режиме администратора');
+    }
+
+    await _database.deleteCustomerAccount();
+    _orders.clear();
+    await _ensureSupabaseCustomerSession();
+    isAuthenticated = true;
+    notifyListeners();
+    await _persistSession();
+  }
+
   void addOrder(OrderItem order) {
     _orders.insert(0, order);
     notifyListeners();

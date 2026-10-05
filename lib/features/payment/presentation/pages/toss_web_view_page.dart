@@ -200,7 +200,8 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
           orderId: "$jsOrderId",
           orderName: "Jewelry Order",
           successUrl: "$jsSuccessUrl",
-          failUrl: "$jsFailUrl"
+          failUrl: "$jsFailUrl",
+          appScheme: "drjewelry"
         });
       } catch (error) {
         var msg = (error && error.message) ? error.message : String(error);

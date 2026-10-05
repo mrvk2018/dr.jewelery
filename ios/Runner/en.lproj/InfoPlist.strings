@@ -1,0 +1,2 @@
+/* Camera permission — English (development region). */
+"NSCameraUsageDescription" = "We need access to the camera to scan product QR codes and verify jewelry details.";

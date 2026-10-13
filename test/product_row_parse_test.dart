@@ -23,6 +23,7 @@ Map<String, dynamic> warehouseRowToClientJson(Map<String, dynamic> row) {
         ? row['available_sizes']
         : const <dynamic>[],
     'imageUrl': row['image_url'] as String?,
+    'images': row['images'] as List<dynamic>?,
     'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
   };
 }

@@ -970,6 +970,7 @@ class CloudDatabaseService implements DatabaseService {
       'iconIndex': (row['icon_index'] as num?)?.toInt() ?? 0,
       'availableSizes': _parseAvailableSizesField(row['available_sizes']),
       'imageUrl': row['image_url'] as String?,
+      'images': row['images'] as List<dynamic>?,
       'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
     };
   }

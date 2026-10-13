@@ -19,6 +19,7 @@ class ProductItem {
     this.iconIndex = 0,
     this.availableSizes = const [],
     this.imageUrl,
+    this.images = const [],
     this.weightGrams,
   });
 
@@ -39,9 +40,11 @@ class ProductItem {
   final String insert;
   final int iconIndex;
   final List<double> availableSizes;
-  /// Публичный URL фото в Supabase Storage (или другом CDN).
+  /// Публичный URL главного фото (legacy / первый кадр из [images]).
   final String? imageUrl;
-  /// Вес изделия (граммы), sync MSSQL Items.Weight → Supabase.
+  /// До 3 публичных URL фото в Supabase Storage (колонка `images` text[]).
+  final List<String> images;
+  /// Вес изделия (граммы).
   final double? weightGrams;
 
   bool get isOutOfStock => stockQuantity <= 0;
@@ -70,11 +73,27 @@ class ProductItem {
         'iconIndex': iconIndex,
         'availableSizes': availableSizes,
         if (imageUrl != null) 'imageUrl': imageUrl,
+        if (images.isNotEmpty) 'images': images,
         if (weightGrams != null) 'weightGrams': weightGrams,
       };
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
     final id = json['id']?.toString() ?? '';
+    final legacyImageUrl =
+        json['imageUrl'] as String? ?? json['image_url'] as String?;
+    var images = (json['images'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString())
+        .where((url) => url.trim().isNotEmpty)
+        .toList();
+    if (images.isEmpty &&
+        legacyImageUrl != null &&
+        legacyImageUrl.trim().isNotEmpty) {
+      images = [legacyImageUrl.trim()];
+    }
+    final imageUrl = legacyImageUrl?.trim().isNotEmpty == true
+        ? legacyImageUrl!.trim()
+        : (images.isNotEmpty ? images.first : null);
+
     return ProductItem(
       id: id,
       sku: json['sku'] as String? ?? 'DJ-${id.padLeft(4, '0')}',
@@ -92,7 +111,8 @@ class ProductItem {
           .map((size) => double.tryParse(size.toString()) ?? 0.0)
           .where((size) => size > 0.0)
           .toList(),
-      imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
+      imageUrl: imageUrl,
+      images: images,
       weightGrams: (json['weightGrams'] as num?)?.toDouble() ??
           (json['weight'] as num?)?.toDouble(),
     );
@@ -120,6 +140,7 @@ class ProductItem {
     int? iconIndex,
     List<double>? availableSizes,
     String? imageUrl,
+    List<String>? images,
     double? weightGrams,
   }) {
     return ProductItem(
@@ -137,6 +158,7 @@ class ProductItem {
       iconIndex: iconIndex ?? this.iconIndex,
       availableSizes: availableSizes ?? this.availableSizes,
       imageUrl: imageUrl ?? this.imageUrl,
+      images: images ?? this.images,
       weightGrams: weightGrams ?? this.weightGrams,
     );
   }

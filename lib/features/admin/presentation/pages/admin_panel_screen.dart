@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../profile/domain/models/user_profile.dart';
@@ -122,77 +120,25 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ),
     );
   }
-  static const _catalogSyncTaskId = 'catalog_sync';
-  static const _syncPollInterval = Duration(seconds: 3);
-  /// Полный импорт с фото/переводами может занимать несколько минут.
-  static const _syncPollMaxAttempts = 60;
-
-  Future<bool> _isCatalogSyncTaskComplete() async {
-    final row = await Supabase.instance.client
-        .from('sync_tasks')
-        .select('sync_requested')
-        .eq('id', _catalogSyncTaskId)
-        .maybeSingle();
-    if (row == null) return false;
-    final requested = row['sync_requested'];
-    if (requested is bool) return !requested;
-    return false;
-  }
-
-  Future<void> _waitForWarehouseSyncImport(BuildContext context) async {
-    for (var attempt = 0; attempt < _syncPollMaxAttempts; attempt++) {
-      await Future<void>.delayed(_syncPollInterval);
-      if (!context.mounted) return;
-
-      try {
-        if (await _isCatalogSyncTaskComplete()) {
-          if (!context.mounted) return;
-          await CatalogScope.of(context).load();
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Данные успешно импортированы со склада! Каталог обновлен.',
-              ),
-            ),
-          );
-          return;
-        }
-      } catch (_) {
-        // RLS/сеть — повторяем опрос до лимита попыток.
-      }
-    }
-
+  Future<void> _triggerSyncCatalog(BuildContext context) async {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text(
-          'Импорт ещё не завершён (sync_requested=true). '
-          'Убедитесь, что на ПК склада запущен cron «npm run sync», '
-          'и проверьте логи sync.js (MSSQL connect/query timeout).',
-        ),
+        content: Text('Обновление данных из Supabase...'),
       ),
     );
-  }
-
-  Future<void> _triggerSyncCatalog(BuildContext context) async {
     try {
-      await Supabase.instance.client.functions.invoke('sync-catalog');
-
+      await CatalogScope.of(context).load();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Запрос на синхронизацию отправлен на склад. Пожалуйста, подождите...',
-          ),
+          content: Text('Каталог успешно обновлен!'),
         ),
       );
-
-      await _waitForWarehouseSyncImport(context);
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка синхронизации: $e')),
+          SnackBar(content: Text('$e')),
         );
       }
     }

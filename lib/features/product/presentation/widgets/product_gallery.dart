@@ -41,10 +41,20 @@ class _ProductGalleryState extends State<ProductGallery> {
     super.dispose();
   }
 
+  List<String> _galleryPhotoUrls(ProductItem product) {
+    return product.images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .take(3)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasPhoto = widget.product.imageUrl?.trim().isNotEmpty ?? false;
-    final pageCount = hasPhoto ? 1 : 3;
+    final photoUrls = _galleryPhotoUrls(widget.product);
+    final hasPhotos = photoUrls.isNotEmpty;
+    const placeholderPageCount = 3;
+    final pageCount = hasPhotos ? photoUrls.length : placeholderPageCount;
 
     return SizedBox(
       height: 360,
@@ -63,9 +73,10 @@ class _ProductGalleryState extends State<ProductGallery> {
                   border: Border.all(color: AppColors.border),
                 ),
                 clipBehavior: Clip.antiAlias,
-                child: hasPhoto
+                child: hasPhotos
                     ? ProductImage(
                         product: widget.product,
+                        imageUrlOverride: photoUrls[index],
                         placeholderIconSize: 120,
                       )
                     : Center(

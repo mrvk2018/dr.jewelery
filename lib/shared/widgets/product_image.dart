@@ -9,12 +9,15 @@ class ProductImage extends StatelessWidget {
   const ProductImage({
     super.key,
     required this.product,
+    this.imageUrlOverride,
     this.fit = BoxFit.cover,
     this.placeholderIconSize = 48,
     this.placeholderAlignment = Alignment.center,
   });
 
   final ProductItem product;
+  /// URL кадра галереи; если null — [ProductItem.imageUrl].
+  final String? imageUrlOverride;
   final BoxFit fit;
   final double placeholderIconSize;
   final Alignment placeholderAlignment;
@@ -30,7 +33,7 @@ class ProductImage extends StatelessWidget {
   ];
 
   String? get _url {
-    final raw = product.imageUrl?.trim();
+    final raw = (imageUrlOverride ?? product.imageUrl)?.trim();
     if (raw == null || raw.isEmpty) return null;
     return raw;
   }

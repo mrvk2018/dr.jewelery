@@ -77,22 +77,58 @@ class ProductItem {
         if (weightGrams != null) 'weightGrams': weightGrams,
       };
 
+  /// Три кадра в Storage: `{sku}.jpg`, `{sku}_1.jpg`, `{sku}_2.jpg` (+ общий `?v=`).
+  static List<String> storageGalleryUrlsFromBase(String baseUrl) {
+    final trimmed = baseUrl.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final lower = trimmed.toLowerCase();
+    if (!lower.contains('.jpg')) return [trimmed];
+
+    var path = trimmed;
+    var query = '';
+    final queryIndex = trimmed.indexOf('?');
+    if (queryIndex >= 0) {
+      path = trimmed.substring(0, queryIndex);
+      query = trimmed.substring(queryIndex);
+    }
+
+    if (!path.toLowerCase().endsWith('.jpg')) return [trimmed];
+
+    final stem = path.substring(0, path.length - 4);
+    return [
+      trimmed,
+      '$stem\_1.jpg$query',
+      '$stem\_2.jpg$query',
+    ];
+  }
+
   factory ProductItem.fromJson(Map<String, dynamic> json) {
     final id = json['id']?.toString() ?? '';
     final legacyImageUrl =
         json['imageUrl'] as String? ?? json['image_url'] as String?;
-    var images = (json['images'] as List<dynamic>? ?? const [])
+    final imagesFromDb = (json['images'] as List<dynamic>? ?? const [])
         .map((e) => e.toString())
         .where((url) => url.trim().isNotEmpty)
         .toList();
-    if (images.isEmpty &&
-        legacyImageUrl != null &&
-        legacyImageUrl.trim().isNotEmpty) {
-      images = [legacyImageUrl.trim()];
-    }
+
     final imageUrl = legacyImageUrl?.trim().isNotEmpty == true
         ? legacyImageUrl!.trim()
-        : (images.isNotEmpty ? images.first : null);
+        : (imagesFromDb.isNotEmpty ? imagesFromDb.first.trim() : null);
+
+    final List<String> images;
+    if (imagesFromDb.length >= 2) {
+      images = imagesFromDb.take(3).toList();
+    } else if (imageUrl != null &&
+        imageUrl.toLowerCase().contains('.jpg')) {
+      images = storageGalleryUrlsFromBase(imageUrl);
+    } else if (imagesFromDb.isNotEmpty) {
+      images = imagesFromDb;
+    } else if (imageUrl != null) {
+      images = [imageUrl];
+    } else {
+      images = const [];
+    }
 
     return ProductItem(
       id: id,

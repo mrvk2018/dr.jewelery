@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../profile/domain/models/user_profile.dart';
@@ -120,25 +122,136 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
       ),
     );
   }
+  static const _catalogSyncTaskId = 'catalog_sync';
+  static const _syncPollInterval = Duration(seconds: 4);
+  static const _syncPollMaxDuration = Duration(minutes: 4);
+
+  Future<bool> _isCatalogSyncRequested() async {
+    final row = await Supabase.instance.client
+        .from('sync_tasks')
+        .select('sync_requested')
+        .eq('id', _catalogSyncTaskId)
+        .maybeSingle();
+    if (row == null) return true;
+    final requested = row['sync_requested'];
+    if (requested is bool) return requested;
+    return true;
+  }
+
+  Future<void> _showCatalogSyncProgressDialog(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Text(
+                    'Склад выгружает каталог в Supabase…',
+                    style: AppTypography.caption(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ).copyWith(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _dismissCatalogSyncProgressDialog(BuildContext context) {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+  }
+
+  Future<bool> _waitUntilWarehouseSyncFinished() async {
+    final deadline = DateTime.now().add(_syncPollMaxDuration);
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_syncPollInterval);
+      try {
+        if (!await _isCatalogSyncRequested()) {
+          return true;
+        }
+      } catch (error, stackTrace) {
+        debugPrint('sync_tasks poll failed: $error');
+        debugPrint('$stackTrace');
+      }
+    }
+    return false;
+  }
+
   Future<void> _triggerSyncCatalog(BuildContext context) async {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Обновление данных из Supabase...'),
-      ),
-    );
+    var progressDialogVisible = false;
+
     try {
+      final response =
+          await Supabase.instance.client.functions.invoke('sync-catalog');
+      debugPrint(
+        'sync-catalog: status=${response.status} data=${response.data}',
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Запрос на синхронизацию отправлен на компьютер склада. Ожидаем завершения выгрузки…',
+          ),
+        ),
+      );
+
+      progressDialogVisible = true;
+      _showCatalogSyncProgressDialog(context);
+
+      final finished = await _waitUntilWarehouseSyncFinished();
+
+      if (context.mounted) {
+        _dismissCatalogSyncProgressDialog(context);
+        progressDialogVisible = false;
+      }
+
+      if (!context.mounted) return;
+
+      if (!finished) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Импорт не завершён за 4 минуты (sync_requested=true). '
+              'Проверьте складской сервер и повторите позже.',
+            ),
+          ),
+        );
+        return;
+      }
+
       await CatalogScope.of(context).load();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Каталог успешно обновлен!'),
+          content: Text(
+            'Синхронизация успешно завершена! Весь каталог обновлен из базы склада.',
+          ),
         ),
       );
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('sync-catalog failed: $e');
+      debugPrint('$stackTrace');
       if (context.mounted) {
+        if (progressDialogVisible) {
+          _dismissCatalogSyncProgressDialog(context);
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
+          SnackBar(content: Text('Ошибка синхронизации: $e')),
         );
       }
     }

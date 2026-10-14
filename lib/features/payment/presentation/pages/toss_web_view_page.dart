@@ -16,6 +16,29 @@ enum TossPaymentWebViewResult {
   cancelled,
 }
 
+/// Redirect Toss (successUrl) → query `paymentKey`, `orderId`, `amount`.
+class TossPaymentWebViewPopResult {
+  const TossPaymentWebViewPopResult({
+    required this.result,
+    this.paymentKey,
+    this.orderId,
+    this.amount,
+  });
+
+  final TossPaymentWebViewResult result;
+  final String? paymentKey;
+  final String? orderId;
+  final int? amount;
+
+  bool get hasConfirmPayload =>
+      paymentKey != null &&
+      paymentKey!.trim().isNotEmpty &&
+      orderId != null &&
+      orderId!.trim().isNotEmpty &&
+      amount != null &&
+      amount! > 0;
+}
+
 /// Встроенный WebView для виджета Toss Payments v2 (SDK через [loadHtmlString]).
 class TossWebViewPage extends StatefulWidget {
   const TossWebViewPage({
@@ -326,11 +349,15 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
     if (_isCompleting) return true;
 
     if (_matchesRedirect(url, widget.successUrl)) {
-      _complete(TossPaymentWebViewResult.success);
+      _completeFromRedirect(url, TossPaymentWebViewResult.success);
       return true;
     }
     if (_matchesRedirect(url, widget.failUrl)) {
-      _complete(TossPaymentWebViewResult.failed);
+      _complete(
+        const TossPaymentWebViewPopResult(
+          result: TossPaymentWebViewResult.failed,
+        ),
+      );
       return true;
     }
     return false;
@@ -341,14 +368,34 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
     return url.startsWith(configuredRedirect);
   }
 
-  void _complete(TossPaymentWebViewResult result) {
+  void _completeFromRedirect(String url, TossPaymentWebViewResult result) {
+    final uri = Uri.tryParse(url);
+    final paymentKey = uri?.queryParameters['paymentKey']?.trim();
+    final orderId = uri?.queryParameters['orderId']?.trim();
+    final amountRaw = uri?.queryParameters['amount'];
+    final parsedAmount = amountRaw != null ? int.tryParse(amountRaw) : null;
+    _complete(
+      TossPaymentWebViewPopResult(
+        result: result,
+        paymentKey: paymentKey,
+        orderId: orderId,
+        amount: parsedAmount,
+      ),
+    );
+  }
+
+  void _complete(TossPaymentWebViewPopResult result) {
     if (_isCompleting || !mounted) return;
     _isCompleting = true;
     Navigator.of(context).pop(result);
   }
 
   void _onUserClose() {
-    _complete(TossPaymentWebViewResult.cancelled);
+    _complete(
+      const TossPaymentWebViewPopResult(
+        result: TossPaymentWebViewResult.cancelled,
+      ),
+    );
   }
 
   @override

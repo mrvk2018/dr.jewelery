@@ -57,4 +57,33 @@ void main() {
     expect(item.salePrice, 65000);
     expect(item.localizedName('ru'), '011-0003');
   });
+
+  test('reads up to four images from Supabase row', () {
+    final urls = List.generate(
+      4,
+      (i) => 'https://cdn.example/products/sku${i == 0 ? '' : '_$i'}.webp',
+    );
+    final row = {
+      'id': '2',
+      'sku': 'SKU-4',
+      'stock_quantity': 1,
+      'sale_price': 100,
+      'name': {'ru': 'test'},
+      'images': urls,
+      'image_url': urls.first,
+    };
+    final item = ProductItem.fromJson(warehouseRowToClientJson(row));
+    expect(item.images.length, 4);
+    expect(item.imageUrl, urls.first);
+  });
+
+  test('storageGalleryUrlsFromBase expands webp slots', () {
+    const base =
+        'https://xxx.supabase.co/storage/v1/object/public/product-images/products/011-0003.webp?v=1';
+    final urls = ProductItem.storageGalleryUrlsFromBase(base);
+    expect(urls.length, ProductItem.maxGalleryImages);
+    expect(urls[0], base);
+    expect(urls[1], contains('011-0003_1.webp'));
+    expect(urls[3], contains('011-0003_3.webp'));
+  });
 }

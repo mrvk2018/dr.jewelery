@@ -59,6 +59,9 @@ app.*.map.json
 **/macos/Flutter/ephemeral/
 **/ios/ServiceDefinitions.json
 
+# Local portable Node (sync on Windows without global install)
+.tools/
+
 # Secrets and local credentials
 .env
 .env.*

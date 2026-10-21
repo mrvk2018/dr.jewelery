@@ -124,7 +124,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
   }
   static const _catalogSyncTaskId = 'catalog_sync';
   static const _syncPollInterval = Duration(seconds: 4);
-  static const _syncPollMaxDuration = Duration(minutes: 4);
+  /// Полный sync 1500+ SKU × до 4 WebP может занимать 1–2+ ч (sharp + MSSQL BLOB).
+  static const _syncPollMaxDuration = Duration(hours: 2);
 
   Future<bool> _isCatalogSyncRequested() async {
     final row = await Supabase.instance.client
@@ -226,8 +227,8 @@ class _AdminPanelScreenState extends State<AdminPanelScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Импорт не завершён за 4 минуты (sync_requested=true). '
-              'Проверьте складской сервер и повторите позже.',
+              'Импорт не завершён за 2 часа (sync_requested=true). '
+              'Проверьте лог sync-daemon на складском ПК.',
             ),
           ),
         );

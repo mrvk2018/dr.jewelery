@@ -4,6 +4,12 @@ export '../../core/utils/won_format.dart';
 
 /// Демонстрационная модель ювелирного изделия с мультиязычными полями.
 class ProductItem {
+  /// Максимум кадров в витрине (совпадает с sync: .webp … _3.webp).
+  static const int maxGalleryImages = 4;
+
+  /// Расширение файлов в Supabase Storage после складского sync (WebP).
+  static const storageImageExtension = '.webp';
+
   const ProductItem({
     required this.id,
     required this.sku,
@@ -42,7 +48,7 @@ class ProductItem {
   final List<double> availableSizes;
   /// Публичный URL главного фото (legacy / первый кадр из [images]).
   final String? imageUrl;
-  /// До 3 публичных URL фото в Supabase Storage (колонка `images` text[]).
+  /// До 4 публичных URL фото в Supabase Storage (колонка `images` text[]).
   final List<String> images;
   /// Вес изделия (граммы).
   final double? weightGrams;
@@ -77,13 +83,28 @@ class ProductItem {
         if (weightGrams != null) 'weightGrams': weightGrams,
       };
 
-  /// Три кадра в Storage: `{sku}.jpg`, `{sku}_1.jpg`, `{sku}_2.jpg` (+ общий `?v=`).
+  /// URL в Storage с `.webp` или legacy `.jpg` (до повторного sync).
+  static bool isProductStorageImageUrl(String url) {
+    final lower = url.trim().toLowerCase();
+    return lower.contains('.webp') || lower.contains('.jpg');
+  }
+
+  static String? _storagePathStem(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.webp')) {
+      return path.substring(0, path.length - 5);
+    }
+    if (lower.endsWith('.jpg')) {
+      return path.substring(0, path.length - 4);
+    }
+    return null;
+  }
+
+  /// Кадры в Storage: `{sku}.webp` … `{sku}_3.webp` (+ общий `?v=`).
   static List<String> storageGalleryUrlsFromBase(String baseUrl) {
     final trimmed = baseUrl.trim();
     if (trimmed.isEmpty) return const [];
-
-    final lower = trimmed.toLowerCase();
-    if (!lower.contains('.jpg')) return [trimmed];
+    if (!isProductStorageImageUrl(trimmed)) return [trimmed];
 
     var path = trimmed;
     var query = '';
@@ -93,14 +114,14 @@ class ProductItem {
       query = trimmed.substring(queryIndex);
     }
 
-    if (!path.toLowerCase().endsWith('.jpg')) return [trimmed];
+    final stem = _storagePathStem(path);
+    if (stem == null) return [trimmed];
 
-    final stem = path.substring(0, path.length - 4);
-    return [
-      trimmed,
-      '$stem\_1.jpg$query',
-      '$stem\_2.jpg$query',
-    ];
+    const suffixes = ['', '_1', '_2', '_3'];
+    return suffixes
+        .map((suffix) => '$stem$suffix$storageImageExtension$query')
+        .take(maxGalleryImages)
+        .toList();
   }
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
@@ -117,13 +138,10 @@ class ProductItem {
         : (imagesFromDb.isNotEmpty ? imagesFromDb.first.trim() : null);
 
     final List<String> images;
-    if (imagesFromDb.length >= 2) {
-      images = imagesFromDb.take(3).toList();
-    } else if (imageUrl != null &&
-        imageUrl.toLowerCase().contains('.jpg')) {
+    if (imagesFromDb.isNotEmpty) {
+      images = imagesFromDb.take(maxGalleryImages).toList();
+    } else if (imageUrl != null && isProductStorageImageUrl(imageUrl)) {
       images = storageGalleryUrlsFromBase(imageUrl);
-    } else if (imagesFromDb.isNotEmpty) {
-      images = imagesFromDb;
     } else if (imageUrl != null) {
       images = [imageUrl];
     } else {

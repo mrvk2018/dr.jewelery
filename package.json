@@ -5,6 +5,8 @@
   "scripts": {
     "sync": "node sync.js",
     "sync:daemon": "node sync-daemon.js",
+    "sync:request": "node scripts/request-catalog-sync.js",
+    "sync:track": "node scripts/track-sync.js",
     "translate:backfill": "node scripts/backfill-product-translations.js"
   },
   "engines": {
@@ -15,6 +17,7 @@
     "dotenv": "^17.4.2",
     "google-translate-api-x": "^10.7.2",
     "mssql": "^12.7.2",
+    "sharp": "^0.34.5",
     "ws": "^8.21.3"
   }
 }

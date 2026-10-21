@@ -45,7 +45,7 @@ class _ProductGalleryState extends State<ProductGallery> {
     return product.images
         .map((url) => url.trim())
         .where((url) => url.isNotEmpty)
-        .take(3)
+        .take(ProductItem.maxGalleryImages)
         .toList();
   }
 
@@ -53,7 +53,7 @@ class _ProductGalleryState extends State<ProductGallery> {
   Widget build(BuildContext context) {
     final photoUrls = _galleryPhotoUrls(widget.product);
     final hasPhotos = photoUrls.isNotEmpty;
-    const placeholderPageCount = 3;
+    const placeholderPageCount = ProductItem.maxGalleryImages;
     final pageCount = hasPhotos ? photoUrls.length : placeholderPageCount;
 
     return SizedBox(

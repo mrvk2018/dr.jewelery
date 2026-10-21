@@ -11,8 +11,10 @@ const sql = require('mssql');
 const ws = require('ws');
 const { createClient } = require('@supabase/supabase-js');
 const translate = require('google-translate-api-x');
+const sharp = require('sharp');
 
-const PROGRESS_EVERY = 15;
+const PROGRESS_EVERY = Number(process.env.SYNC_PROGRESS_EVERY || 15);
+const SYNC_LOG_EACH_ROW = process.env.SYNC_LOG_EACH_ROW === '1';
 
 /** TCP/login к MSSQL (склад часто отвечает дольше 5 с). */
 const MSSQL_CONNECT_TIMEOUT_MS = Number(
@@ -276,16 +278,117 @@ function logProgress(processed, total, photosUploaded, skippedProtected) {
   );
 }
 
-async function uploadArticulImage(supabase, articul, imageBuffer) {
+/** Суффиксы Storage: image1 → .webp, image2 → _1.webp, … */
+const ARTICUL_IMAGE_SLOT_SUFFIXES = ['', '_1', '_2', '_3'];
+const PRODUCT_IMAGE_MAX_SIDE_PX = 1600;
+const PRODUCT_IMAGE_WEBP_QUALITY = 85;
+
+function mssqlVarbinaryToBuffer(value) {
+  if (value === null || value === undefined) return null;
+  const buf = Buffer.isBuffer(value) ? value : Buffer.from(value);
+  return buf.length > 0 ? buf : null;
+}
+
+/**
+ * Все BLOB артикула: Articuls.Image + articul_images.image2..image4.
+ * @returns {Promise<{ image1: Buffer|null, image2: Buffer|null, image3: Buffer|null, image4: Buffer|null, slots: (Buffer|null)[] }>}
+ */
+async function fetchArticulImageBuffers(pool, articul) {
+  const empty = {
+    image1: null,
+    image2: null,
+    image3: null,
+    image4: null,
+    slots: [null, null, null, null],
+  };
+
+  return runMssqlWithTimeout(
+    `fetchArticulImageBuffers(${articul})`,
+    async (activePool) => {
+      const request = activePool.request();
+      request.timeout = MSSQL_BLOB_TIMEOUT_MS;
+      const result = await request
+        .input('articul', sql.NVarChar, articul)
+        .query(`
+      SELECT TOP 1
+        a.Image AS image1,
+        ai.image2,
+        ai.image3,
+        ai.image4
+      FROM dbo.Articuls AS a
+      LEFT JOIN dbo.articul_images AS ai ON a.Articul = ai.articul
+      WHERE a.Articul = @articul
+    `);
+      const row = result.recordset?.[0];
+      if (!row) return empty;
+
+      const image1 = mssqlVarbinaryToBuffer(row.image1);
+      const image2 = mssqlVarbinaryToBuffer(row.image2);
+      const image3 = mssqlVarbinaryToBuffer(row.image3);
+      const image4 = mssqlVarbinaryToBuffer(row.image4);
+      return {
+        image1,
+        image2,
+        image3,
+        image4,
+        slots: [image1, image2, image3, image4],
+      };
+    },
+    pool,
+    MSSQL_BLOB_TIMEOUT_MS,
+  );
+}
+
+/**
+ * BLOB со склада → WebP (resize + quality) перед Storage.
+ * @param {Buffer} imageBuffer
+ * @returns {Promise<Buffer|null>}
+ */
+async function optimizeProductImageBuffer(imageBuffer) {
+  try {
+    return await sharp(imageBuffer)
+      .resize(PRODUCT_IMAGE_MAX_SIDE_PX, PRODUCT_IMAGE_MAX_SIDE_PX, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({ quality: PRODUCT_IMAGE_WEBP_QUALITY })
+      .toBuffer();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`sharp optimize failed: ${message}`);
+    return null;
+  }
+}
+
+/**
+ * @param {number} slotIndex 0..3 → .webp, _1.webp, _2.webp, _3.webp
+ * @param {number} [cacheVersion] общий ?v= для всех кадров одного upsert
+ */
+async function uploadArticulImageSlot(
+  supabase,
+  articul,
+  imageBuffer,
+  slotIndex,
+  cacheVersion = Date.now(),
+) {
   if (!imageBuffer || !Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
     return null;
   }
+
+  const optimizedBuffer = await optimizeProductImageBuffer(imageBuffer);
+  if (!optimizedBuffer || optimizedBuffer.length === 0) {
+    return null;
+  }
+
   const safeArticul = String(articul).replace(/[^\w.-]+/g, '_');
-  const objectPath = `${STORAGE_FOLDER}/${safeArticul}.jpg`;
+  const suffix =
+    ARTICUL_IMAGE_SLOT_SUFFIXES[slotIndex] ??
+    `_${Math.max(0, slotIndex)}`;
+  const objectPath = `${STORAGE_FOLDER}/${safeArticul}${suffix}.webp`;
   const { error: uploadError } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .upload(objectPath, imageBuffer, {
-      contentType: 'image/jpeg',
+    .upload(objectPath, optimizedBuffer, {
+      contentType: 'image/webp',
       upsert: true,
     });
   if (uploadError) {
@@ -295,29 +398,7 @@ async function uploadArticulImage(supabase, articul, imageBuffer) {
   const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
   const publicUrl = data.publicUrl?.trim();
   if (!publicUrl) return null;
-  return `${publicUrl}?v=${Date.now()}`;
-}
-
-async function fetchArticulImageBuffer(pool, articul) {
-  return runMssqlWithTimeout(
-    `fetchArticulImageBuffer(${articul})`,
-    async (activePool) => {
-      const request = activePool.request();
-      request.timeout = MSSQL_BLOB_TIMEOUT_MS;
-      const result = await request
-        .input('articul', sql.NVarChar, articul)
-        .query(`
-      SELECT TOP 1 a.Image
-      FROM Articuls AS a
-      WHERE a.Articul = @articul
-    `);
-      const row = result.recordset?.[0];
-      if (!row?.Image) return null;
-      return Buffer.isBuffer(row.Image) ? row.Image : Buffer.from(row.Image);
-    },
-    pool,
-    MSSQL_BLOB_TIMEOUT_MS,
-  );
+  return `${publicUrl}?v=${cacheVersion}`;
 }
 
 async function fetchDrJawRows(pool) {
@@ -389,11 +470,28 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
 
       const { status, stock_quantity } = mapWarehouseStatus(row.Status);
 
-      let imageUrl = null;
+      const imageUrls = [];
       try {
-        const imageBuffer = await fetchArticulImageBuffer(pool, sku);
-        imageUrl = await uploadArticulImage(supabase, sku, imageBuffer);
-        if (imageUrl) photosUploaded += 1;
+        const { slots } = await fetchArticulImageBuffers(pool, sku);
+        const hasAnyBuffer = slots.some((buf) => buf != null);
+        if (hasAnyBuffer) {
+          const cacheVersion = Date.now();
+          for (let slot = 0; slot < slots.length; slot += 1) {
+            const imageBuffer = slots[slot];
+            if (!imageBuffer) continue;
+            const publicUrl = await uploadArticulImageSlot(
+              supabase,
+              sku,
+              imageBuffer,
+              slot,
+              cacheVersion,
+            );
+            if (publicUrl) {
+              imageUrls.push(publicUrl);
+              photosUploaded += 1;
+            }
+          }
+        }
       } catch (imageErr) {
         rowErrors += 1;
         const imageMessage =
@@ -428,9 +526,13 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
         icon_index: 0,
         available_sizes: parseSizeArray(row.Size),
         warehouse_attributes: buildWarehouseAttributes(row),
-        image_url: imageUrl,
         weight_grams: weightGrams,
       };
+
+      if (imageUrls.length > 0) {
+        payload.image_url = imageUrls[0];
+        payload.images = imageUrls;
+      }
 
       const { error } = await supabase.from('products').upsert(payload, {
         onConflict: 'id',
@@ -440,6 +542,12 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
         rowErrors += 1;
       } else {
         upserted += 1;
+        if (SYNC_LOG_EACH_ROW) {
+          console.log(
+            `[sync ok] ${index + 1}/${total} id=${id} sku=${sku} ` +
+              `webp_slots=${imageUrls.length} status=${status}`,
+          );
+        }
       }
     } catch (err) {
       rowErrors += 1;

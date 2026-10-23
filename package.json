@@ -7,6 +7,7 @@
     "sync:daemon": "node sync-daemon.js",
     "sync:request": "node scripts/request-catalog-sync.js",
     "sync:track": "node scripts/track-sync.js",
+    "sync:photo0": "node scripts/resync-primary-photos.js",
     "translate:backfill": "node scripts/backfill-product-translations.js"
   },
   "engines": {

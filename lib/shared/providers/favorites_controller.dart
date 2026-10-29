@@ -12,10 +12,13 @@ class FavoritesController extends ChangeNotifier {
   final DatabaseService _database;
   final Set<String> _ids = <String>{};
   bool _isLoading = false;
+  bool _isResolving = false;
 
   List<String> get ids => List.unmodifiable(_ids);
 
   bool get isLoading => _isLoading;
+
+  bool get isResolving => _isResolving;
 
   bool get isEmpty => _ids.isEmpty;
 
@@ -23,8 +26,26 @@ class FavoritesController extends ChangeNotifier {
 
   bool containsId(String id) => _ids.contains(id);
 
-  List<ProductItem> resolveProducts(List<ProductItem> catalog) {
-    return catalog.where((product) => _ids.contains(product.id)).toList();
+  /// Живые карточки с Supabase по id; «мёртвые» id удаляются локально.
+  Future<List<ProductItem>> resolveProductsFromServer() async {
+    if (_ids.isEmpty) return [];
+    _isResolving = true;
+    notifyListeners();
+    try {
+      final fromDb = await _database.getProductsByIds(_ids.toList());
+      final liveIds = fromDb.map((p) => p.id).toSet();
+      final deadIds = _ids.where((id) => !liveIds.contains(id)).toList();
+      if (deadIds.isNotEmpty) {
+        for (final id in deadIds) {
+          _ids.remove(id);
+        }
+        await _persist();
+      }
+      return fromDb;
+    } finally {
+      _isResolving = false;
+      notifyListeners();
+    }
   }
 
   Future<void> load() async {

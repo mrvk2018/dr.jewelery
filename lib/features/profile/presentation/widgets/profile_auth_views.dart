@@ -158,36 +158,137 @@ class ProfileAuthenticatedView extends StatelessWidget {
             child: Text(user.isAdmin ? 'Выйти из админки' : 'Выйти'),
           ),
         ),
-        if (!user.isAdmin) ...[
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: TextButton(
-              onPressed: () => _confirmDeleteAccount(
-                context,
-                onDeleteAccount: onDeleteAccount,
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: TextButton(
+            onPressed: () {
+              if (user.isAdmin) {
+                _showAdminDeleteWarning(context);
+              } else {
+                _confirmDeleteAccount(
+                  context,
+                  onDeleteAccount: onDeleteAccount,
+                );
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.saleRed,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.saleRed,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: Text(
-                profileTr(
-                  ProfileStringKeys.deleteAccountButton,
-                  context.langCode,
-                ),
+            ),
+            child: Text(
+              profileTr(
+                ProfileStringKeys.deleteAccountButton,
+                context.langCode,
               ),
             ),
           ),
-        ],
+        ),
         const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: AppColors.textSecondary.withValues(alpha: 0.2),
+                width: 0.5,
+              ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '상호: 닥터 유벨리르카 | 대표자: PAK ANDREI',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '사업자등록번호: 727-09-01295',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '통신판매업신고번호: 제 2026-인천연수구-2463 호',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '주소: 인천광역시 연수구 함박로 81, 101호(연수동)',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '고객센터: 010-2303-8257 | 이메일: [고객센터 이메일 입력]',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '본 상점은 고객님의 안전거래를 위해 토스페이먼츠의 구매안전(에스크로) 서비스를 이용하고 있습니다.',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
         ProfileVersionLabel(onSecretTap: onSecretAdminTap),
       ],
     );
   }
+}
+
+Future<void> _showAdminDeleteWarning(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: Text(
+          'Ограничение профиля',
+          style: AppTypography.heading(fontSize: 18),
+        ),
+        content: Text(
+          'Аккаунт администратора не может быть удален напрямую из приложения. '
+          'Пожалуйста, свяжитесь с главным офисом или поддержкой для передачи '
+          'прав управления.',
+          style: AppTypography.productMeta().copyWith(height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('ОК'),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 Future<void> _confirmDeleteAccount(

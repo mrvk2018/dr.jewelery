@@ -64,38 +64,39 @@ abstract final class CatalogInserts {
 /// Состояние фильтров каталога.
 class CatalogFilterState {
   const CatalogFilterState({
-    this.selectedSize,
+    this.selectedSizes = const {},
     this.selectedMetals = const {},
     this.selectedInserts = const {},
   });
 
-  final double? selectedSize;
+  final Set<double> selectedSizes;
   final Set<String> selectedMetals;
   final Set<String> selectedInserts;
 
   CatalogFilterState copyWith({
-    double? selectedSize,
-    bool clearSize = false,
+    Set<double>? selectedSizes,
     Set<String>? selectedMetals,
     Set<String>? selectedInserts,
   }) {
     return CatalogFilterState(
-      selectedSize: clearSize ? null : (selectedSize ?? this.selectedSize),
+      selectedSizes: selectedSizes ?? this.selectedSizes,
       selectedMetals: selectedMetals ?? this.selectedMetals,
       selectedInserts: selectedInserts ?? this.selectedInserts,
     );
   }
 
   bool get hasActiveFilters =>
-      selectedSize != null ||
+      selectedSizes.isNotEmpty ||
       selectedMetals.isNotEmpty ||
       selectedInserts.isNotEmpty;
 
   int get activeCount {
-    var count = 0;
-    if (selectedSize != null) count++;
-    count += selectedMetals.length;
-    count += selectedInserts.length;
-    return count;
+    return selectedSizes.length +
+        selectedMetals.length +
+        selectedInserts.length;
   }
+
+  List<String> get sizeTokens =>
+      selectedSizes.map((s) => s.toString()).toList();
 }
+

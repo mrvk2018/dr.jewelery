@@ -8,6 +8,7 @@ const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+/** Официальный REST Toss (Basic Auth + secret key). Документация: https://docs.tosspayments.com */
 const TOSS_CONFIRM_URL =
   "https://api.tosspayments.com/v1/payments/confirm";
 
@@ -256,6 +257,19 @@ Deno.serve(async (req: Request): Promise<Response> => {
         500,
       );
     }
+
+    // TODO(prod): в одной транзакции Supabase пометить купленные SKU как `sold`:
+    // const productIds = (draft.payload?.line_item_ids as string[]) ?? [draft.product_id];
+    // await supabase.rpc("mark_products_sold_after_payment", {
+    //   p_draft_id: orderId,
+    //   p_product_ids: productIds,
+    // });
+    // -- SQL внутри RPC:
+    // -- BEGIN;
+    // -- UPDATE public.products SET status = 'sold', updated_at = now()
+    // --   WHERE id = ANY(p_product_ids) AND status IN ('active', 'reserved');
+    // -- UPDATE public.order_drafts SET status = 'fulfilled' WHERE id = p_draft_id;
+    // -- COMMIT;
 
     return jsonResponse({ success: true, toss: tossResult.data });
   } catch (error) {

@@ -24,20 +24,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   late Duration _remaining;
   Timer? _countdownTimer;
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _remaining = _initialCountdown;
     _startCountdown();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reloadCatalogIfEmpty());
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrapCatalog());
   }
 
-  Future<void> _reloadCatalogIfEmpty() async {
+  Future<void> _bootstrapCatalog() async {
     if (!mounted) return;
     final catalog = CatalogScope.of(context);
-    if (catalog.products.isNotEmpty) return;
-    await catalog.load();
+    if (catalog.recommendedProducts.isEmpty && !catalog.homeIsLoading) {
+      await catalog.refreshHomeFeed();
+    }
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final catalog = CatalogScope.of(context);
+    final position = _scrollController.position;
+    if (position.maxScrollExtent <= 0) return;
+    if (position.pixels >= position.maxScrollExtent * 0.8) {
+      catalog.loadNextHomePage();
+    }
   }
 
   void _startCountdown() {
@@ -59,6 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _countdownTimer?.cancel();
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     super.dispose();
   }
 
@@ -68,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: CustomScrollView(
+          controller: _scrollController,
           slivers: [
             SliverToBoxAdapter(child: _HomeHeader()),
             const SliverToBoxAdapter(child: SizedBox(height: 16)),

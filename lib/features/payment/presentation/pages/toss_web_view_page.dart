@@ -48,6 +48,9 @@ class TossWebViewPage extends StatefulWidget {
     required this.amount,
     required this.successUrl,
     required this.failUrl,
+    required this.orderName,
+    this.customerName = '',
+    this.customerEmail = '',
   });
 
   final String clientKey;
@@ -55,6 +58,9 @@ class TossWebViewPage extends StatefulWidget {
   final int amount;
   final String successUrl;
   final String failUrl;
+  final String orderName;
+  final String customerName;
+  final String customerEmail;
 
   @override
   State<TossWebViewPage> createState() => _TossWebViewPageState();
@@ -78,6 +84,9 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
       amount: widget.amount,
       successUrl: widget.successUrl,
       failUrl: widget.failUrl,
+      orderName: widget.orderName,
+      customerName: widget.customerName,
+      customerEmail: widget.customerEmail,
     );
 
     _controller = WebViewController()
@@ -118,6 +127,11 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
               'description=${error.description} '
               'url=${error.url}',
             );
+            if (_isCriticalWebResourceError(error)) {
+              _handleCriticalWebViewFailure(
+                'webResourceError: ${error.description}',
+              );
+            }
           },
           onHttpError: (error) {
             debugPrint(
@@ -125,6 +139,11 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
               'statusCode=${error.response?.statusCode} '
               'url=${error.request?.uri}',
             );
+            if (_isCriticalHttpError(error)) {
+              _handleCriticalWebViewFailure(
+                'httpError: status=${error.response?.statusCode}',
+              );
+            }
           },
         ),
       )
@@ -161,12 +180,24 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
     required int amount,
     required String successUrl,
     required String failUrl,
+    required String orderName,
+    String customerName = '',
+    String customerEmail = '',
   }) {
     final jsClientKey = _escapeJsString(clientKey);
     final jsCustomerKey = _escapeJsString(customerKey);
     final jsOrderId = _escapeJsString(orderId);
     final jsSuccessUrl = _escapeJsString(successUrl);
     final jsFailUrl = _escapeJsString(failUrl);
+    final jsOrderName = _escapeJsString(orderName);
+    final jsCustomerName = _escapeJsString(customerName);
+    final jsCustomerEmail = _escapeJsString(customerEmail);
+    final customerFieldsJs = (customerName.isNotEmpty || customerEmail.isNotEmpty)
+        ? '''
+          customerName: "$jsCustomerName",
+          customerEmail: "$jsCustomerEmail",
+        '''
+        : '';
 
     return '''
 <!DOCTYPE html>
@@ -221,10 +252,11 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
         console.log("Запрос оплаты requestPayment...");
         await tossWidgets.requestPayment({
           orderId: "$jsOrderId",
-          orderName: "Jewelry Order",
+          orderName: "$jsOrderName",
           successUrl: "$jsSuccessUrl",
           failUrl: "$jsFailUrl",
-          appScheme: "drjewelry"
+          appScheme: "drjewelry",
+          $customerFieldsJs
         });
       } catch (error) {
         var msg = (error && error.message) ? error.message : String(error);
@@ -343,6 +375,55 @@ class _TossWebViewPageState extends State<TossWebViewPage> {
         '[TossWebView] external launch error: $error\n$stackTrace',
       );
     }
+  }
+
+  bool _isCriticalWebResourceError(WebResourceError error) {
+    if (error.isForMainFrame == true) {
+      return true;
+    }
+    switch (error.errorType) {
+      case WebResourceErrorType.connect:
+      case WebResourceErrorType.hostLookup:
+      case WebResourceErrorType.timeout:
+      case WebResourceErrorType.failedSslHandshake:
+      case WebResourceErrorType.badUrl:
+      case WebResourceErrorType.unsupportedScheme:
+      case WebResourceErrorType.redirectLoop:
+      case WebResourceErrorType.webContentProcessTerminated:
+      case WebResourceErrorType.webViewInvalidated:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _isCriticalHttpError(HttpResponseError error) {
+    final status = error.response?.statusCode;
+    if (status == null || status < 400) {
+      return false;
+    }
+    final uri = error.response?.uri ?? error.request?.uri;
+    if (uri == null) {
+      return true;
+    }
+    final host = uri.host.toLowerCase();
+    if (host == 'localhost' || host.contains('tosspayments.com')) {
+      return true;
+    }
+    return status >= 500;
+  }
+
+  void _handleCriticalWebViewFailure(String reason) {
+    debugPrint('[TossWebView] critical failure: $reason');
+    if (_isCompleting || !mounted) {
+      return;
+    }
+    setState(() => _isLoading = false);
+    _complete(
+      const TossPaymentWebViewPopResult(
+        result: TossPaymentWebViewResult.failed,
+      ),
+    );
   }
 
   bool _handleRedirectUrl(String url) {

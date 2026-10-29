@@ -70,7 +70,7 @@ class _CartScreenState extends State<CartScreen> {
         final selectedTotal = cart.checkoutTotalFor(selectedItems);
         final selectedSubtotal = selectedItems.fold<int>(
           0,
-          (sum, item) => sum + item.product.oldPrice * item.quantity,
+          (sum, item) => sum + item.loadedProduct.oldPrice * item.quantity,
         );
         final selectedDiscount = selectedSubtotal - selectedSaleSubtotal;
 

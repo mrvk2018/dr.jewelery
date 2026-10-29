@@ -40,13 +40,18 @@ class CatalogFilterDrawer extends StatelessWidget {
                   _FilterExpansionSection(
                     title: 'Размер',
                     child: _SizeSelector(
-                      selectedSize: draftFilters.selectedSize,
-                      onSelected: (size) {
+                      selectedSizes: draftFilters.selectedSizes,
+                      onToggle: (size) {
+                        final updated = Set<double>.from(
+                          draftFilters.selectedSizes,
+                        );
+                        if (updated.contains(size)) {
+                          updated.remove(size);
+                        } else {
+                          updated.add(size);
+                        }
                         onDraftChanged(
-                          draftFilters.copyWith(
-                            selectedSize: size,
-                            clearSize: draftFilters.selectedSize == size,
-                          ),
+                          draftFilters.copyWith(selectedSizes: updated),
                         );
                       },
                     ),
@@ -182,12 +187,12 @@ class _FilterExpansionSection extends StatelessWidget {
 
 class _SizeSelector extends StatelessWidget {
   const _SizeSelector({
-    required this.selectedSize,
-    required this.onSelected,
+    required this.selectedSizes,
+    required this.onToggle,
   });
 
-  final double? selectedSize;
-  final ValueChanged<double> onSelected;
+  final Set<double> selectedSizes;
+  final ValueChanged<double> onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -199,14 +204,14 @@ class _SizeSelector extends StatelessWidget {
         separatorBuilder: (context, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final size = CatalogRingSizes.items[index];
-          final isSelected = selectedSize == size;
+          final isSelected = selectedSizes.contains(size);
           final label = size % 1 == 0 ? size.toInt().toString() : '$size';
 
           return Material(
             color: isSelected ? AppColors.primary : AppColors.cardBackground,
             borderRadius: BorderRadius.circular(8),
             child: InkWell(
-              onTap: () => onSelected(size),
+              onTap: () => onToggle(size),
               borderRadius: BorderRadius.circular(8),
               child: Container(
                 width: 48,

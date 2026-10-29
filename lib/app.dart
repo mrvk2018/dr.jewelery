@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants/app_constants.dart';
-import 'core/constants/supabase_config.dart';
 import 'core/services/database_service.dart';
 import 'core/services/onboarding_storage.dart';
 import 'core/theme/app_theme.dart';
 import 'features/onboarding/presentation/pages/onboarding_screen.dart';
 import 'features/shell/presentation/pages/main_screen.dart';
 import 'l10n/app_localizations.dart';
+import 'features/cart/data/local_cart_service.dart';
 import 'shared/providers/cart_controller.dart';
 import 'shared/providers/cart_scope.dart';
 import 'shared/providers/catalog_controller.dart';
@@ -22,10 +22,6 @@ import 'shared/providers/profile_scope.dart';
 
 class JewelrySunlightApp extends StatefulWidget {
   const JewelrySunlightApp({super.key});
-
-  /// Feature Flag: `true` поднимает [CloudDatabaseService] (Supabase/Firebase).
-  /// `false` — рабочий [LocalDatabaseService] (KRW, персистентность, заказы).
-  static const bool useCloudBackend = true;
 
   @override
   State<JewelrySunlightApp> createState() => _JewelrySunlightAppState();
@@ -66,15 +62,11 @@ class _JewelrySunlightAppState extends State<JewelrySunlightApp> {
     try {
       final storage = await OnboardingStorage.create();
       final localeProvider = LocaleProvider(storage);
-      final DatabaseService database = JewelrySunlightApp.useCloudBackend
-          ? CloudDatabaseService(
-              supabaseUrl: SupabaseConfig.projectUrl,
-              anonKey: SupabaseConfig.anonKey,
-            )
-          : await LocalDatabaseService.create();
+      final DatabaseService database = DatabaseService.create();
       final catalogController = CatalogController(database);
       final feedbackController = FeedbackController(database);
-      final cartController = CartController(database);
+      final localCart = await LocalCartService.create();
+      final cartController = CartController(database, localCart: localCart);
       final favoritesController = FavoritesController(database);
       final profileController = ProfileController(database);
 

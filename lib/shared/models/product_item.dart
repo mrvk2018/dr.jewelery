@@ -27,6 +27,7 @@ class ProductItem {
     this.imageUrl,
     this.images = const [],
     this.weightGrams,
+    this.catalogStatus = 'active',
   });
 
   final String id;
@@ -53,7 +54,13 @@ class ProductItem {
   /// Вес изделия (граммы).
   final double? weightGrams;
 
+  /// Статус витрины Supabase: `active` | `reserved` | `sold` | `hidden`.
+  final String catalogStatus;
+
   bool get isOutOfStock => stockQuantity <= 0;
+
+  bool get isCatalogPurchasable =>
+      catalogStatus.trim().toLowerCase() == 'active';
 
   Map<String, String> get nameTranslations => name;
   Map<String, String> get descriptionTranslations => description;
@@ -81,6 +88,7 @@ class ProductItem {
         if (imageUrl != null) 'imageUrl': imageUrl,
         if (images.isNotEmpty) 'images': images,
         if (weightGrams != null) 'weightGrams': weightGrams,
+        'catalogStatus': catalogStatus,
       };
 
   /// URL в Storage с `.webp` или legacy `.jpg` (до повторного sync).
@@ -169,6 +177,9 @@ class ProductItem {
       images: images,
       weightGrams: (json['weightGrams'] as num?)?.toDouble() ??
           (json['weight'] as num?)?.toDouble(),
+      catalogStatus: json['catalogStatus'] as String? ??
+          json['status'] as String? ??
+          'active',
     );
   }
 
@@ -196,6 +207,7 @@ class ProductItem {
     String? imageUrl,
     List<String>? images,
     double? weightGrams,
+    String? catalogStatus,
   }) {
     return ProductItem(
       id: id ?? this.id,
@@ -214,6 +226,7 @@ class ProductItem {
       imageUrl: imageUrl ?? this.imageUrl,
       images: images ?? this.images,
       weightGrams: weightGrams ?? this.weightGrams,
+      catalogStatus: catalogStatus ?? this.catalogStatus,
     );
   }
 }

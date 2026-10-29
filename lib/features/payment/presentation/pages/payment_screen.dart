@@ -5,7 +5,6 @@ import '../../../checkout/domain/models/shipping_address.dart';
 import '../../../../core/constants/merchant_legal_info.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/services/payment_service.dart';
-import '../../../../core/services/notification_service.dart';
 import '../../../../core/l10n/payment_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -14,9 +13,11 @@ import '../../../../shared/providers/cart_controller.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/profile_scope.dart';
-import '../../../profile/domain/models/order_item.dart';
+import '../../data/toss_payment_confirmation_service.dart';
 import '../../domain/models/payment_models.dart';
+import '../../domain/models/toss_payment_request.dart';
 import '../widgets/payment_loading_overlay.dart';
+import 'payment_failure_screen.dart';
 import 'payment_success_screen.dart';
 import 'toss_web_view_page.dart';
 
@@ -30,6 +31,7 @@ class PaymentScreen extends StatefulWidget {
     this.checkoutItems,
     this.sellerCode = '',
     this.sellerName = '',
+    this.tossPaymentRequest,
   });
 
   final int productsTotalKrw;
@@ -45,6 +47,9 @@ class PaymentScreen extends StatefulWidget {
   /// Имя продавца (снимок для заказа и Telegram).
   final String sellerName;
 
+  /// Подготовленный payload Toss после валидации корзины на checkout.
+  final TossPaymentRequest? tossPaymentRequest;
+
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
@@ -53,8 +58,38 @@ class _PaymentScreenState extends State<PaymentScreen> {
   String? _validationMessage;
   bool _isConfirmingPayment = false;
   bool _isTermsAccepted = false;
+  final TossPaymentConfirmationService _tossConfirmationService =
+      TossPaymentConfirmationService();
 
   String tr(String key) => paymentTr(key, context.langCode);
+
+  int get _chargeAmountKrw => widget.productsTotalKrw + widget.deliveryFeeKrw;
+
+  String get _tossOrderName {
+    final request = widget.tossPaymentRequest;
+    if (request != null && request.orderName.trim().isNotEmpty) {
+      return request.orderName.trim();
+    }
+    return 'Dr.Jewelry order';
+  }
+
+  String get _tossCustomerName {
+    final request = widget.tossPaymentRequest;
+    if (request != null && request.customerName.trim().isNotEmpty) {
+      return request.customerName.trim();
+    }
+    final profileName = ProfileScope.of(context).user.name.trim();
+    if (profileName.isNotEmpty) return profileName;
+    return widget.shippingAddress.recipientName.trim();
+  }
+
+  String get _tossCustomerEmail {
+    final request = widget.tossPaymentRequest;
+    if (request != null && request.customerEmail.trim().isNotEmpty) {
+      return request.customerEmail.trim();
+    }
+    return ProfileScope.of(context).user.email.trim();
+  }
 
   String get _totalLabel {
     final products = formatWon(widget.productsTotalKrw);
@@ -94,13 +129,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
     for (final item in items) {
       final available =
-          await database.checkSkladAvailability(item.product.sku);
+          await database.checkSkladAvailability(item.loadedProduct.sku);
       if (!available) return false;
     }
 
     for (final item in items) {
       final reserved =
-          await database.reserveProductForCheckout(item.product.id);
+          await database.reserveProductForCheckout(item.loadedProduct.id);
       if (!reserved) return false;
     }
 
@@ -113,64 +148,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
     final database = CatalogScope.of(context).database;
     for (final item in _checkoutLineItems) {
       try {
-        await database.releaseProductCheckout(item.product.id);
+        await database.releaseProductCheckout(item.loadedProduct.id);
       } catch (error, stackTrace) {
         debugPrint(
-          'releaseProductCheckout id=${item.product.id}: $error',
+          'releaseProductCheckout id=${item.loadedProduct.id}: $error',
         );
         debugPrint('$stackTrace');
       }
     }
-  }
-
-  OrderItem _buildPaidOrderItem({
-    required String orderId,
-    required int totalAmountKrw,
-    required List<CartItem> purchased,
-  }) {
-    final profile = ProfileScope.of(context);
-    final languageCode = context.langCode;
-    final names = purchased
-        .map(
-          (item) =>
-              item.product.nameTranslations[languageCode] ??
-              item.product.nameTranslations['ru'] ??
-              item.product.sku,
-        )
-        .join(', ');
-    final now = DateTime.now();
-    const months = [
-      'янв',
-      'фев',
-      'мар',
-      'апр',
-      'май',
-      'июн',
-      'июл',
-      'авг',
-      'сен',
-      'окт',
-      'ноя',
-      'дек',
-    ];
-    final shipping = widget.shippingAddress;
-    return OrderItem(
-      id: orderId,
-      productName: names,
-      amount: totalAmountKrw,
-      status: OrderStatus.paid,
-      dateLabel: '${now.day} ${months[now.month - 1]} ${now.year}',
-      customerName: profile.user.name.isEmpty
-          ? shipping.recipientName
-          : profile.user.name,
-      shippingPostalCode: shipping.postalCode,
-      shippingRoadAddress: shipping.roadAddress,
-      shippingDetailAddress: shipping.detailAddress,
-      recipientName: shipping.recipientName,
-      recipientPhone: shipping.phone,
-      sellerCode: widget.sellerCode.trim(),
-      sellerName: widget.sellerName.trim(),
-    );
   }
 
   Future<void> _returnToCartAfterPaymentFailure(String message) async {
@@ -178,15 +163,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
     if (!mounted) return;
     await CatalogScope.of(context).load();
     if (!mounted) return;
-    Navigator.of(context).pop();
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => PaymentFailureScreen(message: message),
       ),
     );
   }
@@ -224,10 +203,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
         message: tr(PaymentStringKeys.loadingToss),
       );
 
-      final total = widget.productsTotalKrw + widget.deliveryFeeKrw;
+      final total = _chargeAmountKrw;
       final lineItems = _checkoutLineItems;
       if (lineItems.isEmpty) {
         throw StateError('checkout: empty cart');
+      }
+
+      if (widget.tossPaymentRequest == null) {
+        throw StateError('checkout: tossPaymentRequest is required');
       }
 
       final userId = Supabase.instance.client.auth.currentUser?.id;
@@ -237,30 +220,36 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       final shipping = widget.shippingAddress;
       final languageCode = context.langCode;
+      final tossRequest = widget.tossPaymentRequest!;
       final productNames = lineItems
           .map(
             (item) =>
-                item.product.nameTranslations[languageCode] ??
-                item.product.nameTranslations['ru'] ??
-                item.product.sku,
+                item.loadedProduct.nameTranslations[languageCode] ??
+                item.loadedProduct.nameTranslations['ru'] ??
+                item.loadedProduct.sku,
           )
           .join(', ');
 
       final draftRow = await Supabase.instance.client
           .from('order_drafts')
           .insert({
-            'product_id': lineItems.first.product.id,
+            'product_id': lineItems.first.loadedProduct.id,
             'calculated_amount': total,
             'status': 'pending',
             'user_id': userId,
             'payload': {
               'product_name': productNames,
-              'customer_name': ProfileScope.of(context).user.name,
+              'customer_name': _tossCustomerName,
+              'customer_email': _tossCustomerEmail,
+              'toss_order_name': _tossOrderName,
+              'client_order_ref': tossRequest.orderId,
               'shipping_postal_code': shipping.postalCode,
               'shipping_road_address': shipping.roadAddress,
               'shipping_detail_address': shipping.detailAddress,
               'recipient_name': shipping.recipientName,
               'recipient_phone': shipping.phone,
+              'line_item_ids':
+                  lineItems.map((item) => item.productId).toList(),
               if (widget.sellerCode.trim().isNotEmpty)
                 'seller_code': widget.sellerCode.trim(),
               if (widget.sellerName.trim().isNotEmpty)
@@ -278,6 +267,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final initialized = await paymentService.initializeTossPayment(
         orderId: orderId,
         amount: total,
+        orderName: _tossOrderName,
+        customerName: _tossCustomerName,
+        customerEmail: _tossCustomerEmail,
       );
 
       if (!mounted) return;
@@ -305,6 +297,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
             amount: launchConfig.amount,
             successUrl: launchConfig.successUrl,
             failUrl: launchConfig.failUrl,
+            orderName: launchConfig.orderName,
+            customerName: launchConfig.customerName,
+            customerEmail: launchConfig.customerEmail,
           ),
         ),
       );
@@ -335,68 +330,40 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       PaymentLoadingOverlay.show(
         context,
-        message: tr(PaymentStringKeys.loadingToss),
+        message: tr(PaymentStringKeys.loadingBankConfirm),
       );
 
       try {
-        final confirmResponse =
-            await Supabase.instance.client.functions.invoke(
-          'confirm-toss-payment',
-          body: {
-            'paymentKey': pop.paymentKey,
-            'orderId': pop.orderId ?? orderId,
-            'amount': pop.amount ?? total,
-          },
+        final confirmAmount = pop.amount ?? total;
+        final confirmOrderId = pop.orderId ?? orderId;
+        final confirmPayload =
+            await _tossConfirmationService.confirmPaymentViaEdgeFunction(
+          paymentKey: pop.paymentKey!,
+          orderId: confirmOrderId,
+          amount: confirmAmount,
         );
 
         if (!mounted) return;
         Navigator.of(context).pop();
 
-        final rawData = confirmResponse.data;
-        final confirmed = rawData is Map &&
-            rawData['success'] == true &&
-            confirmResponse.status == 200;
-
-        if (!confirmed) {
+        if (!_tossConfirmationService.isSuccessful(confirmPayload)) {
+          final serverError = confirmPayload['error']?.toString();
           await _returnToCartAfterPaymentFailure(
-            tr(PaymentStringKeys.paymentFailed),
+            serverError ?? tr(PaymentStringKeys.paymentFailed),
           );
           return;
         }
 
         final database = CatalogScope.of(context).database;
         for (final item in _checkoutLineItems) {
-          await database.confirmProductPaid(item.product.id);
+          await database.confirmProductPaid(item.loadedProduct.id);
         }
         if (!mounted) return;
 
         await ProfileScope.of(context).load();
+        if (!mounted) return;
 
-        final cart = CartScope.of(context);
-        final purchased = List<CartItem>.from(_checkoutLineItems);
-        final paidOrder = _buildPaidOrderItem(
-          orderId: orderId,
-          totalAmountKrw: total,
-          purchased: purchased,
-        );
-
-        await retailNotificationService.sendTelegramOrderNotification(
-          orderId: orderId,
-          cartItems: purchased,
-          totalAmountKrw: total,
-          sellerCode: paidOrder.sellerCode,
-          sellerName: paidOrder.sellerName,
-          recipientName: paidOrder.recipientName,
-          recipientPhone: paidOrder.recipientPhone,
-          shippingPostalCode: paidOrder.shippingPostalCode,
-          shippingRoadAddress: paidOrder.shippingRoadAddress,
-          shippingDetailAddress: paidOrder.shippingDetailAddress,
-          deliveryMethod: shipping.deliveryMethod,
-        );
-
-        for (final item in purchased) {
-          cart.removeItem(item.cartKey);
-        }
+        CartScope.of(context).clearCart();
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(

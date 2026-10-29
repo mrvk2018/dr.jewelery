@@ -113,6 +113,7 @@ class RetailNotificationService {
   /// Поля карточки для розницы (SKU, вес, размер, камни, фото).
   static Map<String, dynamic> _cartLinePayload(CartItem line) {
     final product = line.product;
+    if (product == null) return const {};
     return {
       'sku': product.sku,
       'warehouse_item_id': product.id,
@@ -135,11 +136,12 @@ class RetailNotificationService {
   }
 
   static String _resolveSize(CartItem line) {
-    if (line.selectedSize != null) {
-      return line.selectedSize.toString();
+    if (line.selectedSize != null && line.selectedSize!.isNotEmpty) {
+      return line.selectedSize!;
     }
-    if (line.product.availableSizes.isEmpty) return '';
-    return line.product.availableSizes.join(', ');
+    final product = line.product;
+    if (product == null || product.availableSizes.isEmpty) return '';
+    return product.availableSizes.join(', ');
   }
 }
 

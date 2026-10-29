@@ -12,37 +12,63 @@ class HomeRecommendedGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = CatalogScope.of(context).recommendedProducts;
-    if (items.isEmpty) {
-      return SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9F9F9),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE0E0E0)),
-            ),
-            child: Text(
-              context.l10n.homeCollectionsComingSoon,
-              textAlign: TextAlign.center,
-              style: AppTypography.productMetaStyle.copyWith(fontSize: 14),
-            ),
-          ),
-        ),
-      );
-    }
+    final catalog = CatalogScope.of(context);
 
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverGrid(
-        gridDelegate: ProductGridLayout.delegate,
-        delegate: SliverChildBuilderDelegate(
-          (context, index) => ProductCard(product: items[index]),
-          childCount: items.length,
-        ),
-      ),
+    return AnimatedBuilder(
+      animation: catalog,
+      builder: (context, _) {
+        final items = catalog.recommendedProducts;
+
+        if (catalog.homeIsLoading && items.isEmpty) {
+          return const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (items.isEmpty) {
+          return SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F9F9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE0E0E0)),
+                ),
+                child: Text(
+                  context.l10n.homeCollectionsComingSoon,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.productMetaStyle.copyWith(fontSize: 14),
+                ),
+              ),
+            ),
+          );
+        }
+
+        return SliverMainAxisGroup(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverGrid(
+                gridDelegate: ProductGridLayout.delegate,
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => ProductCard(product: items[index]),
+                  childCount: items.length,
+                ),
+              ),
+            ),
+            if (catalog.homeHasMore)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

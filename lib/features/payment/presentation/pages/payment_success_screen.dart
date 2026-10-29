@@ -76,8 +76,8 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
     final names = cart.items
         .map(
           (item) =>
-              item.product.nameTranslations[languageCode] ??
-              item.product.nameTranslations['ru'] ??
+              item.loadedProduct.nameTranslations[languageCode] ??
+              item.loadedProduct.nameTranslations['ru'] ??
               '',
         )
         .join(', ');

@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -19,27 +17,18 @@ import 'device_secrets_store.dart';
 
 export 'device_secrets_store.dart' show IntegrationKeys, DeviceSecretKeys;
 
-/// Ключи коллекций облачного/локального хранилища.
+/// Ключи device-кэша (SharedPreferences) и облачных снимков на устройстве.
 abstract final class DatabaseCollections {
   static const products = 'cloud_products_krw_i18n_v2';
   static const feedback = 'cloud_feedback';
   static const sellers = 'cloud_sellers_v1';
   static const cart = 'dj_cart_v1';
   static const favorites = 'dj_favorites_v1';
-  static const orders = 'dj_profile_orders_v1';
   static const profileSession = 'dj_profile_session_v1';
-  static const appMarketing = 'local_app_marketing_settings_v1';
-  static const localReferralSeller = 'local_referred_by_seller_v1';
   static const adminPinHash = DeviceSecretKeys.adminPinHash;
   static const adminDeviceClaimed = DeviceSecretKeys.adminDeviceClaimed;
   static const posApiKey = DeviceSecretKeys.posApiKey;
   static const tossApiKey = DeviceSecretKeys.tossApiKey;
-}
-
-/// Supabase Storage для фото товаров (админ-панель).
-abstract final class ProductImageStorage {
-  static const bucket = 'product-images';
-  static const folder = 'products';
 }
 
 /// Имена Postgres RPC / Edge-моста к MSSQL DrJaw (анти-дубль перед оплатой).
@@ -55,20 +44,27 @@ abstract final class SkladAvailabilityRpc {
 /// Postgres RPC для профиля, реферала и маркетинга.
 abstract final class ProfileBonusRpc {
   static const applySellerReferralPromo = 'apply_seller_referral_promo';
-  static const saveAppMarketingSettings = 'save_app_marketing_settings';
   static const promoCodeParam = 'p_promo_code';
-  static const welcomeEnabledParam = 'p_welcome_bonus_enabled';
-  static const welcomeAmountParam = 'p_welcome_bonus_amount';
 }
 
 /// SECURITY DEFINER RPC для админ-панели (обход RLS при anonymous JWT на клиенте).
 abstract final class AdminOrdersRpc {
   static const adminEmail = 'dr.jewelry.korea@gmail.com';
   static const getAllOrders = 'get_all_orders_for_admin';
-  static const updateOrderStatus = 'update_order_status_by_admin';
   static const adminEmailParam = 'p_admin_email';
-  static const orderIdParam = 'p_order_id';
-  static const newStatusParam = 'p_new_status';
+}
+
+/// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
+abstract final class CatalogFacetedRpc {
+  static const getAdvancedFacetedProducts = 'get_advanced_faceted_products';
+  static const searchDraftProducts = 'search_draft_products';
+  static const baseTagsParam = 'base_tags';
+  static const advancedTagsParam = 'advanced_tags';
+  static const minPriceParam = 'min_price';
+  static const maxPriceParam = 'max_price';
+  static const goldGramPriceParam = 'gold_gram_price';
+  static const silverGramPriceParam = 'silver_gram_price';
+  static const searchQueryParam = 'search_query';
 }
 
 /// OAuth-провайдер для link identity (аноним → постоянный аккаунт).
@@ -131,16 +127,6 @@ Future<bool> _invokeReleaseProductCheckoutRpc(
   return _parseReserveCheckoutResult(result);
 }
 
-/// Отказ в записи: роль не соответствует требованиям бэкенда / RLS.
-class UnauthorizedWriteException implements Exception {
-  UnauthorizedWriteException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 /// Отказ в чтении защищённой коллекции (например, инбокс обращений).
 class SecurityException implements Exception {
   SecurityException(this.message);
@@ -153,23 +139,44 @@ class SecurityException implements Exception {
 
 /// Контракт доступа к данным витрины, обращений и заказов.
 ///
-/// Реализации:
-/// - [LocalDatabaseService] — постоянное JSON-хранилище (текущий MVP).
-/// - [CloudDatabaseService] — каркас под Supabase / Firebase.
-///
-/// Переключение: константа `useCloudBackend` в `lib/app.dart`.
+/// Production: [CloudDatabaseService] — Supabase Pro (единственный SSOT каталога/заказов).
 abstract class DatabaseService {
+  /// Единственная фабрика для приложения (облачный режим).
+  static DatabaseService create() {
+    return CloudDatabaseService(
+      supabaseUrl: SupabaseConfig.projectUrl,
+      anonKey: SupabaseConfig.anonKey,
+    );
+  }
   /// Публичная витрина: чтение доступно гостю без авторизации.
   Future<List<ProductItem>> getProducts();
 
-  /// Запись товара. Только [UserRole.admin] (RLS / Firebase Rules).
-  Future<void> saveProduct(ProductItem item, UserRole actorRole);
+  /// Постраничная витрина с серверной (или локальной) faceted-фильтрацией.
+  Future<List<ProductItem>> getProductsAdvancedQuery({
+    required int offset,
+    int limit = 40,
+    String? searchQuery,
+    List<String>? categories,
+    List<String>? metals,
+    List<String>? sizes,
+    List<String>? inserts,
+    int? minDiscountPercent,
+    bool orderIdDescending = false,
+    List<String> categoryIlikePatterns = const [],
+    List<String> metalIlikePatterns = const [],
+  });
 
-  /// Удаление товара. Только [UserRole.admin].
-  Future<void> deleteProduct(String id, UserRole actorRole);
+  /// Постраничный список для админки (все статусы, без витринного RLS-фильтра active).
+  Future<List<ProductItem>> getProductsAdminPagedQuery({
+    required int offset,
+    int limit = 40,
+  });
 
-  /// Синхронизация остатка с кассой (POS): ключ — [ProductItem.sku].
-  Future<void> updateProductStock(String sku, int newQuantity);
+  /// Точечная загрузка карточек по id (избранное, deeplink).
+  Future<List<ProductItem>> getProductsByIds(
+    List<String> ids, {
+    bool activeOnly = true,
+  });
 
   /// Чтение обращений. Только [UserRole.admin] на облаке (RLS SELECT).
   Future<List<FeedbackItem>> getFeedback(UserRole actorRole);
@@ -177,30 +184,14 @@ abstract class DatabaseService {
   /// Отправка обращения клиентом/гостем — без авторизации (insert-only).
   Future<void> insertFeedback(FeedbackItem feedback);
 
-  /// Удаление обращения. Только [UserRole.admin].
-  Future<void> deleteFeedback(String id, UserRole actorRole);
-
   /// Картотека продавцов (промокоды). Только [UserRole.admin].
   Future<List<SellerItem>> getSellers(UserRole actorRole);
-
-  /// Добавление или обновление продавца. Только [UserRole.admin].
-  Future<void> saveSeller(SellerItem seller, UserRole actorRole);
-
-  /// Удаление продавца по промокоду. Только [UserRole.admin].
-  Future<void> deleteSeller(String promoCode, UserRole actorRole);
 
   /// Заказы пользователя. На облаке: `WHERE user_id = :userId`.
   Future<List<OrderItem>> getOrders(String userId);
 
   /// Все заказы для админ-панели (`created_at` DESC).
   Future<List<OrderItem>> getAllOrders(UserRole actorRole);
-
-  /// Смена статуса доставки (админ).
-  Future<void> updateOrderStatus(
-    String orderId,
-    String status,
-    UserRole actorRole,
-  );
 
   /// Создание заказа после успешной оплаты.
   Future<void> createOrder(OrderItem order);
@@ -229,13 +220,6 @@ abstract class DatabaseService {
   Future<IntegrationKeys> loadIntegrationKeys();
 
   Future<void> saveIntegrationKeys(IntegrationKeys keys);
-
-  /// Выбор фото из галереи (сжатие ~85%, maxWidth 1080). `null` — отмена или ошибка.
-  Future<File?> pickProductImageFromGallery();
-
-  /// Загрузка в бакет [ProductImageStorage.bucket]/[ProductImageStorage.folder].
-  /// Возвращает публичный URL или `null` при ошибке.
-  Future<String?> uploadProductImageToStorage(File file);
 
   /// Точечная проверка «живого» наличия на складе (MSSQL через Supabase RPC).
   /// `true` — статус «В наличии»; `false` — продано/недоступно или ошибка моста.
@@ -281,625 +265,48 @@ abstract class DatabaseService {
   /// Глобальные настройки welcome-акции (`app_settings`).
   Future<AppMarketingSettings> getAppMarketingSettings();
 
-  /// Сохранение welcome-акции (админ).
-  Future<void> saveAppMarketingSettings(
-    AppMarketingSettings settings,
-    UserRole actorRole,
-  );
+  /// Витрина: RPC [CatalogFacetedRpc.getAdvancedFacetedProducts] (строки `products` as Map).
+  Future<List<Map<String, dynamic>>> fetchFacetedProducts({
+    List<String>? baseTags,
+    List<String>? advancedTags,
+    double? minPrice,
+    double? maxPrice,
+    double goldGramPrice = 95000.0,
+    double silverGramPrice = 3500.0,
+  });
+
+  /// Приёмка черновиков: RPC [CatalogFacetedRpc.searchDraftProducts] (admin JWT).
+  Future<List<Map<String, dynamic>>> searchDraftProducts(String query);
+
+  /// Сленг витрины из `public.jewelry_thesaurus.slang_word`.
+  Future<List<String>> fetchJewelryThesaurusSlang();
+
+  /// Активация одного черновика: `stock_quantity` 0 → 1 (admin / RLS).
+  Future<bool> activateDraftProductBySku(String sku);
+
+  /// Массовая активация всех черновиков (`stock_quantity = 0` → `1`).
+  Future<int> activateAllDraftProducts();
+
+  /// Поштучное добавление на витрину (`stock_quantity = 1`).
+  Future<bool> insertManualProduct({
+    required String sku,
+    required String metalType,
+    required double weightGrams,
+    double? sizeValue,
+    String gemInserts,
+    String notes,
+    String? qrCodePayload,
+    List<String> additionalImages,
+  });
+
+  /// Обновление поля `notes` по SKU.
+  Future<bool> updateProductNotesBySku(String sku, String notes);
+
+  /// Списание с витрины (`stock_quantity` → `0`).
+  Future<bool> writeOffProductBySku(String sku);
 }
 
-Future<File?> _pickProductImageFromGalleryImpl() async {
-  if (kIsWeb) {
-    debugPrint('pickProductImageFromGallery: галерея недоступна на web');
-    return null;
-  }
-
-  try {
-    final picker = ImagePicker();
-    final xFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-      maxWidth: 1080,
-    );
-    if (xFile == null) return null;
-    return File(xFile.path);
-  } catch (error, stackTrace) {
-    debugPrint('pickProductImageFromGallery failed: $error');
-    debugPrint('$stackTrace');
-    return null;
-  }
-}
-
-Future<String?> _uploadProductImageToStorageImpl(
-  SupabaseClient client,
-  File file,
-) async {
-  try {
-    if (!await file.exists()) {
-      debugPrint('uploadProductImageToStorage: файл не найден');
-      return null;
-    }
-
-    final objectPath =
-        '${ProductImageStorage.folder}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final bytes = await file.readAsBytes();
-
-    await client.storage.from(ProductImageStorage.bucket).uploadBinary(
-          objectPath,
-          bytes,
-          fileOptions: const FileOptions(
-            contentType: 'image/jpeg',
-            upsert: false,
-          ),
-        );
-
-    return client.storage
-        .from(ProductImageStorage.bucket)
-        .getPublicUrl(objectPath);
-  } catch (error, stackTrace) {
-    debugPrint('uploadProductImageToStorage failed: $error');
-    debugPrint('$stackTrace');
-    return null;
-  }
-}
-
-/// Локальная постоянная реализация (SharedPreferences + JSON, KRW).
-///
-/// Имитирует облако до переключения `useCloudBackend` в `lib/app.dart`.
-class LocalDatabaseService implements DatabaseService {
-  LocalDatabaseService(this._prefs) : _secrets = DeviceSecretsStore(_prefs);
-
-  final SharedPreferences _prefs;
-  final DeviceSecretsStore _secrets;
-
-  static Future<LocalDatabaseService> create() async {
-    final prefs = await SharedPreferences.getInstance();
-    return LocalDatabaseService(prefs);
-  }
-
-  /// Если база пуста — засевает демо-изделия Dr. Jewelry в вонах.
-  @override
-  Future<List<ProductItem>> getProducts() async {
-    final raw = _prefs.getString(DatabaseCollections.products);
-    if (raw == null || raw.isEmpty) {
-      final seeded = List<ProductItem>.from(initialCatalogProducts);
-      await _writeProducts(seeded);
-      return seeded;
-    }
-
-    final decoded = jsonDecode(raw) as List<dynamic>;
-    final products = decoded
-        .whereType<Map>()
-        .map((item) => ProductItem.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
-
-    if (products.isEmpty) {
-      final seeded = List<ProductItem>.from(initialCatalogProducts);
-      await _writeProducts(seeded);
-      return seeded;
-    }
-
-    return products;
-  }
-
-  @override
-  Future<void> saveProduct(ProductItem item, UserRole actorRole) async {
-    // Локальный дубль RLS: запись в каталог только для admin.
-    // Облако: Supabase RLS  USING (auth.jwt() ->> 'role' = 'admin')
-    //         Firebase      allow write: if request.auth.token.role == 'admin'
-    _assertAdminWrite(actorRole, action: 'saveProduct');
-
-    final products = await getProducts();
-    final index = products.indexWhere((product) => product.id == item.id);
-    if (index >= 0) {
-      products[index] = item;
-    } else {
-      products.insert(0, item);
-    }
-    await _writeProducts(products);
-  }
-
-  @override
-  Future<void> deleteProduct(String id, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'deleteProduct');
-    final products = await getProducts();
-    products.removeWhere((product) => product.id == id);
-    await _writeProducts(products);
-  }
-
-  @override
-  Future<void> updateProductStock(String sku, int newQuantity) async {
-    final products = await getProducts();
-    final index = products.indexWhere((product) => product.sku == sku);
-    if (index < 0) return;
-    final quantity = newQuantity < 0 ? 0 : newQuantity;
-    products[index] = products[index].copyWith(stockQuantity: quantity);
-    await _writeProducts(products);
-  }
-
-  @override
-  Future<List<FeedbackItem>> getFeedback(UserRole actorRole) async {
-    // На устройстве инбокс один: роль не режем, чтобы MVP админки работал
-    // до логина. На облаке [CloudDatabaseService.getFeedback] бросит
-    // [SecurityException], если actorRole != UserRole.admin.
-    final raw = _prefs.getString(DatabaseCollections.feedback);
-    if (raw == null || raw.isEmpty) return [];
-
-    final decoded = jsonDecode(raw) as List<dynamic>;
-    return decoded
-        .whereType<Map>()
-        .map((item) => FeedbackItem.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
-  }
-
-  @override
-  Future<void> insertFeedback(FeedbackItem feedback) async {
-    // Insert-only: гость и клиент пишут без авторизации.
-    final messages = await _readFeedback();
-    messages.removeWhere((existing) => existing.id == feedback.id);
-    messages.insert(0, feedback);
-    await _writeFeedback(messages);
-  }
-
-  @override
-  Future<void> deleteFeedback(String id, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'deleteFeedback');
-    final messages = await _readFeedback();
-    messages.removeWhere((item) => item.id == id);
-    await _writeFeedback(messages);
-  }
-
-  @override
-  Future<List<SellerItem>> getSellers(UserRole actorRole) async {
-    _assertAdminRead(actorRole, action: 'getSellers');
-    return _readSellers();
-  }
-
-  @override
-  Future<void> saveSeller(SellerItem seller, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'saveSeller');
-    final sellers = _readSellers();
-    final code = SellerItem.normalizePromoCode(seller.promoCode);
-    final index = sellers.indexWhere((item) => item.promoCode == code);
-    final normalized = seller.copyWith(promoCode: code);
-    if (index >= 0) {
-      sellers[index] = normalized;
-    } else {
-      sellers.insert(0, normalized);
-    }
-    await _writeSellers(sellers);
-  }
-
-  @override
-  Future<void> deleteSeller(String promoCode, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'deleteSeller');
-    final code = SellerItem.normalizePromoCode(promoCode);
-    final sellers = _readSellers();
-    sellers.removeWhere((item) => item.promoCode == code);
-    await _writeSellers(sellers);
-  }
-
-  void _assertAdminRead(UserRole actorRole, {required String action}) {
-    if (actorRole != UserRole.admin) {
-      throw SecurityException(
-        'Отказано в $action: чтение разрешено только UserRole.admin',
-      );
-    }
-  }
-
-  @override
-  Future<List<OrderItem>> getOrders(String userId) async {
-    final maps = _readOrderMaps();
-    final orders = maps.map(OrderItem.fromJson).toList();
-    // Локальный MVP хранит заказы устройства целиком (нет колонки user_id).
-    // Облако отфильтрует `.eq('user_id', userId)`.
-    if (userId.isEmpty) return orders;
-    return orders;
-  }
-
-  @override
-  Future<void> createOrder(OrderItem order) async {
-    final orders = await getOrders('');
-    orders.removeWhere((existing) => existing.id == order.id);
-    orders.insert(0, order);
-    await _writeOrders(orders);
-  }
-
-  @override
-  Future<List<OrderItem>> getAllOrders(UserRole actorRole) async {
-    _assertAdminRead(actorRole, action: 'getAllOrders');
-    final orders = await getOrders('');
-    orders.sort((a, b) => b.dateLabel.compareTo(a.dateLabel));
-    return orders;
-  }
-
-  @override
-  Future<void> updateOrderStatus(
-    String orderId,
-    String status,
-    UserRole actorRole,
-  ) async {
-    _assertAdminWrite(actorRole, action: 'updateOrderStatus');
-    final orders = await getOrders('');
-    final index = orders.indexWhere((o) => o.id == orderId);
-    if (index < 0) return;
-    final mapped = OrderStatus.fromSupabaseStatus(status);
-    orders[index] = orders[index].copyWith(status: mapped);
-    await _writeOrders(orders);
-  }
-
-  void _assertAdminWrite(UserRole actorRole, {required String action}) {
-    if (actorRole != UserRole.admin) {
-      throw UnauthorizedWriteException(
-        'Отказано в $action: требуется UserRole.admin, получено $actorRole',
-      );
-    }
-  }
-
-  Future<List<FeedbackItem>> _readFeedback() async {
-    final raw = _prefs.getString(DatabaseCollections.feedback);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw) as List<dynamic>;
-    return decoded
-        .whereType<Map>()
-        .map((item) => FeedbackItem.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
-  }
-
-  List<Map<String, dynamic>> _readOrderMaps() {
-    final raw = _prefs.getString(DatabaseCollections.orders);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) return [];
-    return decoded
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-  }
-
-  Future<void> _writeProducts(List<ProductItem> products) {
-    return _prefs.setString(
-      DatabaseCollections.products,
-      jsonEncode(products.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  Future<void> _writeFeedback(List<FeedbackItem> messages) {
-    return _prefs.setString(
-      DatabaseCollections.feedback,
-      jsonEncode(messages.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  List<SellerItem> _readSellers() {
-    final raw = _prefs.getString(DatabaseCollections.sellers);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw) as List<dynamic>;
-    return decoded
-        .whereType<Map>()
-        .map((item) => SellerItem.fromJson(Map<String, dynamic>.from(item)))
-        .toList();
-  }
-
-  Future<void> _writeSellers(List<SellerItem> sellers) {
-    return _prefs.setString(
-      DatabaseCollections.sellers,
-      jsonEncode(sellers.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  Future<void> _writeOrders(List<OrderItem> orders) {
-    return _prefs.setString(
-      DatabaseCollections.orders,
-      jsonEncode(orders.map((item) => item.toJson()).toList()),
-    );
-  }
-
-  @override
-  Future<Map<String, dynamic>?> loadCartSnapshot() async {
-    final raw = _prefs.getString(DatabaseCollections.cart);
-    if (raw == null || raw.isEmpty) return null;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return null;
-    return Map<String, dynamic>.from(decoded);
-  }
-
-  @override
-  Future<void> saveCartSnapshot(Map<String, dynamic> snapshot) {
-    return _prefs.setString(DatabaseCollections.cart, jsonEncode(snapshot));
-  }
-
-  @override
-  Future<List<String>> loadFavoriteIds() async {
-    final raw = _prefs.getString(DatabaseCollections.favorites);
-    if (raw == null || raw.isEmpty) return [];
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) return [];
-    return decoded.map((id) => id.toString()).toList();
-  }
-
-  @override
-  Future<void> saveFavoriteIds(List<String> ids) {
-    return _prefs.setString(DatabaseCollections.favorites, jsonEncode(ids));
-  }
-
-  @override
-  Future<Map<String, dynamic>?> loadProfileSession() async {
-    final raw = _prefs.getString(DatabaseCollections.profileSession);
-    if (raw == null || raw.isEmpty) return null;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return null;
-    return Map<String, dynamic>.from(decoded);
-  }
-
-  @override
-  Future<void> saveProfileSession(Map<String, dynamic> session) {
-    return _prefs.setString(
-      DatabaseCollections.profileSession,
-      jsonEncode(session),
-    );
-  }
-
-  @override
-  Future<bool> isAdminDeviceClaimed() async => _secrets.isAdminDeviceClaimed;
-
-  @override
-  Future<void> claimAdminDevicePin(String pin) {
-    return _secrets.claimAdminDevicePin(pin);
-  }
-
-  @override
-  Future<bool> verifyAdminPin(String pin) async {
-    return _secrets.verifyAdminPin(pin);
-  }
-
-  @override
-  Future<IntegrationKeys> loadIntegrationKeys() async {
-    return _secrets.loadIntegrationKeys();
-  }
-
-  @override
-  Future<void> saveIntegrationKeys(IntegrationKeys keys) {
-    return _secrets.saveIntegrationKeys(keys);
-  }
-
-  @override
-  Future<File?> pickProductImageFromGallery() =>
-      _pickProductImageFromGalleryImpl();
-
-  @override
-  Future<String?> uploadProductImageToStorage(File file) {
-    try {
-      return _uploadProductImageToStorageImpl(Supabase.instance.client, file);
-    } catch (error, stackTrace) {
-      debugPrint(
-        'LocalDatabaseService.uploadProductImageToStorage failed: $error',
-      );
-      debugPrint('$stackTrace');
-      return Future<String?>.value(null);
-    }
-  }
-
-  Future<bool> _localStockAvailable(String sku) async {
-    final products = await getProducts();
-    for (final product in products) {
-      if (product.sku == sku) {
-        return product.stockQuantity > 0;
-      }
-    }
-    return false;
-  }
-
-  Future<bool> _localReserveSku(String sku) async {
-    final products = await getProducts();
-    final index = products.indexWhere((product) => product.sku == sku);
-    if (index < 0) return false;
-    if (products[index].stockQuantity <= 0) return false;
-    products[index] = products[index].copyWith(stockQuantity: 0);
-    await _writeProducts(products);
-    return true;
-  }
-
-  Future<void> _localReleaseProductId(String productId) async {
-    final products = await getProducts();
-    final index = products.indexWhere((product) => product.id == productId);
-    if (index < 0) return;
-    final qty = products[index].stockQuantity;
-    products[index] = products[index].copyWith(
-      stockQuantity: qty <= 0 ? 1 : qty,
-    );
-    await _writeProducts(products);
-  }
-
-  @override
-  Future<bool> checkSkladAvailability(String sku) async {
-    if (sku.trim().isEmpty) return false;
-    try {
-      return await _invokeCheckSkladAvailabilityRpc(
-        Supabase.instance.client,
-        sku,
-      );
-    } catch (error, stackTrace) {
-      debugPrint('LocalDatabaseService.checkSkladAvailability RPC: $error');
-      debugPrint('$stackTrace');
-      return _localStockAvailable(sku);
-    }
-  }
-
-  @override
-  Future<bool> reserveProductForCheckout(String productId) async {
-    if (productId.trim().isEmpty) return false;
-    try {
-      final reserved = await _invokeReserveProductForCheckoutRpc(
-        Supabase.instance.client,
-        productId,
-      );
-      if (reserved) return true;
-    } catch (error, stackTrace) {
-      debugPrint('LocalDatabaseService.reserveProductForCheckout RPC: $error');
-      debugPrint('$stackTrace');
-    }
-    final products = await getProducts();
-    final index = products.indexWhere((product) => product.id == productId);
-    if (index < 0) return false;
-    return _localReserveSku(products[index].sku);
-  }
-
-  @override
-  Future<void> releaseProductCheckout(String productId) async {
-    if (productId.trim().isEmpty) return;
-    try {
-      await _invokeReleaseProductCheckoutRpc(
-        Supabase.instance.client,
-        productId,
-      );
-      return;
-    } catch (error, stackTrace) {
-      debugPrint('LocalDatabaseService.releaseProductCheckout RPC: $error');
-      debugPrint('$stackTrace');
-    }
-    await _localReleaseProductId(productId);
-  }
-
-  @override
-  Future<bool> confirmProductPaid(String productId) async {
-    if (productId.trim().isEmpty) return false;
-    try {
-      final result = await Supabase.instance.client.rpc(
-        SkladAvailabilityRpc.confirmProductPaid,
-        params: {SkladAvailabilityRpc.productIdParam: productId},
-      );
-      return result as bool? ?? false;
-    } catch (e) {
-      debugPrint('Ошибка confirmProductPaid: $e');
-      return false;
-    }
-  }
-
-  @override
-  Future<String?> currentAuthUserId() async => null;
-
-  @override
-  Future<UserProfile> signInCustomerWithSupabase() async {
-    return UserProfile.demoCustomer;
-  }
-
-  @override
-  Future<void> signOutSupabaseAuth() async {}
-
-  @override
-  Future<void> deleteCustomerAccount() async {
-    await _writeOrders([]);
-    await saveProfileSession({
-      'isAuthenticated': false,
-      'user': UserProfile.demoGuest.toJson(),
-    });
-    await saveCartSnapshot({});
-    await saveFavoriteIds([]);
-  }
-
-  @override
-  Future<bool> isCurrentAuthAnonymous() async => false;
-
-  @override
-  Future<UserProfile> linkOAuthProvider(OAuthLinkProvider provider) async {
-    throw UnimplementedError(
-      'linkOAuthProvider доступен только с CloudDatabaseService',
-    );
-  }
-
-  @override
-  Future<UserProfile?> refreshCustomerProfileFromCloud() async => null;
-
-  @override
-  Future<int> fetchBonusBalanceForCurrentUser() async {
-    final session = await loadProfileSession();
-    if (session == null) return 0;
-    final rawUser = session['user'];
-    if (rawUser is! Map) return 0;
-    return UserProfile.fromJson(Map<String, dynamic>.from(rawUser)).bonusBalance;
-  }
-
-  @override
-  Future<SellerReferralApplyResult> applySellerReferralPromo(
-    String promoCode,
-  ) async {
-    final code = SellerItem.normalizePromoCode(promoCode);
-    if (code.isEmpty) {
-      return const SellerReferralApplyResult(
-        ok: false,
-        errorCode: 'empty_code',
-      );
-    }
-
-    SellerItem? seller;
-    for (final item in _readSellers()) {
-      if (item.promoCode == code && item.isActive) {
-        seller = item;
-        break;
-      }
-    }
-    if (seller == null) {
-      return const SellerReferralApplyResult(
-        ok: false,
-        errorCode: 'invalid_code',
-      );
-    }
-
-    final existing = _prefs.getString(DatabaseCollections.localReferralSeller);
-    if (existing != null && existing.isNotEmpty && existing != code) {
-      return const SellerReferralApplyResult(
-        ok: true,
-        alreadyReferred: true,
-        discountPercent: 0,
-        message: 'У вас уже привязан другой промокод продавца',
-      );
-    }
-
-    if (existing == null || existing.isEmpty) {
-      await _prefs.setString(DatabaseCollections.localReferralSeller, code);
-    }
-
-    return SellerReferralApplyResult(
-      ok: true,
-      discountPercent: seller.buyerBonusPercent,
-      sellerCode: code,
-    );
-  }
-
-  @override
-  Future<AppMarketingSettings> getAppMarketingSettings() async {
-    final raw = _prefs.getString(DatabaseCollections.appMarketing);
-    if (raw == null || raw.isEmpty) return AppMarketingSettings.defaults;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return AppMarketingSettings.defaults;
-    final map = Map<String, dynamic>.from(decoded);
-    return AppMarketingSettings(
-      welcomeBonusEnabled: map['welcomeBonusEnabled'] as bool? ?? false,
-      welcomeBonusAmountKrw: (map['welcomeBonusAmountKrw'] as num?)?.toInt() ?? 0,
-    );
-  }
-
-  @override
-  Future<void> saveAppMarketingSettings(
-    AppMarketingSettings settings,
-    UserRole actorRole,
-  ) async {
-    _assertAdminWrite(actorRole, action: 'saveAppMarketingSettings');
-    await _prefs.setString(
-      DatabaseCollections.appMarketing,
-      jsonEncode({
-        'welcomeBonusEnabled': settings.welcomeBonusEnabled,
-        'welcomeBonusAmountKrw': settings.welcomeBonusAmountKrw,
-      }),
-    );
-  }
-}
-
-/// Каркас облачного хранилища (Supabase / Firebase).
-///
-/// Включается флагом `JewelrySunlightApp.useCloudBackend = true`.
-/// Каждый метод описывает целевой SDK-вызов и политику RLS.
+/// Облачное хранилище: Supabase (read/write по RLS и RPC).
 class CloudDatabaseService implements DatabaseService {
   CloudDatabaseService({
     this.supabaseUrl = SupabaseConfig.projectUrl,
@@ -913,12 +320,20 @@ class CloudDatabaseService implements DatabaseService {
 
   SupabaseClient get _supabaseClient => Supabase.instance.client;
 
-  void _assertAdminWrite(UserRole actorRole, {required String action}) {
-    if (actorRole != UserRole.admin) {
-      throw UnauthorizedWriteException(
-        'Отказано в $action: требуется UserRole.admin, получено $actorRole',
-      );
+  static List<String> _rpcTagArray(List<String>? tags) {
+    if (tags == null || tags.isEmpty) return const [];
+    return List<String>.from(tags);
+  }
+
+  static List<Map<String, dynamic>> _mapRpcRows(dynamic response) {
+    if (response is! List) return const [];
+    final rows = <Map<String, dynamic>>[];
+    for (final item in response) {
+      if (item is Map) {
+        rows.add(Map<String, dynamic>.from(item));
+      }
     }
+    return rows;
   }
 
   void _assertAdminRead(UserRole actorRole, {required String action}) {
@@ -972,6 +387,7 @@ class CloudDatabaseService implements DatabaseService {
       'imageUrl': row['image_url'] as String?,
       'images': row['images'] as List<dynamic>?,
       'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
+      'catalogStatus': (row['status'] as String?)?.trim() ?? 'active',
     };
   }
 
@@ -993,6 +409,210 @@ class CloudDatabaseService implements DatabaseService {
     );
   }
 
+  List<ProductItem> _mapProductRows(List<dynamic> rows) {
+    final products = <ProductItem>[];
+    for (final dynamic row in rows) {
+      if (row is! Map) continue;
+      try {
+        products.add(
+          ProductItem.fromJson(
+            _productRowToClientJson(Map<String, dynamic>.from(row)),
+          ),
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'CloudDatabaseService: skip row ${row['id']}: $error',
+        );
+        debugPrint('$stackTrace');
+      }
+    }
+    return products;
+  }
+
+  PostgrestFilterBuilder<PostgrestList> _applyAdvancedCatalogFilters(
+    PostgrestFilterBuilder<PostgrestList> query, {
+    String? searchQuery,
+    List<String>? categories,
+    List<String>? metals,
+    List<String>? sizes,
+    List<String>? inserts,
+    int? minDiscountPercent,
+    List<String> categoryIlikePatterns = const [],
+    List<String> metalIlikePatterns = const [],
+  }) {
+    var filtered = query.eq('status', 'active');
+
+    if (minDiscountPercent != null && minDiscountPercent > 0) {
+      filtered = filtered.gt('discount_percent', minDiscountPercent - 1);
+    }
+
+    final categoryList =
+        categories?.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
+    if (categoryList != null && categoryList.isNotEmpty) {
+      filtered = filtered.inFilter('category', categoryList);
+    }
+
+    final metalList =
+        metals?.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
+    if (metalList != null && metalList.isNotEmpty) {
+      filtered = filtered.inFilter('metal', metalList);
+    }
+
+    final insertList =
+        inserts?.map((i) => i.trim()).where((i) => i.isNotEmpty).toList();
+    if (insertList != null && insertList.isNotEmpty) {
+      filtered = filtered.inFilter('insert', insertList);
+    }
+
+    final q = searchQuery?.trim();
+    if (q != null && q.isNotEmpty) {
+      final escaped = q.replaceAll(',', r'\,');
+      final pattern = '%$escaped%';
+      filtered = filtered.or(
+        'sku.ilike.$pattern,'
+        'category.ilike.$pattern,'
+        'metal.ilike.$pattern,'
+        'insert.ilike.$pattern,'
+        'name->>ru.ilike.$pattern,'
+        'name->>ko.ilike.$pattern,'
+        'name->>en.ilike.$pattern',
+      );
+    }
+
+    final sizeList =
+        sizes?.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    if (sizeList != null && sizeList.isNotEmpty) {
+      final numericSizes = sizeList
+          .map((s) => double.tryParse(s.replaceAll(',', '.')))
+          .whereType<double>()
+          .toList();
+      if (numericSizes.length == 1) {
+        filtered = filtered.contains('available_sizes', [numericSizes.first]);
+      } else if (numericSizes.isNotEmpty) {
+        final orParts = numericSizes
+            .map((n) => 'available_sizes.cs.[$n]')
+            .join(',');
+        filtered = filtered.or(orParts);
+      }
+    }
+
+    if (categoryIlikePatterns.isNotEmpty) {
+      final orParts = categoryIlikePatterns
+          .map((p) {
+            final escaped = p.replaceAll(',', r'\,');
+            return 'category.ilike.$escaped';
+          })
+          .join(',');
+      filtered = filtered.or(orParts);
+    }
+
+    if (metalIlikePatterns.isNotEmpty) {
+      final orParts = metalIlikePatterns
+          .map((p) {
+            final escaped = p.replaceAll(',', r'\,');
+            return 'metal.ilike.$escaped';
+          })
+          .join(',');
+      filtered = filtered.or(orParts);
+    }
+
+    return filtered;
+  }
+
+  @override
+  Future<List<ProductItem>> getProductsAdvancedQuery({
+    required int offset,
+    int limit = 40,
+    String? searchQuery,
+    List<String>? categories,
+    List<String>? metals,
+    List<String>? sizes,
+    List<String>? inserts,
+    int? minDiscountPercent,
+    bool orderIdDescending = false,
+    List<String> categoryIlikePatterns = const [],
+    List<String> metalIlikePatterns = const [],
+  }) async {
+    try {
+      final from = offset;
+      final to = offset + limit - 1;
+      var query = _supabaseClient.from('products').select();
+      query = _applyAdvancedCatalogFilters(
+        query,
+        searchQuery: searchQuery,
+        categories: categories,
+        metals: metals,
+        sizes: sizes,
+        inserts: inserts,
+        minDiscountPercent: minDiscountPercent,
+        categoryIlikePatterns: categoryIlikePatterns,
+        metalIlikePatterns: metalIlikePatterns,
+      );
+      final rows = await query
+          .order('id', ascending: !orderIdDescending)
+          .range(from, to);
+      return _mapProductRows(rows);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getProductsAdvancedQuery failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<ProductItem>> getProductsAdminPagedQuery({
+    required int offset,
+    int limit = 40,
+  }) async {
+    try {
+      final from = offset;
+      final to = offset + limit - 1;
+      final rows = await _supabaseClient
+          .from('products')
+          .select()
+          .order('id', ascending: true)
+          .range(from, to);
+      return _mapProductRows(rows);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getProductsAdminPagedQuery failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
+  }
+
+  @override
+  Future<List<ProductItem>> getProductsByIds(
+    List<String> ids, {
+    bool activeOnly = true,
+  }) async {
+    final unique =
+        ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet().toList();
+    if (unique.isEmpty) return [];
+
+    try {
+      const chunkSize = 200;
+      final results = <ProductItem>[];
+      for (var i = 0; i < unique.length; i += chunkSize) {
+        final chunk = unique.sublist(
+          i,
+          i + chunkSize > unique.length ? unique.length : i + chunkSize,
+        );
+        var query = _supabaseClient.from('products').select().inFilter('id', chunk);
+        if (activeOnly) {
+          query = query.eq('status', 'active');
+        }
+        final rows = await query;
+        results.addAll(_mapProductRows(rows));
+      }
+      results.sort((a, b) => a.id.compareTo(b.id));
+      return results;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getProductsByIds failed: $error');
+      debugPrint('$stackTrace');
+      return [];
+    }
+  }
+
   @override
   Future<List<ProductItem>> getProducts() async {
     try {
@@ -1000,23 +620,7 @@ class CloudDatabaseService implements DatabaseService {
           .from('products')
           .select()
           .range(0, 4999);
-      final products = <ProductItem>[];
-      for (final dynamic row in rows) {
-        if (row is! Map) continue;
-        try {
-          products.add(
-            ProductItem.fromJson(
-              _productRowToClientJson(Map<String, dynamic>.from(row)),
-            ),
-          );
-        } catch (error, stackTrace) {
-          debugPrint(
-            'CloudDatabaseService.getProducts: skip row '
-            '${row['id']}: $error',
-          );
-          debugPrint('$stackTrace');
-        }
-      }
+      final products = _mapProductRows(rows);
       if (products.isNotEmpty) {
         await _writeCloudProductCache(products);
       }
@@ -1026,72 +630,6 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('$stackTrace');
       return _readCloudProductCache();
     }
-  }
-
-  @override
-  Future<void> saveProduct(ProductItem item, UserRole actorRole) async {
-    // SECURITY / RLS: запись в `products` только для admin.
-    // Клиентская проверка дублирует серверную политику — не заменяет её.
-    _assertAdminWrite(actorRole, action: 'saveProduct');
-
-    // TODO: Supabase upsert товара (цены в KRW, без копеек).
-    //   await Supabase.instance.client.from('products').upsert(item.toJson());
-    //   RLS: CREATE POLICY products_write_admin ON products
-    //        FOR ALL USING (auth.jwt() ->> 'role' = 'admin')
-    //        WITH CHECK (auth.jwt() ->> 'role' = 'admin');
-    // TODO: Firebase
-    //   await FirebaseFirestore.instance
-    //       .collection('products').doc(item.id).set(item.toJson());
-    //   allow write: if request.auth.token.role == 'admin';
-    throw UnimplementedError(
-      'CloudDatabaseService.saveProduct: подключите Supabase/Firebase SDK',
-    );
-  }
-
-  @override
-  Future<void> deleteProduct(String id, UserRole actorRole) async {
-    // SECURITY / RLS: удаление товара только UserRole.admin.
-    _assertAdminWrite(actorRole, action: 'deleteProduct');
-
-    // TODO: Supabase
-    //   await Supabase.instance.client.from('products').delete().eq('id', id);
-    //   Та же policy products_write_admin, что и для saveProduct.
-    // TODO: Firebase
-    //   await FirebaseFirestore.instance.collection('products').doc(id).delete();
-    //   allow delete: if request.auth.token.role == 'admin';
-    throw UnimplementedError(
-      'CloudDatabaseService.deleteProduct: подключите Supabase/Firebase SDK',
-    );
-  }
-
-  @override
-  Future<void> updateProductStock(String sku, int newQuantity) async {
-    // --- Складской sync (Node.js/Python): НЕ вызывать из Flutter-клиента ---
-    //
-    // Supabase JS (только на сервере, env SUPABASE_SERVICE_ROLE_KEY):
-    //   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-    //   await supabase
-    //     .from('products')
-    //     .update({ stock_quantity: Math.max(0, newQuantity) })
-    //     .eq('sku', sku);
-    //
-    // Supabase REST (PostgREST), тот же эффект:
-    //   PATCH {SUPABASE_URL}/rest/v1/products?sku=eq.{sku}
-    //   Headers:
-    //     apikey: {SERVICE_ROLE_KEY}
-    //     Authorization: Bearer {SERVICE_ROLE_KEY}
-    //     Content-Type: application/json
-    //     Prefer: return=minimal
-    //   Body: {"stock_quantity": 4}
-    //
-    // RLS: у anon/authenticated UPDATE запрещён; service_role обходит RLS.
-    // Поток: [SQL склад] → sync-скрипт → Supabase products → Flutter getProducts().
-    //
-    // Клиентское приложение не имеет права менять остатки (.cursorrules).
-    throw SecurityException(
-      'Отказано в updateProductStock: изменение остатков по sku="$sku" '
-      'запрещено на мобильном клиенте. Используйте серверный sync с service_role.',
-    );
   }
 
   @override
@@ -1113,14 +651,6 @@ class CloudDatabaseService implements DatabaseService {
     final messages = await getFeedback(UserRole.guest);
     messages.removeWhere((existing) => existing.id == feedback.id);
     messages.insert(0, feedback);
-    await _writeCloudFeedback(messages);
-  }
-
-  @override
-  Future<void> deleteFeedback(String id, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'deleteFeedback');
-    final messages = await getFeedback(UserRole.guest);
-    messages.removeWhere((item) => item.id == id);
     await _writeCloudFeedback(messages);
   }
 
@@ -1184,52 +714,6 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<void> saveSeller(SellerItem seller, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'saveSeller');
-    final code = SellerItem.normalizePromoCode(seller.promoCode);
-    try {
-      await _supabaseClient.from('sellers').upsert(
-        {
-          'promo_code': code,
-          'name': seller.name.trim(),
-          'is_active': seller.isActive,
-          'buyer_bonus_percent': seller.buyerBonusPercent.clamp(0, 100),
-        },
-        onConflict: 'promo_code',
-      );
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.saveSeller failed: $error');
-      debugPrint('$stackTrace');
-      rethrow;
-    }
-    final cached = await _readCloudSellersCache();
-    final index = cached.indexWhere((item) => item.promoCode == code);
-    final normalized = seller.copyWith(promoCode: code);
-    if (index >= 0) {
-      cached[index] = normalized;
-    } else {
-      cached.insert(0, normalized);
-    }
-    await _writeCloudSellersCache(cached);
-  }
-
-  @override
-  Future<void> deleteSeller(String promoCode, UserRole actorRole) async {
-    _assertAdminWrite(actorRole, action: 'deleteSeller');
-    final code = SellerItem.normalizePromoCode(promoCode);
-    try {
-      await _supabaseClient.from('sellers').delete().eq('promo_code', code);
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.deleteSeller failed: $error');
-      debugPrint('$stackTrace');
-      rethrow;
-    }
-    final cached = await _readCloudSellersCache();
-    cached.removeWhere((item) => item.promoCode == code);
-    await _writeCloudSellersCache(cached);
-  }
-
-  @override
   Future<List<OrderItem>> getOrders(String userId) async {
     if (userId.isEmpty) return [];
     try {
@@ -1272,29 +756,6 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.getAllOrders failed: $error');
       debugPrint('$stackTrace');
       return [];
-    }
-  }
-
-  @override
-  Future<void> updateOrderStatus(
-    String orderId,
-    String status,
-    UserRole actorRole,
-  ) async {
-    _assertAdminWrite(actorRole, action: 'updateOrderStatus');
-    try {
-      await _supabaseClient.rpc(
-        AdminOrdersRpc.updateOrderStatus,
-        params: {
-          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
-          AdminOrdersRpc.orderIdParam: orderId,
-          AdminOrdersRpc.newStatusParam: status,
-        },
-      );
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.updateOrderStatus failed: $error');
-      debugPrint('$stackTrace');
-      rethrow;
     }
   }
 
@@ -1421,23 +882,6 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<void> saveIntegrationKeys(IntegrationKeys keys) async {
     await (await _deviceSecrets()).saveIntegrationKeys(keys);
-  }
-
-  @override
-  Future<File?> pickProductImageFromGallery() =>
-      _pickProductImageFromGalleryImpl();
-
-  @override
-  Future<String?> uploadProductImageToStorage(File file) {
-    try {
-      return _uploadProductImageToStorageImpl(_supabaseClient, file);
-    } catch (error, stackTrace) {
-      debugPrint(
-        'CloudDatabaseService.uploadProductImageToStorage failed: $error',
-      );
-      debugPrint('$stackTrace');
-      return Future<String?>.value(null);
-    }
   }
 
   @override
@@ -1730,23 +1174,172 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<void> saveAppMarketingSettings(
-    AppMarketingSettings settings,
-    UserRole actorRole,
-  ) async {
-    _assertAdminWrite(actorRole, action: 'saveAppMarketingSettings');
+  Future<List<Map<String, dynamic>>> fetchFacetedProducts({
+    List<String>? baseTags,
+    List<String>? advancedTags,
+    double? minPrice,
+    double? maxPrice,
+    double goldGramPrice = 95000.0,
+    double silverGramPrice = 3500.0,
+  }) async {
     try {
-      await _supabaseClient.rpc(
-        ProfileBonusRpc.saveAppMarketingSettings,
+      final response = await _supabaseClient.rpc(
+        CatalogFacetedRpc.getAdvancedFacetedProducts,
         params: {
-          ProfileBonusRpc.welcomeEnabledParam: settings.welcomeBonusEnabled,
-          ProfileBonusRpc.welcomeAmountParam: settings.welcomeBonusAmountKrw,
+          CatalogFacetedRpc.baseTagsParam: _rpcTagArray(baseTags),
+          CatalogFacetedRpc.advancedTagsParam: _rpcTagArray(advancedTags),
+          CatalogFacetedRpc.minPriceParam: minPrice,
+          CatalogFacetedRpc.maxPriceParam: maxPrice,
+          CatalogFacetedRpc.goldGramPriceParam: goldGramPrice,
+          CatalogFacetedRpc.silverGramPriceParam: silverGramPrice,
         },
       );
+      return _mapRpcRows(response);
     } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.saveAppMarketingSettings failed: $error');
+      debugPrint('CloudDatabaseService.fetchFacetedProducts failed: $error');
       debugPrint('$stackTrace');
-      rethrow;
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchDraftProducts(String query) async {
+    try {
+      final response = await _supabaseClient.rpc(
+        CatalogFacetedRpc.searchDraftProducts,
+        params: {CatalogFacetedRpc.searchQueryParam: query},
+      );
+      return _mapRpcRows(response);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.searchDraftProducts failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<String>> fetchJewelryThesaurusSlang() async {
+    try {
+      final rows = await _supabaseClient
+          .from('jewelry_thesaurus')
+          .select('slang_word')
+          .order('slang_word');
+      final words = <String>[];
+      for (final row in rows) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final word = map['slang_word']?.toString().trim() ?? '';
+        if (word.isNotEmpty) words.add(word);
+      }
+      return words;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchJewelryThesaurusSlang failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<bool> activateDraftProductBySku(String sku) async {
+    final normalized = sku.trim();
+    if (normalized.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'stock_quantity': 1})
+          .eq('sku', normalized)
+          .eq('stock_quantity', 0)
+          .select('sku');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.activateDraftProductBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<int> activateAllDraftProducts() async {
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'stock_quantity': 1})
+          .eq('stock_quantity', 0)
+          .select('sku');
+      return rows.length;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.activateAllDraftProducts failed: $error');
+      debugPrint('$stackTrace');
+      return 0;
+    }
+  }
+
+  @override
+  Future<bool> insertManualProduct({
+    required String sku,
+    required String metalType,
+    required double weightGrams,
+    double? sizeValue,
+    String gemInserts = '',
+    String notes = '',
+    String? qrCodePayload,
+    List<String> additionalImages = const [],
+  }) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return false;
+    try {
+      await _supabaseClient.from('products').insert({
+        'id': normalizedSku,
+        'sku': normalizedSku,
+        'metal_type': metalType.trim(),
+        'weight_grams': weightGrams,
+        if (sizeValue != null) 'size_value': sizeValue,
+        'gem_inserts': gemInserts.trim(),
+        'notes': notes.trim(),
+        'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
+        'stock_quantity': 1,
+        'additional_images': additionalImages,
+      });
+      return true;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.insertManualProduct failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> updateProductNotesBySku(String sku, String notes) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'notes': notes.trim()})
+          .eq('sku', normalizedSku)
+          .select('sku');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.updateProductNotesBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> writeOffProductBySku(String sku) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'stock_quantity': 0})
+          .eq('sku', normalizedSku)
+          .select('sku');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.writeOffProductBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
     }
   }
 }

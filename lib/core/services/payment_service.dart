@@ -10,6 +10,9 @@ class TossPaymentLaunchConfig {
     required this.method,
     required this.successUrl,
     required this.failUrl,
+    this.orderName = 'Dr.Jewelry order',
+    this.customerName = '',
+    this.customerEmail = '',
   });
 
   final String clientKey;
@@ -18,6 +21,9 @@ class TossPaymentLaunchConfig {
   final PaymentMethodType method;
   final String successUrl;
   final String failUrl;
+  final String orderName;
+  final String customerName;
+  final String customerEmail;
 }
 
 /// Публичный client key и redirect URL задаются при инициализации (не хранить secret key).
@@ -102,6 +108,9 @@ class PaymentService {
     required String orderId,
     required int amount,
     PaymentMethodType method = PaymentMethodType.tossPay,
+    String orderName = 'Dr.Jewelry order',
+    String customerName = '',
+    String customerEmail = '',
   }) async {
     _lastTossLaunchConfig = null;
 
@@ -120,6 +129,9 @@ class PaymentService {
       method: method,
       successUrl: _config.successRedirectUrl,
       failUrl: _config.failRedirectUrl,
+      orderName: orderName,
+      customerName: customerName,
+      customerEmail: customerEmail,
     );
 
     return true;

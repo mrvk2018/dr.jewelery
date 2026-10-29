@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../payment/presentation/pages/payment_screen.dart';
+import '../utils/checkout_unavailable_messages.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/checkout_localizations.dart';
 import '../../../../core/services/checkout_address_storage.dart';
@@ -48,6 +49,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   DeliveryMethod _deliveryMethod = DeliveryMethod.courier;
   bool _isSearchingAddress = false;
   bool _isApplyingSellerPromo = false;
+  bool _isValidatingCheckout = false;
   String? _validationMessage;
   String? _sellerPromoInfoMessage;
   int _referralDiscountPercent = 0;
@@ -278,7 +280,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return null;
   }
 
-  void _placeOrder() {
+  bool get _hasUnavailableCheckoutLines =>
+      _resolvedCheckoutItems().any((item) => item.isUnavailable);
+
+  bool get _canSubmitCheckout =>
+      !_isValidatingCheckout && !_hasUnavailableCheckoutLines;
+
+  Future<void> _showUnavailableCartFeedback() async {
+    if (!mounted) return;
+    final languageCode = context.langCode;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(CheckoutUnavailableMessages.snackBar(languageCode)),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(CheckoutUnavailableMessages.dialogTitle(languageCode)),
+          content: Text(CheckoutUnavailableMessages.dialogBody(languageCode)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(languageCode == 'ko' ? '확인' : 'OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _placeOrder() async {
     final error = _validateForm();
     if (error != null) {
       setState(() => _validationMessage = error);
@@ -294,25 +328,68 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
-    setState(() => _validationMessage = null);
-    final shipping = _collectShippingAddress();
+    final cart = CartScope.of(context);
     final lineItems = _resolvedCheckoutItems();
-    final profile = ProfileScope.of(context);
-    final sellerCode = _appliedSellerCode.trim().isNotEmpty
-        ? _appliedSellerCode.trim()
-        : (profile.user.referredBySeller?.trim() ?? '');
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => PaymentScreen(
-          productsTotalKrw: _payableProductsTotal,
-          deliveryFeeKrw: _deliveryFee,
-          shippingAddress: shipping,
-          checkoutItems: lineItems,
-          sellerCode: sellerCode,
-          sellerName: _appliedSellerName,
+
+    setState(() {
+      _validationMessage = null;
+      _isValidatingCheckout = true;
+    });
+
+    try {
+      final validation = widget.checkoutItems == null
+          ? await cart.validateCartBeforeCheckout()
+          : await cart.validateCheckoutLines(lineItems);
+      if (!mounted) return;
+
+      final blocked = !validation.canProceedToPayment ||
+          lineItems.any((item) => item.isUnavailable);
+
+      if (blocked) {
+        setState(() {});
+        await _showUnavailableCartFeedback();
+        return;
+      }
+
+      final shipping = _collectShippingAddress();
+      final profile = ProfileScope.of(context);
+      final customerName = profile.user.name.trim().isNotEmpty
+          ? profile.user.name.trim()
+          : _nameController.text.trim();
+      final customerEmail = profile.user.email.trim();
+
+      final tossPaymentRequest = cart.buildTossPaymentRequest(
+        items: lineItems,
+        customerName: customerName,
+        customerEmail: customerEmail,
+        userId: profile.user.id,
+        languageCode: context.langCode,
+        amountKrw: cart.totalFinalPriceFor(lineItems),
+      );
+
+      final sellerCode = _appliedSellerCode.trim().isNotEmpty
+          ? _appliedSellerCode.trim()
+          : (profile.user.referredBySeller?.trim() ?? '');
+
+      if (!mounted) return;
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PaymentScreen(
+            productsTotalKrw: _payableProductsTotal,
+            deliveryFeeKrw: _deliveryFee,
+            shippingAddress: shipping,
+            checkoutItems: lineItems,
+            sellerCode: sellerCode,
+            sellerName: _appliedSellerName,
+            tossPaymentRequest: tossPaymentRequest,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isValidatingCheckout = false);
+      }
+    }
   }
 
   String get _orderButtonLabel {
@@ -347,7 +424,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       bottomNavigationBar: _CheckoutBottomBar(
         validationMessage: _validationMessage,
         buttonLabel: _orderButtonLabel,
-        onPlaceOrder: _placeOrder,
+        onPlaceOrder: _canSubmitCheckout ? _placeOrder : null,
+        isLoading: _isValidatingCheckout,
         bottomInset: bottomInset,
       ),
       body: SingleChildScrollView(
@@ -560,17 +638,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   ..._resolvedCheckoutItems().map(
                     (item) {
                       final lang = context.langCode;
-                      final name = item.product.nameTranslations[lang] ??
-                          item.product.nameTranslations['ru'] ??
-                          item.product.sku;
+                      final name = item.loadedProduct.nameTranslations[lang] ??
+                          item.loadedProduct.nameTranslations['ru'] ??
+                          item.loadedProduct.sku;
                       final qtyLabel =
                           item.quantity > 1 ? ' ×${item.quantity}' : '';
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Text(
-                          '• $name$qtyLabel · ${formatWon(item.lineTotal)}',
+                          item.isUnavailable
+                              ? '• $name$qtyLabel · ${formatWon(item.lineTotal)} — '
+                                  '${context.langCode == 'ko' ? '주문 불가' : 'Unavailable'}'
+                              : '• $name$qtyLabel · ${formatWon(item.lineTotal)}',
                           style: AppTypography.productMeta().copyWith(
                             fontSize: 13,
+                            color: item.isUnavailable
+                                ? AppColors.saleRed
+                                : AppColors.textPrimary,
                           ),
                         ),
                       );
@@ -867,12 +951,14 @@ class _CheckoutBottomBar extends StatelessWidget {
     required this.validationMessage,
     required this.buttonLabel,
     required this.onPlaceOrder,
+    required this.isLoading,
     required this.bottomInset,
   });
 
   final String? validationMessage;
   final String buttonLabel;
-  final VoidCallback onPlaceOrder;
+  final Future<void> Function()? onPlaceOrder;
+  final bool isLoading;
   final double bottomInset;
 
   @override
@@ -949,25 +1035,38 @@ class _CheckoutBottomBar extends StatelessWidget {
                   ],
                 ),
                 child: ElevatedButton(
-                  onPressed: onPlaceOrder,
+                  onPressed: onPlaceOrder == null || isLoading
+                      ? null
+                      : () => unawaited(onPlaceOrder!()),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     foregroundColor: AppColors.accent,
+                    disabledForegroundColor:
+                        AppColors.accent.withValues(alpha: 0.45),
                     shadowColor: Colors.transparent,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Text(
-                    buttonLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.caption(
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.w700,
-                    ).copyWith(fontSize: 15),
-                  ),
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.accent,
+                          ),
+                        )
+                      : Text(
+                          buttonLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.caption(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w700,
+                          ).copyWith(fontSize: 15),
+                        ),
                 ),
               ),
             ),

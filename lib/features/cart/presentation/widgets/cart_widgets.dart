@@ -5,7 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/widgets/product_image.dart';
-import '../../../../shared/providers/cart_controller.dart';
+import '../../domain/models/cart_item.dart';
 import '../../../product/presentation/widgets/product_size_selector.dart';
 
 /// Карточка товара в корзине.
@@ -30,6 +30,9 @@ class CartItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final product = item.product;
+    if (product == null) {
+      return const SizedBox.shrink();
+    }
     final languageCode = context.langCode;
 
     return Container(
@@ -72,11 +75,21 @@ class CartItemTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.productName(),
                 ),
-                if (item.selectedSize != null) ...[
+                if (item.selectedSizeAsDouble != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'Размер: ${formatSizeLabel(item.selectedSize!)}',
+                    'Размер: ${formatSizeLabel(item.selectedSizeAsDouble!)}',
                     style: AppTypography.productMeta(),
+                  ),
+                ],
+                if (item.isUnavailable) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Недоступен для заказа',
+                    style: AppTypography.productMeta().copyWith(
+                      color: AppColors.saleRed,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 6),

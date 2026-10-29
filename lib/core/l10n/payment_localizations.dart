@@ -38,6 +38,7 @@ abstract final class PaymentStringKeys {
   static const soldOutTitle = 'sold_out_title';
   static const soldOutMessage = 'sold_out_message';
   static const soldOutOk = 'sold_out_ok';
+  static const loadingBankConfirm = 'loading_bank_confirm';
 }
 
 const paymentLocalizations = <String, Map<String, String>>{
@@ -296,6 +297,13 @@ const paymentLocalizations = <String, Map<String, String>>{
     'ko': '확인',
     'en': 'OK',
     'uz': 'Tushundim',
+  },
+  PaymentStringKeys.loadingBankConfirm: {
+    'ru': 'Обработка платежа банком…',
+    'kk': 'Банк төлемін өңдеу…',
+    'ko': '은행 결제 처리 중…',
+    'en': 'Processing payment with the bank…',
+    'uz': 'Bank to\'lovini qayta ishlash…',
   },
 };
 

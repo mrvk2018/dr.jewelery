@@ -78,9 +78,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void _buyNow() {
     if (!_ensureCanPurchase()) return;
 
-    final buyNowLine = CartItem(
+    final buyNowLine = CartItem.fromProduct(
       product: product,
-      selectedSize: _selectedSize,
+      selectedSize: _selectedSize?.toString(),
       quantity: 1,
     );
 

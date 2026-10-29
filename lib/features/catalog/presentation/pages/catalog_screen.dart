@@ -3,16 +3,15 @@ import 'package:flutter/material.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/models/product_item.dart';
+import '../../../../shared/providers/catalog_controller.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../domain/models/catalog_constants.dart';
-import '../../domain/utils/catalog_filter_utils.dart';
 import '../widgets/catalog_category_chips.dart';
 import '../widgets/catalog_filter_drawer.dart';
 import '../widgets/catalog_product_grid.dart';
 import '../widgets/catalog_search_bar.dart';
 
-/// Экран каталога с поиском, категориями и фильтрами.
+/// Экран каталога: server-side faceted search + infinite scroll.
 class CatalogScreen extends StatefulWidget {
   const CatalogScreen({super.key});
 
@@ -23,49 +22,55 @@ class CatalogScreen extends StatefulWidget {
 class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _scrollController = ScrollController();
 
-  String _searchQuery = '';
-  String? _selectedCategory;
-  CatalogFilterState _appliedFilters = const CatalogFilterState();
   CatalogFilterState _draftFilters = const CatalogFilterState();
 
   @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final catalog = CatalogScope.of(context);
+      if (catalog.products.isEmpty && !catalog.isLoading) {
+        catalog.refreshBrowse();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    _scrollController
+      ..removeListener(_onScroll)
+      ..dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  List<ProductItem> get _allProducts => CatalogScope.of(context).products;
-
-  List<ProductItem> get _filteredProducts => filterCatalogProducts(
-        products: _allProducts,
-        searchQuery: _searchQuery,
-        category: _selectedCategory,
-        filters: _appliedFilters,
-      );
-
-  List<ProductItem> get _draftFilteredProducts => filterCatalogProducts(
-        products: _allProducts,
-        searchQuery: _searchQuery,
-        category: _selectedCategory,
-        filters: _draftFilters,
-      );
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final catalog = CatalogScope.of(context);
+    final position = _scrollController.position;
+    if (position.maxScrollExtent <= 0) return;
+    if (position.pixels >= position.maxScrollExtent * 0.8) {
+      catalog.loadNextPage();
+    }
+  }
 
   void _openFilters() {
-    setState(() => _draftFilters = _appliedFilters);
+    final catalog = CatalogScope.of(context);
+    setState(() => _draftFilters = catalog.appliedDrawerFilters);
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
   void _applyFilters() {
-    setState(() => _appliedFilters = _draftFilters);
+    CatalogScope.of(context).applyDrawerFilters(_draftFilters);
     Navigator.of(context).pop();
   }
 
   void _resetFilters() {
-    setState(() {
-      _draftFilters = const CatalogFilterState();
-      _appliedFilters = const CatalogFilterState();
-    });
+    setState(() => _draftFilters = const CatalogFilterState());
+    CatalogScope.of(context).resetDrawerFilters();
   }
 
   @override
@@ -75,14 +80,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return AnimatedBuilder(
       animation: catalog,
       builder: (context, _) {
-        final products = _filteredProducts;
+        final products = catalog.products;
 
         return Scaffold(
           key: _scaffoldKey,
           backgroundColor: AppColors.background,
           endDrawer: CatalogFilterDrawer(
             draftFilters: _draftFilters,
-            resultCount: _draftFilteredProducts.length,
+            resultCount: products.length,
             onDraftChanged: (filters) {
               setState(() => _draftFilters = filters);
             },
@@ -91,6 +96,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
           body: SafeArea(
             child: CustomScrollView(
+              controller: _scrollController,
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
@@ -104,29 +110,24 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 SliverToBoxAdapter(
                   child: CatalogSearchBar(
                     controller: _searchController,
-                    activeFilterCount: _appliedFilters.activeCount,
+                    activeFilterCount: catalog.drawerFilterActiveCount +
+                        catalog.selectedCategories.length,
                     onFilterTap: _openFilters,
-                    onChanged: (value) {
-                      setState(() => _searchQuery = value);
-                    },
+                    onChanged: catalog.setSearchQuery,
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 SliverToBoxAdapter(
                   child: CatalogCategoryChips(
-                    selectedCategory: _selectedCategory,
-                    onCategorySelected: (category) {
-                      setState(() => _selectedCategory = category);
-                    },
+                    selectedCategories: catalog.selectedCategories,
+                    onCategoryToggle: catalog.toggleCategoryFilter,
                   ),
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                     child: Text(
-                      _selectedCategory == null
-                          ? 'Все изделия · ${products.length}'
-                          : '$_selectedCategory · ${products.length}',
+                      _buildSummaryLabel(catalog, products.length),
                       style: AppTypography.caption(
                         color: AppColors.textSecondary,
                         fontWeight: FontWeight.w500,
@@ -134,7 +135,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     ),
                   ),
                 ),
-                CatalogProductGrid(products: products),
+                if (catalog.isLoading && products.isEmpty)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  CatalogProductGrid(products: products),
+                if (products.isNotEmpty && catalog.hasMore)
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  ),
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
               ],
             ),
@@ -142,5 +156,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
         );
       },
     );
+  }
+
+  String _buildSummaryLabel(CatalogController catalog, int visibleCount) {
+    if (catalog.isLoading && visibleCount == 0) {
+      return 'Загрузка каталога…';
+    }
+    if (catalog.selectedCategories.isEmpty) {
+      return 'Все изделия · $visibleCount${catalog.hasMore ? '+' : ''}';
+    }
+    final labels = catalog.selectedCategories.join(', ');
+    return '$labels · $visibleCount${catalog.hasMore ? '+' : ''}';
   }
 }

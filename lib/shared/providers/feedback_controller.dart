@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../../core/services/database_service.dart';
@@ -46,16 +44,5 @@ class FeedbackController extends ChangeNotifier {
     _messages.insert(0, item);
     notifyListeners();
     await _database.insertFeedback(item);
-  }
-
-  void removeMessage(
-    String id, {
-    UserRole actorRole = UserRole.admin,
-  }) {
-    final before = _messages.length;
-    _messages.removeWhere((item) => item.id == id);
-    if (_messages.length == before) return;
-    notifyListeners();
-    unawaited(_database.deleteFeedback(id, actorRole));
   }
 }

@@ -3,139 +3,367 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../core/services/database_service.dart';
-import '../../features/profile/domain/models/user_profile.dart';
+import '../../features/catalog/domain/models/catalog_constants.dart';
+import '../../features/home/domain/home_story_catalog_query.dart';
 import '../models/product_item.dart';
 
-/// Глобальное состояние каталога: память + постоянное хранилище.
+/// Глобальное состояние каталога: browse (paged) + home feed + admin list.
 class CatalogController extends ChangeNotifier {
   CatalogController(this._database);
 
+  static const int pageSize = 40;
+
   final DatabaseService _database;
   DatabaseService get database => _database;
+
   final List<ProductItem> _products = [];
-  bool _isLoading = false;
+  final List<ProductItem> _homeProducts = [];
+  final List<ProductItem> _adminProducts = [];
+
+  final Set<String> _selectedCategories = {};
+  final Set<String> _selectedMetals = {};
+  final Set<String> _selectedSizes = {};
+  final Set<String> _selectedInserts = {};
+
+  String _searchQuery = '';
   String? _homeStoryFilterKey;
+
+  int _offset = 0;
+  bool _hasMore = true;
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+
+  int _homeOffset = 0;
+  bool _homeHasMore = true;
+  bool _homeIsLoading = false;
+  bool _homeIsLoadingMore = false;
+
+  int _adminOffset = 0;
+  bool _adminHasMore = true;
+  bool _adminIsLoading = false;
+  bool _adminIsLoadingMore = false;
 
   List<ProductItem> get products => List.unmodifiable(_products);
 
-  /// Витрина главной с учётом быстрого фильтра «Истории».
-  List<ProductItem> get recommendedProducts {
-    final filtered = _applyHomeStoryFilter(_products);
-    return List.unmodifiable(filtered);
-  }
+  List<ProductItem> get recommendedProducts => List.unmodifiable(_homeProducts);
+
+  List<ProductItem> get adminProducts => List.unmodifiable(_adminProducts);
+
+  Set<String> get selectedCategories => Set.unmodifiable(_selectedCategories);
+  Set<String> get selectedMetals => Set.unmodifiable(_selectedMetals);
+  Set<String> get selectedSizes => Set.unmodifiable(_selectedSizes);
+  Set<String> get selectedInserts => Set.unmodifiable(_selectedInserts);
+
+  String get searchQuery => _searchQuery;
+
+  bool get hasMore => _hasMore;
+  bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
+
+  bool get homeHasMore => _homeHasMore;
+  bool get homeIsLoading => _homeIsLoading;
+  bool get homeIsLoadingMore => _homeIsLoadingMore;
+
+  bool get adminHasMore => _adminHasMore;
+  bool get adminIsLoading => _adminIsLoading;
+  bool get adminIsLoadingMore => _adminIsLoadingMore;
+
+  int get drawerFilterActiveCount =>
+      _selectedMetals.length + _selectedInserts.length + _selectedSizes.length;
 
   String? get homeStoryFilterKey => _homeStoryFilterKey;
 
-  bool get isLoading => _isLoading;
-
-  /// Повторное нажатие на активный фильтр сбрасывает его («Все» = null).
-  void toggleHomeStoryFilter(String filterKey) {
+  Future<void> toggleHomeStoryFilter(String filterKey) async {
     if (filterKey == 'all') {
       _homeStoryFilterKey = null;
-      notifyListeners();
-      return;
-    }
-    if (_homeStoryFilterKey == filterKey) {
+    } else if (_homeStoryFilterKey == filterKey) {
       _homeStoryFilterKey = null;
     } else {
       _homeStoryFilterKey = filterKey;
     }
     notifyListeners();
+    await refreshHomeFeed();
   }
 
-  List<ProductItem> _applyHomeStoryFilter(List<ProductItem> source) {
-    final key = _homeStoryFilterKey;
-    if (key == null) {
-      return List<ProductItem>.from(source);
-    }
-    if (key == 'new') {
-      final sorted = List<ProductItem>.from(source);
-      sorted.sort((a, b) => b.id.compareTo(a.id));
-      return sorted;
-    }
-    return source.where((product) => _matchesHomeStoryFilter(product, key)).toList();
+  Future<void> _fetchAdvancedPage({
+    required int offset,
+    required void Function(List<ProductItem> page) onSuccess,
+    String? searchQuery,
+    List<String>? categories,
+    List<String>? metals,
+    List<String>? sizes,
+    List<String>? inserts,
+    int? minDiscountPercent,
+    bool orderIdDescending = false,
+    List<String> categoryIlikePatterns = const [],
+    List<String> metalIlikePatterns = const [],
+  }) async {
+    final page = await _database.getProductsAdvancedQuery(
+      offset: offset,
+      limit: pageSize,
+      searchQuery: searchQuery,
+      categories: categories,
+      metals: metals,
+      sizes: sizes,
+      inserts: inserts,
+      minDiscountPercent: minDiscountPercent,
+      orderIdDescending: orderIdDescending,
+      categoryIlikePatterns: categoryIlikePatterns,
+      metalIlikePatterns: metalIlikePatterns,
+    );
+    onSuccess(page);
   }
 
-  bool _matchesHomeStoryFilter(ProductItem product, String filterKey) {
-    switch (filterKey) {
-      case 'discounts':
-        return product.discountPercent > 0;
-      case 'rings':
-        return _categoryMatches(product.category, const ['Кольцо', 'Кольца']);
-      case 'earrings':
-        return _categoryMatches(product.category, const ['Серьги']);
-      case 'chains':
-        return _categoryMatches(product.category, const ['Цепь', 'Цепи']);
-      case 'gold':
-        return _metalContains(product.metal, const ['золото', 'gold']);
-      case 'silver':
-        return _metalContains(product.metal, const ['серебро', 'silver']);
-      case 'gifts':
-        return _categoryMatches(product.category, const ['Подарки', 'Подарок']) ||
-            product.localizedName('ru').toLowerCase().contains('подар');
-      default:
-        return true;
-    }
-  }
+  HomeStoryCatalogQuery get _activeHomeStoryQuery =>
+      HomeStoryCatalogQuery.forStoryKey(_homeStoryFilterKey);
 
-  bool _categoryMatches(String category, List<String> variants) {
-    final normalized = category.trim().toLowerCase();
-    if (normalized.isEmpty) return false;
-    for (final variant in variants) {
-      final v = variant.toLowerCase();
-      if (normalized == v || normalized.contains(v)) return true;
-    }
-    return false;
-  }
-
-  bool _metalContains(String metal, List<String> needles) {
-    final normalized = metal.trim().toLowerCase();
-    if (normalized.isEmpty) return false;
-    return needles.any(normalized.contains);
-  }
-
-  /// Асинхронная загрузка витрины. Пустая база засевается демо-товарами.
-  Future<void> load() async {
-    _isLoading = true;
+  /// Первая страница подборки главной (истории / «все»).
+  Future<void> refreshHomeFeed() async {
+    _homeIsLoading = true;
+    _homeOffset = 0;
+    _homeHasMore = true;
     notifyListeners();
     try {
-      final loaded = await _database.getProducts();
+      final query = _activeHomeStoryQuery;
+      await _fetchAdvancedPage(
+        offset: 0,
+        searchQuery: query.searchQuery,
+        categories: query.categories,
+        metals: query.metals,
+        minDiscountPercent: query.minDiscountPercent,
+        orderIdDescending: query.orderIdDescending,
+        categoryIlikePatterns: query.categoryIlikePatterns,
+        metalIlikePatterns: query.metalIlikePatterns,
+        onSuccess: (page) {
+          _homeProducts
+            ..clear()
+            ..addAll(page);
+          _homeOffset = page.length;
+          _homeHasMore = page.length >= pageSize;
+        },
+      );
+    } finally {
+      _homeIsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadNextHomePage() async {
+    if (_homeIsLoading || _homeIsLoadingMore || !_homeHasMore) return;
+    _homeIsLoadingMore = true;
+    notifyListeners();
+    try {
+      final query = _activeHomeStoryQuery;
+      await _fetchAdvancedPage(
+        offset: _homeOffset,
+        searchQuery: query.searchQuery,
+        categories: query.categories,
+        metals: query.metals,
+        minDiscountPercent: query.minDiscountPercent,
+        orderIdDescending: query.orderIdDescending,
+        categoryIlikePatterns: query.categoryIlikePatterns,
+        metalIlikePatterns: query.metalIlikePatterns,
+        onSuccess: (page) {
+          if (page.isEmpty) {
+            _homeHasMore = false;
+            return;
+          }
+          final existingIds = _homeProducts.map((p) => p.id).toSet();
+          for (final item in page) {
+            if (existingIds.add(item.id)) {
+              _homeProducts.add(item);
+            }
+          }
+          _homeOffset += page.length;
+          if (page.length < pageSize) {
+            _homeHasMore = false;
+          }
+        },
+      );
+    } finally {
+      _homeIsLoadingMore = false;
+      notifyListeners();
+    }
+  }
+
+  CatalogFilterState get appliedDrawerFilters => CatalogFilterState(
+        selectedMetals: Set<String>.from(_selectedMetals),
+        selectedInserts: Set<String>.from(_selectedInserts),
+        selectedSizes: _selectedSizes
+            .map((s) => double.tryParse(s.replaceAll(',', '.')))
+            .whereType<double>()
+            .toSet(),
+      );
+
+  void applyDrawerFilters(CatalogFilterState state) {
+    _selectedMetals
+      ..clear()
+      ..addAll(state.selectedMetals);
+    _selectedInserts
+      ..clear()
+      ..addAll(state.selectedInserts);
+    _selectedSizes
+      ..clear()
+      ..addAll(state.sizeTokens);
+    unawaited(refreshBrowse());
+  }
+
+  void resetDrawerFilters() {
+    _selectedMetals.clear();
+    _selectedInserts.clear();
+    _selectedSizes.clear();
+    unawaited(refreshBrowse());
+  }
+
+  void toggleCategoryFilter(String category) {
+    if (_selectedCategories.contains(category)) {
+      _selectedCategories.remove(category);
+    } else {
+      _selectedCategories.add(category);
+    }
+    unawaited(refreshBrowse());
+  }
+
+  void toggleMetalFilter(String metal) {
+    if (_selectedMetals.contains(metal)) {
+      _selectedMetals.remove(metal);
+    } else {
+      _selectedMetals.add(metal);
+    }
+    unawaited(refreshBrowse());
+  }
+
+  void toggleSizeFilter(String sizeToken) {
+    if (_selectedSizes.contains(sizeToken)) {
+      _selectedSizes.remove(sizeToken);
+    } else {
+      _selectedSizes.add(sizeToken);
+    }
+    unawaited(refreshBrowse());
+  }
+
+  void setSearchQuery(String query) {
+    final normalized = query.trim();
+    if (normalized == _searchQuery) return;
+    _searchQuery = normalized;
+    unawaited(refreshBrowse());
+  }
+
+  Future<void> load() => refreshBrowse();
+
+  Future<void> refreshBrowse() async {
+    _isLoading = true;
+    _offset = 0;
+    _hasMore = true;
+    notifyListeners();
+    try {
+      final page = await _database.getProductsAdvancedQuery(
+        offset: 0,
+        limit: pageSize,
+        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+        categories: _selectedCategories.isEmpty
+            ? null
+            : _selectedCategories.toList(),
+        metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
+        sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
+        inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
+      );
       _products
         ..clear()
-        ..addAll(loaded);
+        ..addAll(page);
+      _offset = page.length;
+      _hasMore = page.length >= pageSize;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  void addProduct(
-    ProductItem item, {
-    UserRole actorRole = UserRole.admin,
-  }) {
-    _products.insert(0, item);
+  Future<void> loadNextPage() async {
+    if (_isLoading || _isLoadingMore || !_hasMore) return;
+    _isLoadingMore = true;
     notifyListeners();
-    unawaited(_database.saveProduct(item, actorRole));
+    try {
+      final page = await _database.getProductsAdvancedQuery(
+        offset: _offset,
+        limit: pageSize,
+        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+        categories: _selectedCategories.isEmpty
+            ? null
+            : _selectedCategories.toList(),
+        metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
+        sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
+        inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
+      );
+      if (page.isEmpty) {
+        _hasMore = false;
+        return;
+      }
+      final existingIds = _products.map((p) => p.id).toSet();
+      for (final item in page) {
+        if (existingIds.add(item.id)) {
+          _products.add(item);
+        }
+      }
+      _offset += page.length;
+      if (page.length < pageSize) {
+        _hasMore = false;
+      }
+    } finally {
+      _isLoadingMore = false;
+      notifyListeners();
+    }
   }
 
-  void removeProduct(
-    String id, {
-    UserRole actorRole = UserRole.admin,
-  }) {
-    final before = _products.length;
-    _products.removeWhere((product) => product.id == id);
-    if (_products.length == before) return;
+  /// Первая страница списка товаров в админке (все статусы, paged).
+  Future<void> refreshAdminBrowse() async {
+    _adminIsLoading = true;
+    _adminOffset = 0;
+    _adminHasMore = true;
     notifyListeners();
-    unawaited(_database.deleteProduct(id, actorRole));
+    try {
+      final page = await _database.getProductsAdminPagedQuery(
+        offset: 0,
+        limit: pageSize,
+      );
+      _adminProducts
+        ..clear()
+        ..addAll(page);
+      _adminOffset = page.length;
+      _adminHasMore = page.length >= pageSize;
+    } finally {
+      _adminIsLoading = false;
+      notifyListeners();
+    }
   }
 
-  /// Обновление остатка с кассы (POS) по артикулу SKU.
-  Future<void> updateProductStock(String sku, int newQuantity) async {
-    await _database.updateProductStock(sku, newQuantity);
-    final index = _products.indexWhere((product) => product.sku == sku);
-    if (index < 0) return;
-    final quantity = newQuantity < 0 ? 0 : newQuantity;
-    _products[index] = _products[index].copyWith(stockQuantity: quantity);
+  Future<void> loadNextAdminPage() async {
+    if (_adminIsLoading || _adminIsLoadingMore || !_adminHasMore) return;
+    _adminIsLoadingMore = true;
     notifyListeners();
+    try {
+      final page = await _database.getProductsAdminPagedQuery(
+        offset: _adminOffset,
+        limit: pageSize,
+      );
+      if (page.isEmpty) {
+        _adminHasMore = false;
+        return;
+      }
+      final existingIds = _adminProducts.map((p) => p.id).toSet();
+      for (final item in page) {
+        if (existingIds.add(item.id)) {
+          _adminProducts.add(item);
+        }
+      }
+      _adminOffset += page.length;
+      if (page.length < pageSize) {
+        _adminHasMore = false;
+      }
+    } finally {
+      _adminIsLoadingMore = false;
+      notifyListeners();
+    }
   }
+
 }

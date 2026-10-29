@@ -31,7 +31,9 @@ class HomeStoriesSection extends StatelessWidget {
         title: title,
         icon: icon,
         isHighlighted: isActive,
-        onTap: () => onFilterTap(filterKey),
+        onTap: () {
+          onFilterTap(filterKey);
+        },
       );
     }
 

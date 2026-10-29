@@ -6,16 +6,16 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/catalog_constants.dart';
 
-/// Горизонтальная лента категорий каталога.
+/// Горизонтальная лента категорий каталога (multi-select).
 class CatalogCategoryChips extends StatelessWidget {
   const CatalogCategoryChips({
     super.key,
-    required this.selectedCategory,
-    required this.onCategorySelected,
+    required this.selectedCategories,
+    required this.onCategoryToggle,
   });
 
-  final String? selectedCategory;
-  final ValueChanged<String?> onCategorySelected;
+  final Set<String> selectedCategories;
+  final ValueChanged<String> onCategoryToggle;
 
   static const _categoryIcons = {
     CatalogCategories.rings: Icons.diamond_outlined,
@@ -38,7 +38,7 @@ class CatalogCategoryChips extends StatelessWidget {
         separatorBuilder: (context, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final category = CatalogCategories.items[index];
-          final isSelected = selectedCategory == category;
+          final isSelected = selectedCategories.contains(category);
           final icon = _categoryIcons[category] ?? Icons.category_outlined;
 
           return _CategoryChip(
@@ -48,7 +48,7 @@ class CatalogCategoryChips extends StatelessWidget {
             ),
             icon: icon,
             isSelected: isSelected,
-            onTap: () => onCategorySelected(isSelected ? null : category),
+            onTap: () => onCategoryToggle(category),
           );
         },
       ),

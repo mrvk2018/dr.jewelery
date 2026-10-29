@@ -29,6 +29,7 @@ class ProfileAuthenticatedView extends StatelessWidget {
     this.isLinkingSocialAccount = false,
     this.onLinkGoogle,
     this.onLinkApple,
+    this.onOpenSellerTerminal,
   });
 
   final UserProfile user;
@@ -42,6 +43,7 @@ class ProfileAuthenticatedView extends StatelessWidget {
   final bool isLinkingSocialAccount;
   final VoidCallback? onLinkGoogle;
   final VoidCallback? onLinkApple;
+  final VoidCallback? onOpenSellerTerminal;
 
   bool get _showAppleLink {
     return defaultTargetPlatform == TargetPlatform.iOS ||
@@ -111,6 +113,25 @@ class ProfileAuthenticatedView extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.accent,
                 side: const BorderSide(color: AppColors.accent),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+        if (onOpenSellerTerminal != null) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: onOpenSellerTerminal,
+              icon: const Icon(Icons.point_of_sale_outlined),
+              label: const Text('Касса продавца (POS)'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.border),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),

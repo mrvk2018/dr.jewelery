@@ -67,6 +67,20 @@ abstract final class CatalogFacetedRpc {
   static const searchQueryParam = 'search_query';
 }
 
+/// RPC кассы продавца (Android APK) и перемещений между магазинами.
+abstract final class SellerPosRpc {
+  static const processPosQrSale = 'process_pos_qr_sale';
+  static const initiateProductTransfer = 'initiate_product_transfer';
+  static const completeProductTransfer = 'complete_product_transfer';
+  static const targetQrParam = 'target_qr';
+  static const sellerCodeParam = 's_code';
+  static const receiverCodeParam = 'r_code';
+  static const toLocationParam = 'to_loc';
+  static const discountPercentParam = 'discount_percent';
+  static const deliveryFeeParam = 'delivery_fee_krw';
+  static const saleTotalParam = 'sale_total_krw';
+}
+
 /// OAuth-провайдер для link identity (аноним → постоянный аккаунт).
 enum OAuthLinkProvider {
   google,
@@ -304,6 +318,35 @@ abstract class DatabaseService {
 
   /// Списание с витрины (`stock_quantity` → `0`).
   Future<bool> writeOffProductBySku(String sku);
+
+  /// POS: карточка товара по `qr_code_payload`.
+  Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload);
+
+  /// POS: продажа по QR + премия продавца.
+  Future<Map<String, dynamic>> processPosQrSale({
+    required String qrPayload,
+    required String sellerCode,
+    required int discountPercent,
+    required int deliveryFeeKrw,
+    required int saleTotalKrw,
+  });
+
+  Future<Map<String, dynamic>> initiateProductTransfer({
+    required String qrPayload,
+    required String sellerCode,
+    required String toLocation,
+  });
+
+  Future<Map<String, dynamic>> completeProductTransfer({
+    required String qrPayload,
+    required String receiverCode,
+  });
+
+  /// Смена: `staff_shifts.status` = «На работе» (Realtime для админки).
+  Future<String?> startStaffShift(String staffCode);
+
+  /// Смена: статус «Ушла».
+  Future<bool> endStaffShift(String shiftId);
 }
 
 /// Облачное хранилище: Supabase (read/write по RLS и RPC).
@@ -1338,6 +1381,144 @@ class CloudDatabaseService implements DatabaseService {
       return rows.isNotEmpty;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.writeOffProductBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  static Map<String, dynamic> _rpcJsonMap(dynamic result) {
+    if (result is Map) return Map<String, dynamic>.from(result);
+    return {'ok': result == true, 'raw': result};
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload) async {
+    final qr = qrPayload.trim();
+    if (qr.isEmpty) return null;
+    try {
+      final row = await _supabaseClient
+          .from('products')
+          .select(
+            'id, sku, metal_type, weight_grams, size_value, gem_inserts, '
+            'notes, sale_price, qr_code_payload, store_location, '
+            'product_status, stock_quantity, is_customer_order',
+          )
+          .eq('qr_code_payload', qr)
+          .maybeSingle();
+      if (row == null) return null;
+      return Map<String, dynamic>.from(row);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchProductByQrPayload failed: $error');
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> processPosQrSale({
+    required String qrPayload,
+    required String sellerCode,
+    required int discountPercent,
+    required int deliveryFeeKrw,
+    required int saleTotalKrw,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPosRpc.processPosQrSale,
+        params: {
+          SellerPosRpc.targetQrParam: qrPayload.trim(),
+          SellerPosRpc.sellerCodeParam: sellerCode.trim(),
+          SellerPosRpc.discountPercentParam: discountPercent,
+          SellerPosRpc.deliveryFeeParam: deliveryFeeKrw,
+          SellerPosRpc.saleTotalParam: saleTotalKrw,
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.processPosQrSale failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> initiateProductTransfer({
+    required String qrPayload,
+    required String sellerCode,
+    required String toLocation,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPosRpc.initiateProductTransfer,
+        params: {
+          SellerPosRpc.targetQrParam: qrPayload.trim(),
+          SellerPosRpc.sellerCodeParam: sellerCode.trim(),
+          SellerPosRpc.toLocationParam: toLocation.trim().toUpperCase(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.initiateProductTransfer failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeProductTransfer({
+    required String qrPayload,
+    required String receiverCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPosRpc.completeProductTransfer,
+        params: {
+          SellerPosRpc.targetQrParam: qrPayload.trim(),
+          SellerPosRpc.receiverCodeParam: receiverCode.trim(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.completeProductTransfer failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<String?> startStaffShift(String staffCode) async {
+    final code = staffCode.trim().toUpperCase();
+    if (code.isEmpty) return null;
+    try {
+      final row = await _supabaseClient
+          .from('staff_shifts')
+          .insert({
+            'staff_code': code,
+            'status': 'На работе',
+          })
+          .select('id')
+          .single();
+      return row['id']?.toString();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.startStaffShift failed: $error');
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> endStaffShift(String shiftId) async {
+    final id = shiftId.trim();
+    if (id.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('staff_shifts')
+          .update({'status': 'Ушла'})
+          .eq('id', id)
+          .select('id');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.endStaffShift failed: $error');
       debugPrint('$stackTrace');
       return false;
     }

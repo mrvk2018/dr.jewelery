@@ -14,6 +14,7 @@ import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../admin/presentation/pages/admin_panel_screen.dart';
 import '../../../admin/presentation/pages/jewelry_admin_dashboard.dart';
+import '../../../seller/presentation/screens/seller_terminal_screen.dart';
 import '../../../admin/presentation/widgets/admin_first_claim_dialog.dart';
 import '../../../admin/presentation/widgets/admin_unlock_dialog.dart';
 import '../widgets/profile_auth_views.dart';
@@ -277,6 +278,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     isLinkingSocialAccount: profile.isLinkingSocialAccount,
                     onLinkGoogle: _linkGoogleAccount,
                     onLinkApple: _linkAppleAccount,
+                    onOpenSellerTerminal:
+                        !kIsWeb &&
+                                defaultTargetPlatform ==
+                                    TargetPlatform.android
+                            ? () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) =>
+                                        const SellerTerminalScreen(),
+                                  ),
+                                );
+                              }
+                            : null,
                   ),
           ),
         );

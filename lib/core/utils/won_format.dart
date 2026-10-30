@@ -8,3 +8,10 @@ String formatWon(int price) {
     decimalDigits: 0,
   ).format(price);
 }
+
+/// Воны для термопринтера: ASCII-разделители, символ ₩ без locale-пробелов.
+String formatWonForLabel(int price) {
+  final safe = price.clamp(0, 999999999);
+  final digits = NumberFormat('#,##0', 'en_US').format(safe);
+  return '₩$digits';
+}

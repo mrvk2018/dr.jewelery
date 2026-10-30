@@ -65,6 +65,10 @@ abstract final class CatalogFacetedRpc {
   static const goldGramPriceParam = 'gold_gram_price';
   static const silverGramPriceParam = 'silver_gram_price';
   static const searchQueryParam = 'search_query';
+  static const searchSoldProducts = 'search_sold_products';
+  static const soldSearchSkuParam = 'p_sku';
+  static const soldSearchWeightParam = 'p_weight';
+  static const soldSearchDaysParam = 'p_days_limit';
 }
 
 /// RPC кассы продавца (Android APK) и перемещений между магазинами.
@@ -313,6 +317,17 @@ abstract class DatabaseService {
     List<String> additionalImages,
   });
 
+  /// Ручное редактирование карточки на витрине (admin / RLS).
+  Future<bool> updateManualProduct({
+    required String productId,
+    required String sku,
+    required String metalType,
+    required double weightGrams,
+    double? sizeValue,
+    String gemInserts,
+    String notes,
+  });
+
   /// Обновление поля `notes` по SKU.
   Future<bool> updateProductNotesBySku(String sku, String notes);
 
@@ -347,6 +362,22 @@ abstract class DatabaseService {
 
   /// Смена: статус «Ушла».
   Future<bool> endStaffShift(String shiftId);
+
+  /// Kill-switch: код в `public.sellers.promo_code` и `is_active = true`.
+  Future<bool> isSellerStaffActive(String staffCode);
+
+  /// Входящие трансферы в магазин (`product_transfers`, статус «в пути»).
+  Future<List<Map<String, dynamic>>> fetchInboundProductTransfers(String toStore);
+
+  /// Архив продаж: RPC [CatalogFacetedRpc.searchSoldProducts] (фильтры на сервере).
+  Future<List<Map<String, dynamic>>> searchSoldProducts({
+    String? sku,
+    double? weight,
+    int? daysLimit,
+  });
+
+  /// Возврат на витрину: `stock_quantity = 1`, `product_status = 'Витрина'`.
+  Future<void> processProductReturn(String sku);
 }
 
 /// Облачное хранилище: Supabase (read/write по RLS и RPC).
@@ -1351,6 +1382,53 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<bool> updateManualProduct({
+    required String productId,
+    required String sku,
+    required String metalType,
+    required double weightGrams,
+    double? sizeValue,
+    String gemInserts = '',
+    String notes = '',
+  }) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return false;
+
+    final patch = <String, dynamic>{
+      'metal_type': metalType.trim(),
+      'weight_grams': weightGrams,
+      'gem_inserts': gemInserts.trim(),
+      'notes': notes.trim(),
+    };
+    if (sizeValue != null) {
+      patch['size_value'] = sizeValue;
+    }
+
+    try {
+      final id = productId.trim();
+      if (id.isNotEmpty) {
+        final rows = await _supabaseClient
+            .from('products')
+            .update(patch)
+            .eq('id', id)
+            .select('sku');
+        if (rows.isNotEmpty) return true;
+      }
+
+      final rows = await _supabaseClient
+          .from('products')
+          .update(patch)
+          .eq('sku', normalizedSku)
+          .select('sku');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.updateManualProduct failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
   Future<bool> updateProductNotesBySku(String sku, String notes) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1482,6 +1560,102 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.completeProductTransfer failed: $error');
       debugPrint('$stackTrace');
       return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> searchSoldProducts({
+    String? sku,
+    double? weight,
+    int? daysLimit,
+  }) async {
+    final trimmedSku = sku?.trim();
+    final skuParam =
+        (trimmedSku == null || trimmedSku.isEmpty) ? null : trimmedSku;
+
+    try {
+      final response = await _supabaseClient.rpc(
+        CatalogFacetedRpc.searchSoldProducts,
+        params: {
+          CatalogFacetedRpc.soldSearchSkuParam: skuParam,
+          CatalogFacetedRpc.soldSearchWeightParam: weight,
+          CatalogFacetedRpc.soldSearchDaysParam: daysLimit,
+        },
+      );
+      return _mapRpcRows(response);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.searchSoldProducts failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> processProductReturn(String sku) async {
+    final normalized = sku.trim();
+    if (normalized.isEmpty) {
+      throw StateError('SKU пустой');
+    }
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({
+            'stock_quantity': 1,
+            'product_status': 'Витрина',
+          })
+          .eq('sku', normalized)
+          .select('sku');
+      if (rows.isEmpty) {
+        throw StateError('Товар $normalized не найден или RLS запретил возврат');
+      }
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.processProductReturn failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<bool> isSellerStaffActive(String staffCode) async {
+    final code = staffCode.trim().toUpperCase();
+    if (code.isEmpty) return false;
+    try {
+      final row = await _supabaseClient
+          .from('sellers')
+          .select('promo_code, is_active')
+          .eq('promo_code', code)
+          .maybeSingle();
+      if (row == null) return false;
+      return row['is_active'] as bool? ?? false;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.isSellerStaffActive failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchInboundProductTransfers(
+    String toStore,
+  ) async {
+    final store = toStore.trim().toUpperCase();
+    if (store.isEmpty) return const [];
+    try {
+      final rows = await _supabaseClient
+          .from('product_transfers')
+          .select(
+            'id, sku, qr_code_payload, from_store, to_store, status, '
+            'sender_code, weight_grams, metal_type',
+          )
+          .eq('to_store', store)
+          .inFilter('status', ['in_transit', 'pending', 'sent', 'В пути']);
+      return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchInboundProductTransfers failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return const [];
     }
   }
 

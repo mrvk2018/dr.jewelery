@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../printing/application/label_print_service.dart';
+import '../../../printing/domain/jewelry_label_data.dart';
+import '../../../printing/domain/jewelry_label_layout.dart';
+import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 
 /// Складская приёмка черновиков (`stock_quantity = 0` → `1`) + печать этикеток.
 class DraftIntakeScreen extends StatefulWidget {
@@ -22,6 +26,9 @@ class DraftIntakeScreen extends StatefulWidget {
 class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   final _searchController = TextEditingController();
   Timer? _debounce;
+  final LabelPrintService _labelPrintService = const LabelPrintService(
+    protocol: LabelPrinterProtocol.tspl,
+  );
 
   List<Map<String, dynamic>> _drafts = const [];
   bool _searchLoading = false;
@@ -90,37 +97,65 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
-  static String _qrPayload(Map<String, dynamic> row) {
-    final direct = row['qr_code_payload']?.toString().trim();
-    if (direct != null && direct.isNotEmpty) return direct;
-    return _field(row, 'sku');
+  Future<bool> _confirmAcceptWithPreview(Map<String, dynamic> row) async {
+    final labelData = JewelryLabelData.fromProductMap(row);
+    final sku = _field(row, 'sku');
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Приёмка · $sku',
+            style: AppTypography.heading(fontSize: 18),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                JewelryLabelPreview(data: labelData),
+                const SizedBox(height: 12),
+                Text(
+                  'Активировать stock_quantity = 1 и отправить TSPL на печать?',
+                  style: AppTypography.productMeta(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Принять и печатать'),
+            ),
+          ],
+        );
+      },
+    );
+    return accepted == true;
   }
 
-  /// Заглушка драйвера термотрансферной печати (23×11.5 мм, полезная зона ~17 мм).
-  void _triggerEtiquettePrint({
-    required String sku,
-    required double weight,
-    required double size,
-    required String qrPayload,
-    bool isBulk = false,
-  }) {
-    // Интеграция принтера (этап 2):
-    // 1) Физический формат подложки: 23 mm × 11.5 mm (ширина × высота).
-    // 2) Полезная зона печати: ~17 mm по ширине под QR + артикул + вес + пробу.
-    // 3) Разрешение: 300 DPI → ~271×136 px на всю подложку; QR занимает квадрат
-    //    слева (~11 mm), текст monospace справа (sku, weight g, alloy probe).
-    // 4) Протокол: массив ESC/TSPL/ZPL команд или JSON batch в native/web channel:
-    //    `{ "dpi": 300, "label_mm": [23, 11.5], "items": [{ "qr": "...", "lines": [...] }] }`
-    // 5) isBulk == true: один USB/сетевой буфер с N этикетками без паузы между jobs.
-    // 6) isBulk == false: один job на одну этикетку (приёмка по строке).
-    debugPrint(
-      'EtiquettePrint isBulk=$isBulk sku=$sku weight=$weight size=$size qr=$qrPayload',
-    );
+  Future<void> _printLabelForProduct(Map<String, dynamic> row) async {
+    try {
+      await _labelPrintService.printFromProductMap(row);
+    } catch (error, stackTrace) {
+      debugPrint('DraftIntakeScreen._printLabelForProduct failed: $error');
+      debugPrint('$stackTrace');
+      if (mounted) {
+        _showSnack('Ошибка печати: $error', isError: true);
+      }
+    }
   }
 
   Future<void> _acceptSingle(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
     if (sku == '—') return;
+
+    final confirmed = await _confirmAcceptWithPreview(row);
+    if (!confirmed || !mounted) return;
 
     setState(() => _rowBusySkus.add(sku));
     try {
@@ -131,12 +166,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         return;
       }
 
-      _triggerEtiquettePrint(
-        sku: sku,
-        weight: _weight(row),
-        size: _size(row),
-        qrPayload: _qrPayload(row),
-      );
+      await _printLabelForProduct(row);
 
       _showSnack('Принят $sku — этикетка отправлена на печать');
       await _runSearch(_searchController.text);
@@ -183,21 +213,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         return;
       }
 
-      _triggerEtiquettePrint(
-        sku: 'BULK-$activated',
-        weight: 0,
-        size: 0,
-        qrPayload: 'bulk:${snapshot.length}',
-        isBulk: true,
-      );
       for (final row in snapshot) {
-        _triggerEtiquettePrint(
-          sku: _field(row, 'sku'),
-          weight: _weight(row),
-          size: _size(row),
-          qrPayload: _qrPayload(row),
-          isBulk: true,
-        );
+        await _printLabelForProduct(row);
       }
 
       _showSnack('Активировано $activated поз. — буфер печати сформирован');

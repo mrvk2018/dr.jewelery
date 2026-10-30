@@ -4,6 +4,11 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/presentation/widgets/smart_filter_widget.dart';
+import '../../../printing/application/label_print_service.dart';
+import '../../../printing/domain/jewelry_label_data.dart';
+import '../../../printing/domain/jewelry_label_layout.dart';
+import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
+import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../screens/draft_intake_screen.dart';
 
 /// Десктопный рабочий стол «Доктор Ювелир»: витрина + медиа + KPI.
@@ -20,6 +25,10 @@ class JewelryAdminDashboard extends StatefulWidget {
 }
 
 class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
+  final LabelPrintService _labelPrintService = const LabelPrintService(
+    protocol: LabelPrinterProtocol.tspl,
+  );
+
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
   bool _initialLoading = true;
@@ -103,17 +112,6 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     );
   }
 
-  void _triggerEtiquettePrint({
-    required String sku,
-    required double weight,
-    required double size,
-    required String qrPayload,
-  }) {
-    debugPrint(
-      'EtiquettePrint duplicate sku=$sku weight=$weight size=$size qr=$qrPayload',
-    );
-  }
-
   Future<void> _openDraftIntake() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -125,12 +123,33 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   }
 
   Future<void> _openAddProductDialog() async {
+    await _openManualProductDialog();
+  }
+
+  Future<void> _openProductReturnDialog() async {
+    await ProductReturnDialog.show(
+      context,
+      database: widget.database,
+    );
+    if (!mounted) return;
+    await _refreshCatalog();
+  }
+
+  Future<void> _openEditProductDialog(Map<String, dynamic> row) async {
+    await _openManualProductDialog(editProduct: row);
+  }
+
+  Future<void> _openManualProductDialog({
+    Map<String, dynamic>? editProduct,
+  }) async {
+    final isEdit = editProduct != null;
     await showDialog<void>(
       context: context,
       builder: (context) => _ManualProductDialog(
         database: widget.database,
+        editProduct: editProduct,
         onSaved: () async {
-          _snack('Товар добавлен на витрину');
+          _snack(isEdit ? 'Карточка обновлена' : 'Товар добавлен на витрину');
           await _refreshCatalog();
         },
       ),
@@ -233,19 +252,50 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     }
   }
 
-  void _printDuplicateLabel() {
+  Future<void> _printDuplicateLabel() async {
     final row = _selected;
     if (row == null) {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
-    _triggerEtiquettePrint(
-      sku: _cell(row, 'sku'),
-      weight: _weight(row),
-      size: _size(row),
-      qrPayload: row['qr_code_payload']?.toString() ?? _cell(row, 'sku'),
+
+    final labelData = JewelryLabelData.fromProductMap(row);
+    final sku = _cell(row, 'sku');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Дубликат бирки · $sku',
+            style: AppTypography.heading(fontSize: 18),
+          ),
+          content: SingleChildScrollView(
+            child: JewelryLabelPreview(data: labelData),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Печатать'),
+            ),
+          ],
+        );
+      },
     );
-    _snack('Дубликат бирки отправлен на печать');
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _labelPrintService.printLabel(labelData);
+      _snack('Дубликат бирки отправлен на печать (TSPL)');
+    } catch (error, stackTrace) {
+      debugPrint('JewelryAdminDashboard._printDuplicateLabel failed: $error');
+      debugPrint('$stackTrace');
+      _snack('Ошибка печати: $error', error: true);
+    }
   }
 
   double get _totalWeightGrams =>
@@ -275,6 +325,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     onFilterApplied: _applyRows,
                     onOpenDraft: _openDraftIntake,
                     onAddProduct: _openAddProductDialog,
+                    onProductReturn: _openProductReturnDialog,
                   ),
                   const SizedBox(height: 12),
                   Expanded(
@@ -287,6 +338,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                             products: _products,
                             selectedSku: selectedSku,
                             onSelect: (row) => setState(() => _selected = row),
+                            onEdit: _openEditProductDialog,
                             cell: _cell,
                             weight: _weight,
                             size: _size,
@@ -329,12 +381,14 @@ class _TopControlBar extends StatelessWidget {
     required this.onFilterApplied,
     required this.onOpenDraft,
     required this.onAddProduct,
+    required this.onProductReturn,
   });
 
   final DatabaseService database;
   final void Function(List<Map<String, dynamic>> products) onFilterApplied;
   final VoidCallback onOpenDraft;
   final VoidCallback onAddProduct;
+  final VoidCallback onProductReturn;
 
   @override
   Widget build(BuildContext context) {
@@ -358,6 +412,11 @@ class _TopControlBar extends StatelessWidget {
                   onPressed: onOpenDraft,
                   icon: const Icon(Icons.move_to_inbox_outlined),
                   label: const Text('Перейти в режим Приёмки (Черновики)'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onProductReturn,
+                  icon: const Icon(Icons.replay_outlined),
+                  label: const Text('Возврат товара'),
                 ),
                 FilledButton.icon(
                   onPressed: onAddProduct,
@@ -387,6 +446,7 @@ class _ProductTablePanel extends StatelessWidget {
     required this.products,
     required this.selectedSku,
     required this.onSelect,
+    required this.onEdit,
     required this.cell,
     required this.weight,
     required this.size,
@@ -395,6 +455,7 @@ class _ProductTablePanel extends StatelessWidget {
   final List<Map<String, dynamic>> products;
   final String? selectedSku;
   final ValueChanged<Map<String, dynamic>> onSelect;
+  final ValueChanged<Map<String, dynamic>> onEdit;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
   final double Function(Map<String, dynamic>) size;
@@ -432,6 +493,7 @@ class _ProductTablePanel extends StatelessWidget {
                       DataColumn(label: Text('Размер')),
                       DataColumn(label: Text('Вставки')),
                       DataColumn(label: Text('Описание')),
+                      DataColumn(label: Text('')),
                     ],
                     rows: products.map((row) {
                       final sku = cell(row, 'sku');
@@ -459,6 +521,13 @@ class _ProductTablePanel extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
+                            ),
+                          ),
+                          DataCell(
+                            IconButton(
+                              tooltip: 'Редактировать карточку',
+                              icon: const Text('✏️', style: TextStyle(fontSize: 18)),
+                              onPressed: () => onEdit(row),
                             ),
                           ),
                         ],
@@ -681,10 +750,14 @@ class _ManualProductDialog extends StatefulWidget {
   const _ManualProductDialog({
     required this.database,
     required this.onSaved,
+    this.editProduct,
   });
 
   final DatabaseService database;
   final VoidCallback onSaved;
+  final Map<String, dynamic>? editProduct;
+
+  bool get isEditMode => editProduct != null;
 
   @override
   State<_ManualProductDialog> createState() => _ManualProductDialogState();
@@ -715,6 +788,82 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String get _resolvedMetalType =>
       _metalCategory == 'gold' ? _goldType : _silverType;
 
+  List<String> get _metalDropdownOptions {
+    final base = _metalCategory == 'gold'
+        ? List<String>.from(_goldTypes)
+        : List<String>.from(_silverTypes);
+    final current = _resolvedMetalType;
+    if (current.isNotEmpty && !base.contains(current)) {
+      base.insert(0, current);
+    }
+    return base;
+  }
+
+  bool get _isEditMode => widget.isEditMode;
+
+  @override
+  void initState() {
+    super.initState();
+    final edit = widget.editProduct;
+    if (edit == null) return;
+
+    _skuController.text = edit['sku']?.toString().trim() ?? '';
+    _weightController.text = _formatNumField(edit['weight_grams']);
+    _sizeController.text = _formatNumField(edit['size_value']);
+    _gemController.text = edit['gem_inserts']?.toString().trim() ?? '';
+    _notesController.text = edit['notes']?.toString().trim() ?? '';
+    _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _skuController.dispose();
+    _weightController.dispose();
+    _sizeController.dispose();
+    _gemController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  static String _formatNumField(Object? value) {
+    if (value == null) return '';
+    if (value is num) {
+      final d = value.toDouble();
+      if (d == d.roundToDouble()) return '${d.toInt()}';
+      return d.toStringAsFixed(2);
+    }
+    return value.toString().trim();
+  }
+
+  void _applyMetalFromStored(String metalType) {
+    final stored = metalType.trim();
+    if (stored.isEmpty) return;
+
+    final lower = stored.toLowerCase();
+    final isSilver = _silverTypes.any((probe) => lower.contains(probe)) ||
+        lower.contains('сереб');
+
+    if (isSilver) {
+      _metalCategory = 'silver';
+      _silverType = _silverTypes.firstWhere(
+        (probe) => stored.contains(probe),
+        orElse: () => _silverTypes.first,
+      );
+    } else {
+      _metalCategory = 'gold';
+      _goldType = _goldTypes.firstWhere(
+        (item) => stored == item,
+        orElse: () => _goldTypes.firstWhere(
+          (item) => stored.contains(item.split(' ').first),
+          orElse: () => stored,
+        ),
+      );
+      if (!_goldTypes.contains(_goldType)) {
+        _goldType = _goldTypes.first;
+      }
+    }
+  }
+
   void _applyProbe585() {
     setState(() {
       _metalCategory = 'gold';
@@ -740,16 +889,29 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     setState(() => _saving = true);
     try {
       final size = double.tryParse(_sizeController.text.replaceAll(',', '.'));
-      final ok = await widget.database.insertManualProduct(
-        sku: sku,
-        metalType: _resolvedMetalType,
-        weightGrams: weight,
-        sizeValue: size,
-        gemInserts: _gemController.text,
-        notes: _notesController.text,
-      );
+      final ok = _isEditMode
+          ? await widget.database.updateManualProduct(
+              productId: widget.editProduct!['id']?.toString() ?? '',
+              sku: sku,
+              metalType: _resolvedMetalType,
+              weightGrams: weight,
+              sizeValue: size,
+              gemInserts: _gemController.text,
+              notes: _notesController.text,
+            )
+          : await widget.database.insertManualProduct(
+              sku: sku,
+              metalType: _resolvedMetalType,
+              weightGrams: weight,
+              sizeValue: size,
+              gemInserts: _gemController.text,
+              notes: _notesController.text,
+            );
       if (!ok) {
-        _snack('Не удалось добавить товар', error: true);
+        _snack(
+          _isEditMode ? 'Не удалось обновить карточку' : 'Не удалось добавить товар',
+          error: true,
+        );
         return;
       }
       widget.onSaved();
@@ -773,7 +935,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Добавить товар', style: AppTypography.heading(fontSize: 18)),
+      title: Text(
+        _isEditMode ? 'Редактировать товар' : 'Добавить товар',
+        style: AppTypography.heading(fontSize: 18),
+      ),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -812,7 +977,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   labelText: 'Тип металла',
                   border: OutlineInputBorder(),
                 ),
-                items: (_metalCategory == 'gold' ? _goldTypes : _silverTypes)
+                items: _metalDropdownOptions
                     .map(
                       (item) => DropdownMenuItem(value: item, child: Text(item)),
                     )
@@ -831,9 +996,12 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _skuController,
-                decoration: const InputDecoration(
+                readOnly: _isEditMode,
+                decoration: InputDecoration(
                   labelText: 'SKU / артикул',
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
+                  filled: _isEditMode,
+                  helperText: _isEditMode ? 'SKU нельзя менять (ключ карточки)' : null,
                 ),
               ),
               const SizedBox(height: 8),
@@ -882,7 +1050,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         ),
         FilledButton(
           onPressed: _saving ? null : _submit,
-          child: Text(_saving ? 'Сохранение…' : 'Сохранить (поля не очищаются)'),
+          child: Text(
+            _saving
+                ? 'Сохранение…'
+                : (_isEditMode ? 'Сохранить изменения' : 'Добавить на витрину'),
+          ),
         ),
       ],
     );

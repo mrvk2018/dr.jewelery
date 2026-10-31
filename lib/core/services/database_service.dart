@@ -1365,6 +1365,26 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  /// Локализованное имя для колонки `products.name` (jsonb object).
+  static Map<String, dynamic> _manualProductNameJson(String displayName) {
+    final text = displayName.trim();
+    if (text.isEmpty) {
+      return <String, dynamic>{'ru': ''};
+    }
+    return <String, dynamic>{'ru': text, 'ko': text};
+  }
+
+  static void _logPostgrestInsertFailure(Object error, StackTrace stackTrace) {
+    debugPrint('CloudDatabaseService.insertManualProduct failed: $error');
+    if (error is PostgrestException) {
+      debugPrint(
+        'Supabase Error Details: ${error.message}, '
+        'Hint: ${error.details}, Code: ${error.code}',
+      );
+    }
+    debugPrint('$stackTrace');
+  }
+
   @override
   Future<bool> insertManualProduct({
     required String sku,
@@ -1383,28 +1403,36 @@ class CloudDatabaseService implements DatabaseService {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
     final priceKrw = price.clamp(0, 999999999);
+    final displayName = name.trim();
+    final metalLabel = metalType.trim();
+    final gem = gemInserts.trim();
     try {
       await _supabaseClient.from('products').insert({
         'id': normalizedSku,
         'sku': normalizedSku,
-        'name': name.trim(),
-        'metal_type': metalType.trim(),
+        'name': _manualProductNameJson(displayName),
+        'description': <String, dynamic>{},
+        'metal': metalLabel,
+        'metal_type': metalLabel,
+        'category': displayName.isEmpty ? 'manual' : displayName,
+        'insert': gem,
         'weight_grams': weightGrams,
         'size_value': ?sizeValue,
-        'gem_inserts': gemInserts.trim(),
+        'gem_inserts': gem,
         'notes': notes.trim(),
         'manufacturer': manufacturer?.trim() ?? '',
         'price': priceKrw,
         'sale_price': priceKrw,
+        'old_price': priceKrw,
+        'status': 'active',
         'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
         'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
       });
       return true;
     } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.insertManualProduct failed: $error');
-      debugPrint('$stackTrace');
-      return false;
+      _logPostgrestInsertFailure(error, stackTrace);
+      rethrow;
     }
   }
 
@@ -1425,15 +1453,22 @@ class CloudDatabaseService implements DatabaseService {
     if (normalizedSku.isEmpty) return false;
     final priceKrw = price.clamp(0, 999999999);
 
+    final displayName = name.trim();
+    final metalLabel = metalType.trim();
+    final gem = gemInserts.trim();
     final patch = <String, dynamic>{
-      'name': name.trim(),
-      'metal_type': metalType.trim(),
+      'name': _manualProductNameJson(displayName),
+      'metal': metalLabel,
+      'metal_type': metalLabel,
+      'category': displayName.isEmpty ? 'manual' : displayName,
+      'insert': gem,
       'weight_grams': weightGrams,
-      'gem_inserts': gemInserts.trim(),
+      'gem_inserts': gem,
       'notes': notes.trim(),
       'manufacturer': manufacturer?.trim() ?? '',
       'price': priceKrw,
       'sale_price': priceKrw,
+      'old_price': priceKrw,
     };
     if (sizeValue != null) {
       patch['size_value'] = sizeValue;

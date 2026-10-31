@@ -317,6 +317,7 @@ abstract class DatabaseService {
     String? qrCodePayload,
     List<String> additionalImages,
     bool isDraft = false,
+    String? manufacturer,
   });
 
   /// Ручное редактирование карточки на витрине (admin / RLS).
@@ -329,6 +330,7 @@ abstract class DatabaseService {
     double? sizeValue,
     String gemInserts,
     String notes,
+    String? manufacturer,
   });
 
   /// Обновление поля `notes` по SKU.
@@ -1373,6 +1375,7 @@ class CloudDatabaseService implements DatabaseService {
     String? qrCodePayload,
     List<String> additionalImages = const [],
     bool isDraft = false,
+    String? manufacturer,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1386,6 +1389,7 @@ class CloudDatabaseService implements DatabaseService {
         'size_value': ?sizeValue,
         'gem_inserts': gemInserts.trim(),
         'notes': notes.trim(),
+        'manufacturer': manufacturer?.trim() ?? '',
         'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
         'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
@@ -1408,6 +1412,7 @@ class CloudDatabaseService implements DatabaseService {
     double? sizeValue,
     String gemInserts = '',
     String notes = '',
+    String? manufacturer,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1418,6 +1423,7 @@ class CloudDatabaseService implements DatabaseService {
       'weight_grams': weightGrams,
       'gem_inserts': gemInserts.trim(),
       'notes': notes.trim(),
+      'manufacturer': manufacturer?.trim() ?? '',
     };
     if (sizeValue != null) {
       patch['size_value'] = sizeValue;

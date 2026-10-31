@@ -916,14 +916,37 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     'Другое',
   ];
 
+  static const _manufacturerOptions = [
+    'BEST',
+    'caravan',
+    'DINASTIA',
+    'new gold',
+    'SOFIZAR',
+    'Sokolov',
+    'UZ GOLD',
+    'volkov',
+    'Виноградов',
+    'Высоковы',
+    'Ганибал',
+    'Гиалит',
+    'Диамант',
+    'Диана',
+    'Елена',
+    'Макс',
+    'ОАЗИС',
+    'Другое',
+  ];
+
   final _skuController = TextEditingController();
   final _customNameController = TextEditingController();
+  final _customManufacturerController = TextEditingController();
   final _weightController = TextEditingController();
   final _sizeController = TextEditingController();
   final _gemController = TextEditingController();
   final _notesController = TextEditingController();
 
   String _productTypeCategory = _nameCategories.first;
+  String _manufacturerCategory = _manufacturerOptions.first;
   String _metalCategory = 'gold';
   String _goldType = '585 жёлтое';
   String _silverType = '925';
@@ -956,6 +979,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     return _productTypeCategory;
   }
 
+  String get _resolvedManufacturer {
+    if (_manufacturerCategory == 'Другое') {
+      return _customManufacturerController.text.trim();
+    }
+    return _manufacturerCategory;
+  }
+
   List<String> get _metalDropdownOptions {
     final base = _metalCategory == 'gold'
         ? List<String>.from(_goldTypes)
@@ -981,6 +1011,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
     _imageUrls = _parseImageUrls(edit);
     _initNameFields(_extractStoredName(edit));
+    _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
+  }
+
+  void _initManufacturerFields(String storedManufacturer) {
+    if (storedManufacturer.isEmpty) return;
+    if (_manufacturerOptions.contains(storedManufacturer)) {
+      _manufacturerCategory = storedManufacturer;
+      return;
+    }
+    _manufacturerCategory = 'Другое';
+    _customManufacturerController.text = storedManufacturer;
   }
 
   void _initNameFields(String storedName) {
@@ -1019,6 +1060,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   void dispose() {
     _skuController.dispose();
     _customNameController.dispose();
+    _customManufacturerController.dispose();
     _weightController.dispose();
     _sizeController.dispose();
     _gemController.dispose();
@@ -1126,6 +1168,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     try {
       final size = double.tryParse(_sizeController.text.replaceAll(',', '.'));
       final notes = _notesController.text.trim();
+      final manufacturer = _resolvedManufacturer;
 
       final ok = _isEditMode
           ? await widget.database.updateManualProduct(
@@ -1137,6 +1180,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               sizeValue: size,
               gemInserts: _gemController.text,
               notes: notes,
+              manufacturer: manufacturer,
             )
           : await widget.database.insertManualProduct(
               sku: sku,
@@ -1147,6 +1191,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               gemInserts: _gemController.text,
               notes: notes,
               isDraft: asDraft,
+              manufacturer: manufacturer,
             );
 
       if (!ok) {
@@ -1271,6 +1316,34 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   });
                 },
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _manufacturerCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Производитель',
+                  border: OutlineInputBorder(),
+                ),
+                items: _manufacturerOptions
+                    .map(
+                      (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _manufacturerCategory = value);
+                },
+              ),
+              if (_manufacturerCategory == 'Другое') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customManufacturerController,
+                  decoration: const InputDecoration(
+                    labelText: 'Своё наименование производителя',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _productTypeCategory,

@@ -1408,7 +1408,6 @@ class CloudDatabaseService implements DatabaseService {
     final gem = gemInserts.trim();
     try {
       await _supabaseClient.from('products').insert({
-        'id': normalizedSku,
         'sku': normalizedSku,
         'name': _manualProductNameJson(displayName),
         'description': <String, dynamic>{},

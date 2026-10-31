@@ -1153,40 +1153,15 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       ),
       content: SizedBox(
         width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _productTypeCategory,
-                decoration: const InputDecoration(
-                  labelText: 'Категория изделия',
-                  border: OutlineInputBorder(),
-                ),
-                items: _nameCategories
-                    .map(
-                      (item) => DropdownMenuItem(value: item, child: Text(item)),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _productTypeCategory = value);
-                },
-              ),
-              if (_productTypeCategory == 'Другое') ...[
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _customNameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Своё наименование',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ],
-              const SizedBox(height: 12),
-              Wrap(
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 4, right: 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
                 spacing: 8,
                 children: [
                   ActionChip(
@@ -1233,6 +1208,34 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   });
                 },
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _productTypeCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Категория изделия',
+                  border: OutlineInputBorder(),
+                ),
+                items: _nameCategories
+                    .map(
+                      (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _productTypeCategory = value);
+                },
+              ),
+              if (_productTypeCategory == 'Другое') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Своё наименование',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _skuController,
@@ -1295,7 +1298,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   helperText: 'Заметки администратора; наименование — в категории выше',
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

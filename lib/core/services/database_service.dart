@@ -331,6 +331,14 @@ abstract class DatabaseService {
   /// Обновление поля `notes` по SKU.
   Future<bool> updateProductNotesBySku(String sku, String notes);
 
+  /// Загрузка фото в Storage `product-images` и append в `additional_images` (макс. 4).
+  /// Возвращает public URL или null при ошибке / лимите.
+  Future<String?> uploadProductAdditionalImage({
+    required String sku,
+    required Uint8List bytes,
+    required String contentType,
+  });
+
   /// Списание с витрины (`stock_quantity` → `0`).
   Future<bool> writeOffProductBySku(String sku);
 
@@ -1443,6 +1451,79 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.updateProductNotesBySku failed: $error');
       debugPrint('$stackTrace');
       return false;
+    }
+  }
+
+  static const _productImagesBucket = 'product-images';
+  static const _productImagesFolder = 'products';
+  static const _gallerySlotSuffixes = ['', '_1', '_2', '_3'];
+
+  static String _safeStorageSku(String sku) {
+    return sku.replaceAll(RegExp(r'[^\w.-]+'), '_');
+  }
+
+  static String _extensionForContentType(String contentType) {
+    final lower = contentType.toLowerCase();
+    if (lower.contains('webp')) return 'webp';
+    if (lower.contains('png')) return 'png';
+    return 'jpg';
+  }
+
+  @override
+  Future<String?> uploadProductAdditionalImage({
+    required String sku,
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty || bytes.isEmpty) return null;
+
+    try {
+      final existing = await _supabaseClient
+          .from('products')
+          .select('additional_images')
+          .eq('sku', normalizedSku)
+          .maybeSingle();
+      if (existing == null) return null;
+
+      final currentRaw = existing['additional_images'];
+      final current = currentRaw is List
+          ? currentRaw.map((e) => e.toString()).where((u) => u.isNotEmpty).toList()
+          : <String>[];
+      if (current.length >= ProductItem.maxGalleryImages) return null;
+
+      final slot = current.length;
+      final safeSku = _safeStorageSku(normalizedSku);
+      final suffix = _gallerySlotSuffixes[slot];
+      final ext = _extensionForContentType(contentType);
+      final objectPath = '$_productImagesFolder/$safeSku$suffix.$ext';
+
+      await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
+            objectPath,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: contentType,
+              upsert: true,
+            ),
+          );
+
+      final publicUrl =
+          _supabaseClient.storage.from(_productImagesBucket).getPublicUrl(objectPath);
+      if (publicUrl.trim().isEmpty) return null;
+
+      final versionedUrl = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
+      final nextImages = [...current, versionedUrl];
+
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'additional_images': nextImages})
+          .eq('sku', normalizedSku)
+          .select('sku');
+      return rows.isNotEmpty ? versionedUrl : null;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $error');
+      debugPrint('$stackTrace');
+      return null;
     }
   }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/services/database_service.dart';
+import '../../../../shared/models/product_item.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/presentation/widgets/smart_filter_widget.dart';
@@ -32,6 +34,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
   bool _initialLoading = true;
+  bool _photoUploadBusy = false;
 
   @override
   void initState() {
@@ -64,8 +67,49 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return raw
         .map((e) => e.toString().trim())
         .where((url) => url.isNotEmpty)
-        .take(3)
+        .take(ProductItem.maxGalleryImages)
         .toList();
+  }
+
+  Future<void> _addPhotoToSelected() async {
+    final row = _selected;
+    if (row == null) return;
+    final sku = _cell(row, 'sku');
+    if (sku == '—') return;
+
+    final currentCount = _imageUrls(row).length;
+    if (currentCount >= ProductItem.maxGalleryImages) {
+      _snack('Достигнут лимит ${ProductItem.maxGalleryImages} фото', error: true);
+      return;
+    }
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _photoUploadBusy = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final url = await widget.database.uploadProductAdditionalImage(
+        sku: sku,
+        bytes: bytes,
+        contentType: picked.mimeType ?? 'image/jpeg',
+      );
+      if (!mounted) return;
+      if (url == null) {
+        _snack('Не удалось загрузить фото (Storage / RLS)', error: true);
+        return;
+      }
+      _snack('Фото ${currentCount + 1}/${ProductItem.maxGalleryImages} загружено');
+      await _refreshCatalog();
+    } catch (error) {
+      if (!mounted) return;
+      _snack('Ошибка загрузки: $error', error: true);
+    } finally {
+      if (mounted) setState(() => _photoUploadBusy = false);
+    }
   }
 
   void _applyRows(List<Map<String, dynamic>> rows) {
@@ -356,6 +400,8 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                             totalWeightGrams: _totalWeightGrams,
                             cell: _cell,
                             weight: _weight,
+                            photoUploadBusy: _photoUploadBusy,
+                            onAddPhoto: _addPhotoToSelected,
                           ),
                         ),
                       ],
@@ -549,6 +595,8 @@ class _MediaAndKpiPanel extends StatelessWidget {
     required this.totalWeightGrams,
     required this.cell,
     required this.weight,
+    required this.photoUploadBusy,
+    required this.onAddPhoto,
   });
 
   final Map<String, dynamic>? selected;
@@ -557,6 +605,8 @@ class _MediaAndKpiPanel extends StatelessWidget {
   final double totalWeightGrams;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
+  final bool photoUploadBusy;
+  final VoidCallback onAddPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -599,20 +649,30 @@ class _MediaAndKpiPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: Row(
-                children: List.generate(3, (index) {
-                  final url = index < imageUrls.length ? imageUrls[index] : null;
-                  return Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(left: index == 0 ? 0 : 8),
-                      child: _PhotoSlot(url: url),
-                    ),
-                  );
-                }),
-              ),
+              child: _ProductPhotoGrid(imageUrls: imageUrls),
             ),
             if (selected != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: photoUploadBusy ||
+                          imageUrls.length >= ProductItem.maxGalleryImages
+                      ? null
+                      : onAddPhoto,
+                  icon: photoUploadBusy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_photo_alternate_outlined),
+                  label: Text(
+                    'Добавить фото (${imageUrls.length}/${ProductItem.maxGalleryImages})',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
               Text(
                 'Масса выбранного: ${weight(selected!).toStringAsFixed(2)} г',
                 style: AppTypography.productMeta(),
@@ -648,6 +708,25 @@ class _KpiTile extends StatelessWidget {
           Text(value, style: AppTypography.heading(fontSize: 18)),
         ],
       ),
+    );
+  }
+}
+
+class _ProductPhotoGrid extends StatelessWidget {
+  const _ProductPhotoGrid({required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      children: List.generate(ProductItem.maxGalleryImages, (index) {
+        final url = index < imageUrls.length ? imageUrls[index] : null;
+        return _PhotoSlot(url: url);
+      }),
     );
   }
 }
@@ -774,6 +853,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _goldType = '585 жёлтое';
   String _silverType = '925';
   bool _saving = false;
+  bool _photoBusy = false;
+  List<String> _imageUrls = const [];
 
   static const _goldTypes = [
     '585 жёлтое',
@@ -813,6 +894,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _gemController.text = edit['gem_inserts']?.toString().trim() ?? '';
     _notesController.text = edit['notes']?.toString().trim() ?? '';
     _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
+    _imageUrls = _parseImageUrls(edit);
+  }
+
+  static List<String> _parseImageUrls(Map<String, dynamic> row) {
+    final raw = row['additional_images'];
+    if (raw is! List) return const [];
+    return raw
+        .map((e) => e.toString().trim())
+        .where((url) => url.isNotEmpty)
+        .take(ProductItem.maxGalleryImages)
+        .toList();
   }
 
   @override
@@ -876,6 +968,49 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       _metalCategory = 'silver';
       _silverType = '925';
     });
+  }
+
+  Future<void> _pickPhoto() async {
+    final sku = _skuController.text.trim();
+    if (sku.isEmpty) {
+      _snack('Сначала укажите SKU и сохраните карточку в базе', error: true);
+      return;
+    }
+    if (!_isEditMode) {
+      _snack('Для нового товара сначала нажмите «Добавить на витрину»', error: true);
+      return;
+    }
+    if (_imageUrls.length >= ProductItem.maxGalleryImages) {
+      _snack('Лимит ${ProductItem.maxGalleryImages} фото', error: true);
+      return;
+    }
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _photoBusy = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final url = await widget.database.uploadProductAdditionalImage(
+        sku: sku,
+        bytes: bytes,
+        contentType: picked.mimeType ?? 'image/jpeg',
+      );
+      if (!mounted) return;
+      if (url == null) {
+        _snack('Загрузка в Storage не удалась', error: true);
+        return;
+      }
+      setState(() => _imageUrls = [..._imageUrls, url]);
+      _snack('Фото ${_imageUrls.length}/${ProductItem.maxGalleryImages}');
+    } catch (error) {
+      _snack('Ошибка: $error', error: true);
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -1037,6 +1172,27 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 decoration: const InputDecoration(
                   labelText: 'Описание (notes)',
                   border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Фото (до ${ProductItem.maxGalleryImages})', style: AppTypography.heading(fontSize: 15)),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 200,
+                child: _ProductPhotoGrid(imageUrls: _imageUrls),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _saving || _photoBusy ? null : _pickPhoto,
+                icon: _photoBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add_photo_alternate_outlined),
+                label: Text(
+                  'Добавить фото (${_imageUrls.length}/${ProductItem.maxGalleryImages})',
                 ),
               ),
             ],

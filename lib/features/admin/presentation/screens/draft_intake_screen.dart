@@ -97,45 +97,12 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
-  Future<bool> _confirmAcceptWithPreview(Map<String, dynamic> row) async {
-    final labelData = JewelryLabelData.fromProductMap(row);
+  Future<String?> _confirmAcceptWithPreview(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
-    final accepted = await showDialog<bool>(
+    return showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(
-            'Приёмка · $sku',
-            style: AppTypography.heading(fontSize: 18),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                JewelryLabelPreview(data: labelData),
-                const SizedBox(height: 12),
-                Text(
-                  'Активировать stock_quantity = 1 и отправить TSPL на печать?',
-                  style: AppTypography.productMeta(),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Принять и печатать'),
-            ),
-          ],
-        );
-      },
+      builder: (dialogContext) => _DraftAcceptPreviewDialog(row: row, sku: sku),
     );
-    return accepted == true;
   }
 
   Future<void> _printLabelForProduct(Map<String, dynamic> row) async {
@@ -154,11 +121,21 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     final sku = _field(row, 'sku');
     if (sku == '—') return;
 
-    final confirmed = await _confirmAcceptWithPreview(row);
-    if (!confirmed || !mounted) return;
+    final productName = await _confirmAcceptWithPreview(row);
+    if (productName == null || !mounted) return;
 
     setState(() => _rowBusySkus.add(sku));
     try {
+      final notesSaved = await widget.database.updateProductNotesBySku(
+        sku,
+        productName,
+      );
+      if (!mounted) return;
+      if (!notesSaved) {
+        _showSnack('Не удалось сохранить наименование', isError: true);
+        return;
+      }
+
       final ok = await widget.database.activateDraftProductBySku(sku);
       if (!mounted) return;
       if (!ok) {
@@ -166,7 +143,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         return;
       }
 
-      await _printLabelForProduct(row);
+      final printRow = Map<String, dynamic>.from(row)..['notes'] = productName;
+      await _printLabelForProduct(printRow);
 
       _showSnack('Принят $sku — этикетка отправлена на печать');
       await _runSearch(_searchController.text);
@@ -447,6 +425,148 @@ class _DraftTable extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+}
+
+class _DraftAcceptPreviewDialog extends StatefulWidget {
+  const _DraftAcceptPreviewDialog({
+    required this.row,
+    required this.sku,
+  });
+
+  final Map<String, dynamic> row;
+  final String sku;
+
+  static const _presetTypes = [
+    'Кольцо',
+    'Серьги',
+    'Цепь',
+    'Браслет',
+    'Подвеска',
+    'Колье',
+    'Другое',
+  ];
+
+  @override
+  State<_DraftAcceptPreviewDialog> createState() =>
+      _DraftAcceptPreviewDialogState();
+}
+
+class _DraftAcceptPreviewDialogState extends State<_DraftAcceptPreviewDialog> {
+  late String _selectedType;
+  final _customNameController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.row['notes']?.toString().trim() ?? '';
+    if (existing.isNotEmpty &&
+        _DraftAcceptPreviewDialog._presetTypes.contains(existing)) {
+      _selectedType = existing;
+    } else if (existing.isNotEmpty) {
+      _selectedType = 'Другое';
+      _customNameController.text = existing;
+    } else {
+      _selectedType = _DraftAcceptPreviewDialog._presetTypes.first;
+    }
+  }
+
+  @override
+  void dispose() {
+    _customNameController.dispose();
+    super.dispose();
+  }
+
+  String get _resolvedName {
+    if (_selectedType == 'Другое') {
+      return _customNameController.text.trim();
+    }
+    return _selectedType;
+  }
+
+  JewelryLabelData get _previewData {
+    final merged = Map<String, dynamic>.from(widget.row)
+      ..['notes'] = _resolvedName.isEmpty ? widget.sku : _resolvedName;
+    return JewelryLabelData.fromProductMap(merged);
+  }
+
+  void _accept() {
+    final name = _resolvedName;
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Укажите наименование изделия')),
+      );
+      return;
+    }
+    Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        'Приёмка · ${widget.sku}',
+        style: AppTypography.heading(fontSize: 18),
+      ),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _selectedType,
+                decoration: const InputDecoration(
+                  labelText: 'Наименование изделия',
+                  border: OutlineInputBorder(),
+                ),
+                items: _DraftAcceptPreviewDialog._presetTypes
+                    .map(
+                      (type) => DropdownMenuItem(
+                        value: type,
+                        child: Text(type),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _selectedType = value);
+                },
+              ),
+              if (_selectedType == 'Другое') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Своё наименование',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+              const SizedBox(height: 12),
+              JewelryLabelPreview(data: _previewData),
+              const SizedBox(height: 12),
+              Text(
+                'Наименование сохранится в notes и попадёт на бирку.',
+                style: AppTypography.productMeta(),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _accept,
+          child: const Text('Принять и печатать'),
+        ),
+      ],
     );
   }
 }

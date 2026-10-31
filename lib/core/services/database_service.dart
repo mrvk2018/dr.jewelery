@@ -342,6 +342,9 @@ abstract class DatabaseService {
     required String contentType,
   });
 
+  /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
+  Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
+
   /// Списание с витрины (`stock_quantity` → `0`).
   Future<bool> writeOffProductBySku(String sku);
 
@@ -1530,6 +1533,27 @@ class CloudDatabaseService implements DatabaseService {
       return rows.isNotEmpty ? versionedUrl : null;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $error');
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return null;
+    try {
+      final row = await _supabaseClient
+          .from('products')
+          .select('additional_images, image_url')
+          .eq('sku', normalizedSku)
+          .maybeSingle();
+      if (row == null) return null;
+      return Map<String, dynamic>.from(row);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchProductMediaFieldsBySku failed: $error',
+      );
       debugPrint('$stackTrace');
       return null;
     }

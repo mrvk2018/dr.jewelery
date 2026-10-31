@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -63,14 +65,69 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
+  List<String> _parseAdditionalImagesField(Object? raw) {
+    if (raw == null) return const [];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString().trim())
+          .where((url) => url.isNotEmpty)
+          .toList();
+    }
+    if (raw is String) {
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return const [];
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is List) {
+          return decoded
+              .map((e) => e.toString().trim())
+              .where((url) => url.isNotEmpty)
+              .toList();
+        }
+      } catch (_) {
+        return const [];
+      }
+    }
+    return const [];
+  }
+
   List<String> _imageUrls(Map<String, dynamic> row) {
-    final raw = row['additional_images'];
-    if (raw is! List) return const [];
-    return raw
-        .map((e) => e.toString().trim())
-        .where((url) => url.isNotEmpty)
-        .take(ProductItem.maxGalleryImages)
-        .toList();
+    final fromAdditional = _parseAdditionalImagesField(row['additional_images']);
+    if (fromAdditional.isNotEmpty) {
+      return fromAdditional.take(ProductItem.maxGalleryImages).toList();
+    }
+    final legacyUrl = row['image_url']?.toString().trim() ?? '';
+    if (legacyUrl.isNotEmpty) {
+      return [legacyUrl];
+    }
+    return const [];
+  }
+
+  Future<void> _fetchAndMergeProductMedia(String sku) async {
+    if (sku.isEmpty) return;
+
+    try {
+      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      if (!mounted || media == null) return;
+
+      final selected = _selected;
+      if (selected == null || _cell(selected, 'sku') != sku) return;
+
+      setState(() {
+        _selected = Map<String, dynamic>.from(selected)
+          ..['additional_images'] = media['additional_images']
+          ..['image_url'] = media['image_url'];
+      });
+    } catch (error, stackTrace) {
+      debugPrint('JewelryAdminDashboard._fetchAndMergeProductMedia: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _selectProductRow(Map<String, dynamic> row) async {
+    final sku = row['sku']?.toString().trim() ?? '';
+    setState(() => _selected = row);
+    await _fetchAndMergeProductMedia(sku);
   }
 
   Future<void> _addPhotoToSelected() async {
@@ -131,6 +188,12 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _products = active;
       _selected = selected;
     });
+    if (selected != null) {
+      final sku = _cell(selected, 'sku');
+      if (sku != '—') {
+        unawaited(_fetchAndMergeProductMedia(sku));
+      }
+    }
   }
 
   Future<void> _refreshCatalog() async {
@@ -383,7 +446,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                           child: _ProductTablePanel(
                             products: _products,
                             selectedSku: selectedSku,
-                            onSelect: (row) => setState(() => _selected = row),
+                            onSelect: _selectProductRow,
                             onEdit: _openEditProductDialog,
                             cell: _cell,
                             weight: _weight,

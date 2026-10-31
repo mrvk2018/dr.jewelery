@@ -1407,7 +1407,9 @@ class CloudDatabaseService implements DatabaseService {
     final metalLabel = metalType.trim();
     final gem = gemInserts.trim();
     try {
-      await _supabaseClient.from('products').insert({
+      // Never send `id` — Postgres generates UUID. Do not map SKU into uuid columns
+      // (e.g. mis-typed `qr_code_payload`); POS falls back to `sku` when QR is null.
+      final payload = <String, dynamic>{
         'sku': normalizedSku,
         'name': _manualProductNameJson(displayName),
         'description': <String, dynamic>{},
@@ -1416,7 +1418,6 @@ class CloudDatabaseService implements DatabaseService {
         'category': displayName.isEmpty ? 'manual' : displayName,
         'insert': gem,
         'weight_grams': weightGrams,
-        'size_value': ?sizeValue,
         'gem_inserts': gem,
         'notes': notes.trim(),
         'manufacturer': manufacturer?.trim() ?? '',
@@ -1424,10 +1425,17 @@ class CloudDatabaseService implements DatabaseService {
         'sale_price': priceKrw,
         'old_price': priceKrw,
         'status': 'active',
-        'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
         'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
-      });
+      };
+      if (sizeValue != null) {
+        payload['size_value'] = sizeValue;
+      }
+      final qr = qrCodePayload?.trim();
+      if (qr != null && qr.isNotEmpty) {
+        payload['qr_code_payload'] = qr;
+      }
+      await _supabaseClient.from('products').insert(payload);
       return true;
     } catch (error, stackTrace) {
       _logPostgrestInsertFailure(error, stackTrace);

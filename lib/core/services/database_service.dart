@@ -311,6 +311,7 @@ abstract class DatabaseService {
     required String name,
     required String metalType,
     required double weightGrams,
+    required int price,
     double? sizeValue,
     String gemInserts,
     String notes,
@@ -327,6 +328,7 @@ abstract class DatabaseService {
     required String name,
     required String metalType,
     required double weightGrams,
+    required int price,
     double? sizeValue,
     String gemInserts,
     String notes,
@@ -1369,6 +1371,7 @@ class CloudDatabaseService implements DatabaseService {
     required String name,
     required String metalType,
     required double weightGrams,
+    required int price,
     double? sizeValue,
     String gemInserts = '',
     String notes = '',
@@ -1379,6 +1382,7 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
+    final priceKrw = price.clamp(0, 999999999);
     try {
       await _supabaseClient.from('products').insert({
         'id': normalizedSku,
@@ -1390,6 +1394,8 @@ class CloudDatabaseService implements DatabaseService {
         'gem_inserts': gemInserts.trim(),
         'notes': notes.trim(),
         'manufacturer': manufacturer?.trim() ?? '',
+        'price': priceKrw,
+        'sale_price': priceKrw,
         'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
         'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
@@ -1409,6 +1415,7 @@ class CloudDatabaseService implements DatabaseService {
     required String name,
     required String metalType,
     required double weightGrams,
+    required int price,
     double? sizeValue,
     String gemInserts = '',
     String notes = '',
@@ -1416,6 +1423,7 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
+    final priceKrw = price.clamp(0, 999999999);
 
     final patch = <String, dynamic>{
       'name': name.trim(),
@@ -1424,6 +1432,8 @@ class CloudDatabaseService implements DatabaseService {
       'gem_inserts': gemInserts.trim(),
       'notes': notes.trim(),
       'manufacturer': manufacturer?.trim() ?? '',
+      'price': priceKrw,
+      'sale_price': priceKrw,
     };
     if (sizeValue != null) {
       patch['size_value'] = sizeValue;

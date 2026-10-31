@@ -942,6 +942,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   final _customManufacturerController = TextEditingController();
   final _weightController = TextEditingController();
   final _sizeController = TextEditingController();
+  final _priceController = TextEditingController();
   final _gemController = TextEditingController();
   final _notesController = TextEditingController();
 
@@ -1013,6 +1014,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _sizeController.text = _formatNumField(edit['size_value']);
     _gemController.text = edit['gem_inserts']?.toString().trim() ?? '';
     _notesController.text = edit['notes']?.toString().trim() ?? '';
+    _initPriceField(edit);
     _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
     _imageUrls = _parseImageUrls(edit);
     _initNameFields(_extractStoredName(edit));
@@ -1027,6 +1029,22 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
     _manufacturerCategory = 'Другое';
     _customManufacturerController.text = storedManufacturer;
+  }
+
+  void _initPriceField(Map<String, dynamic> row) {
+    final raw = row['price'] ?? row['sale_price'];
+    if (raw == null) return;
+    if (raw is num) {
+      final value = raw.toInt();
+      if (value > 0) {
+        _priceController.text = '$value';
+      }
+      return;
+    }
+    final text = raw.toString().trim();
+    if (text.isNotEmpty) {
+      _priceController.text = text;
+    }
   }
 
   void _initNameFields(String storedName) {
@@ -1068,6 +1086,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _customManufacturerController.dispose();
     _weightController.dispose();
     _sizeController.dispose();
+    _priceController.dispose();
     _gemController.dispose();
     _notesController.dispose();
     super.dispose();
@@ -1169,6 +1188,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       _snack('Укажите SKU и вес (г)', error: true);
       return;
     }
+    final price = int.tryParse(_priceController.text.replaceAll(RegExp(r'[^\d]'), ''));
+    if (price == null || price <= 0) {
+      _snack('Укажите цену продажи (₩) больше 0', error: true);
+      return;
+    }
 
     setState(() => _saving = true);
     try {
@@ -1183,6 +1207,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               name: productName,
               metalType: _resolvedMetalType,
               weightGrams: weight,
+              price: price,
               sizeValue: size,
               gemInserts: _gemController.text,
               notes: notes,
@@ -1193,6 +1218,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               name: productName,
               metalType: _resolvedMetalType,
               weightGrams: weight,
+              price: price,
               sizeValue: size,
               gemInserts: _gemController.text,
               notes: notes,
@@ -1412,6 +1438,15 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 controller: _gemController,
                 decoration: const InputDecoration(
                   labelText: 'Вставки',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _priceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Цена продажи (₩)',
                   border: OutlineInputBorder(),
                 ),
               ),

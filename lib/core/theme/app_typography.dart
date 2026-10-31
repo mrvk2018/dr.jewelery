@@ -5,8 +5,15 @@ import 'app_colors.dart';
 
 /// Premium typography: serif headings, sans-serif body and prices.
 abstract final class AppTypography {
-  static final TextStyle _inter = GoogleFonts.inter();
-  static final TextStyle _playfair = GoogleFonts.playfairDisplay();
+  /// Registered in [pubspec.yaml] under `assets/fonts/` (Noto Sans + Noto Sans KR).
+  static const List<String> notoFontFallback = ['Noto Sans', 'Noto Sans KR'];
+
+  static final TextStyle _inter = GoogleFonts.inter().copyWith(
+    fontFamilyFallback: notoFontFallback,
+  );
+  static final TextStyle _playfair = GoogleFonts.playfairDisplay().copyWith(
+    fontFamilyFallback: notoFontFallback,
+  );
 
   /// Название товара в карточке каталога (закэшировано).
   static final TextStyle productTitle = _inter.copyWith(
@@ -57,8 +64,12 @@ abstract final class AppTypography {
   );
 
   static TextTheme textTheme() {
-    final headingFont = GoogleFonts.playfairDisplayTextTheme();
-    final bodyFont = GoogleFonts.interTextTheme();
+    final headingFont = GoogleFonts.playfairDisplayTextTheme().apply(
+      fontFamilyFallback: notoFontFallback,
+    );
+    final bodyFont = GoogleFonts.interTextTheme().apply(
+      fontFamilyFallback: notoFontFallback,
+    );
 
     return TextTheme(
       displayLarge: headingFont.displayLarge?.copyWith(

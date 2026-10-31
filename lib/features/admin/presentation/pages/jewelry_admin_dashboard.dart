@@ -948,22 +948,27 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _productTypeCategory = _nameCategories.first;
   String _manufacturerCategory = _manufacturerOptions.first;
   String _metalCategory = 'gold';
-  String _goldType = '585 жёлтое';
-  String _silverType = '925';
+  String _goldType = '585 красное';
+  String _silverType = '925 Родированное';
   bool _saving = false;
 
   List<String> _imageUrls = const [];
   final List<XFile> _deferredPhotos = [];
 
   static const _goldTypes = [
+    '585 красное',
     '585 жёлтое',
     '585 белое',
-    '585 красное',
     '750 жёлтое',
     '750 белое',
   ];
 
-  static const _silverTypes = ['925', '875', '999'];
+  static const _silverTypes = [
+    '925 Родированное',
+    '925 Позолоченное',
+    '925 Комбинированное',
+    '925 чернение',
+  ];
 
   bool get _isEditMode => widget.isEditMode;
 
@@ -1083,13 +1088,14 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     if (stored.isEmpty) return;
 
     final lower = stored.toLowerCase();
-    final isSilver = _silverTypes.any((probe) => lower.contains(probe)) ||
-        lower.contains('сереб');
+    final isSilver = lower.contains('сереб') ||
+        lower.contains('925') ||
+        _silverTypes.any((probe) => lower.contains(probe.toLowerCase()));
 
     if (isSilver) {
       _metalCategory = 'silver';
       _silverType = _silverTypes.firstWhere(
-        (probe) => stored.contains(probe),
+        (probe) => stored == probe || stored.contains(probe),
         orElse: () => _silverTypes.first,
       );
     } else {
@@ -1110,14 +1116,14 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   void _applyProbe585() {
     setState(() {
       _metalCategory = 'gold';
-      _goldType = '585 жёлтое';
+      _goldType = '585 красное';
     });
   }
 
   void _applyProbe925() {
     setState(() {
       _metalCategory = 'silver';
-      _silverType = '925';
+      _silverType = '925 Родированное';
     });
   }
 

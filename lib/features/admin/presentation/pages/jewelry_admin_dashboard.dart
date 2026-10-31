@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -843,18 +845,29 @@ class _ManualProductDialog extends StatefulWidget {
 }
 
 class _ManualProductDialogState extends State<_ManualProductDialog> {
+  static const _nameCategories = [
+    'Кольцо',
+    'Серьги',
+    'Цепь',
+    'Браслет',
+    'Другое',
+  ];
+
   final _skuController = TextEditingController();
+  final _customNameController = TextEditingController();
   final _weightController = TextEditingController();
   final _sizeController = TextEditingController();
   final _gemController = TextEditingController();
   final _notesController = TextEditingController();
 
+  String _productTypeCategory = _nameCategories.first;
   String _metalCategory = 'gold';
   String _goldType = '585 жёлтое';
   String _silverType = '925';
   bool _saving = false;
-  bool _photoBusy = false;
+
   List<String> _imageUrls = const [];
+  final List<XFile> _deferredPhotos = [];
 
   static const _goldTypes = [
     '585 жёлтое',
@@ -866,8 +879,19 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
   static const _silverTypes = ['925', '875', '999'];
 
+  bool get _isEditMode => widget.isEditMode;
+
+  int get _totalPhotoCount => _imageUrls.length + _deferredPhotos.length;
+
   String get _resolvedMetalType =>
       _metalCategory == 'gold' ? _goldType : _silverType;
+
+  String get _resolvedProductName {
+    if (_productTypeCategory == 'Другое') {
+      return _customNameController.text.trim();
+    }
+    return _productTypeCategory;
+  }
 
   List<String> get _metalDropdownOptions {
     final base = _metalCategory == 'gold'
@@ -879,8 +903,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
     return base;
   }
-
-  bool get _isEditMode => widget.isEditMode;
 
   @override
   void initState() {
@@ -895,6 +917,29 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _notesController.text = edit['notes']?.toString().trim() ?? '';
     _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
     _imageUrls = _parseImageUrls(edit);
+    _initNameFields(_extractStoredName(edit));
+  }
+
+  void _initNameFields(String storedName) {
+    if (storedName.isEmpty) return;
+    if (_nameCategories.contains(storedName)) {
+      _productTypeCategory = storedName;
+      return;
+    }
+    _productTypeCategory = 'Другое';
+    _customNameController.text = storedName;
+  }
+
+  static String _extractStoredName(Map<String, dynamic> row) {
+    final raw = row['name'];
+    if (raw is String) return raw.trim();
+    if (raw is Map) {
+      for (final key in ['ru', 'ko', 'en']) {
+        final text = raw[key]?.toString().trim();
+        if (text != null && text.isNotEmpty) return text;
+      }
+    }
+    return '';
   }
 
   static List<String> _parseImageUrls(Map<String, dynamic> row) {
@@ -910,6 +955,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   @override
   void dispose() {
     _skuController.dispose();
+    _customNameController.dispose();
     _weightController.dispose();
     _sizeController.dispose();
     _gemController.dispose();
@@ -971,16 +1017,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 
   Future<void> _pickPhoto() async {
-    final sku = _skuController.text.trim();
-    if (sku.isEmpty) {
-      _snack('Сначала укажите SKU и сохраните карточку в базе', error: true);
-      return;
-    }
-    if (!_isEditMode) {
-      _snack('Для нового товара сначала нажмите «Добавить на витрину»', error: true);
-      return;
-    }
-    if (_imageUrls.length >= ProductItem.maxGalleryImages) {
+    if (_totalPhotoCount >= ProductItem.maxGalleryImages) {
       _snack('Лимит ${ProductItem.maxGalleryImages} фото', error: true);
       return;
     }
@@ -991,31 +1028,32 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     );
     if (picked == null || !mounted) return;
 
-    setState(() => _photoBusy = true);
-    try {
-      final bytes = await picked.readAsBytes();
+    setState(() => _deferredPhotos.add(picked));
+  }
+
+  Future<void> _uploadDeferredPhotos(String sku) async {
+    for (final file in _deferredPhotos) {
+      final bytes = await file.readAsBytes();
       final url = await widget.database.uploadProductAdditionalImage(
         sku: sku,
         bytes: bytes,
-        contentType: picked.mimeType ?? 'image/jpeg',
+        contentType: file.mimeType ?? 'image/jpeg',
       );
-      if (!mounted) return;
       if (url == null) {
-        _snack('Загрузка в Storage не удалась', error: true);
-        return;
+        throw StateError('Не удалось загрузить ${file.name}');
       }
-      setState(() => _imageUrls = [..._imageUrls, url]);
-      _snack('Фото ${_imageUrls.length}/${ProductItem.maxGalleryImages}');
-    } catch (error) {
-      _snack('Ошибка: $error', error: true);
-    } finally {
-      if (mounted) setState(() => _photoBusy = false);
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({required bool asDraft}) async {
     final sku = _skuController.text.trim();
     final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
+    final productName = _resolvedProductName;
+
+    if (productName.isEmpty) {
+      _snack('Укажите наименование изделия', error: true);
+      return;
+    }
     if (sku.isEmpty || weight == null || weight <= 0) {
       _snack('Укажите SKU и вес (г)', error: true);
       return;
@@ -1024,33 +1062,52 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     setState(() => _saving = true);
     try {
       final size = double.tryParse(_sizeController.text.replaceAll(',', '.'));
+      final notes = _notesController.text.trim();
+
       final ok = _isEditMode
           ? await widget.database.updateManualProduct(
               productId: widget.editProduct!['id']?.toString() ?? '',
               sku: sku,
+              name: productName,
               metalType: _resolvedMetalType,
               weightGrams: weight,
               sizeValue: size,
               gemInserts: _gemController.text,
-              notes: _notesController.text,
+              notes: notes,
             )
           : await widget.database.insertManualProduct(
               sku: sku,
+              name: productName,
               metalType: _resolvedMetalType,
               weightGrams: weight,
               sizeValue: size,
               gemInserts: _gemController.text,
-              notes: _notesController.text,
+              notes: notes,
+              isDraft: asDraft,
             );
+
       if (!ok) {
         _snack(
-          _isEditMode ? 'Не удалось обновить карточку' : 'Не удалось добавить товар',
+          _isEditMode
+              ? 'Не удалось обновить карточку'
+              : (asDraft
+                  ? 'Не удалось сохранить в черновики'
+                  : 'Не удалось добавить товар'),
           error: true,
         );
         return;
       }
+
+      if (_deferredPhotos.isNotEmpty) {
+        await _uploadDeferredPhotos(sku);
+      }
+
       widget.onSaved();
-      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      if (asDraft && !_isEditMode) {
+        _snack('Товар успешно сохранен в черновики (Приёмка)');
+      }
+      Navigator.pop(context);
     } catch (error) {
       _snack('Ошибка: $error', error: true);
     } finally {
@@ -1064,6 +1121,26 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         content: Text(message),
         backgroundColor: error ? AppColors.saleRed : AppColors.primary,
       ),
+    );
+  }
+
+  Widget _buildManualPhotoGrid() {
+    return GridView.count(
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: true,
+      children: List.generate(ProductItem.maxGalleryImages, (index) {
+        if (index < _imageUrls.length) {
+          return _PhotoSlot(url: _imageUrls[index]);
+        }
+        final deferredIndex = index - _imageUrls.length;
+        if (deferredIndex < _deferredPhotos.length) {
+          return _DeferredPhotoSlot(file: _deferredPhotos[deferredIndex]);
+        }
+        return const _PhotoSlot();
+      }),
     );
   }
 
@@ -1081,6 +1158,34 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              DropdownButtonFormField<String>(
+                initialValue: _productTypeCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Категория изделия',
+                  border: OutlineInputBorder(),
+                ),
+                items: _nameCategories
+                    .map(
+                      (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _productTypeCategory = value);
+                },
+              ),
+              if (_productTypeCategory == 'Другое') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Своё наименование',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+              const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
                 children: [
@@ -1165,34 +1270,29 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 16),
+              Text(
+                'Фото (до ${ProductItem.maxGalleryImages})',
+                style: AppTypography.heading(fontSize: 15),
+              ),
               const SizedBox(height: 8),
+              SizedBox(height: 200, child: _buildManualPhotoGrid()),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _saving ? null : _pickPhoto,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: Text(
+                  'Добавить фото ($_totalPhotoCount/${ProductItem.maxGalleryImages})',
+                ),
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: _notesController,
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Описание (notes)',
                   border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text('Фото (до ${ProductItem.maxGalleryImages})', style: AppTypography.heading(fontSize: 15)),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 200,
-                child: _ProductPhotoGrid(imageUrls: _imageUrls),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _saving || _photoBusy ? null : _pickPhoto,
-                icon: _photoBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.add_photo_alternate_outlined),
-                label: Text(
-                  'Добавить фото (${_imageUrls.length}/${ProductItem.maxGalleryImages})',
+                  helperText: 'Заметки администратора; наименование — в категории выше',
                 ),
               ),
             ],
@@ -1204,8 +1304,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           onPressed: _saving ? null : () => Navigator.pop(context),
           child: const Text('Закрыть'),
         ),
+        if (!_isEditMode)
+          OutlinedButton(
+            onPressed: _saving ? null : () => _submit(asDraft: true),
+            child: Text(_saving ? 'Сохранение…' : 'Сохранить в черновики'),
+          ),
         FilledButton(
-          onPressed: _saving ? null : _submit,
+          onPressed: _saving ? null : () => _submit(asDraft: false),
           child: Text(
             _saving
                 ? 'Сохранение…'
@@ -1213,6 +1318,41 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DeferredPhotoSlot extends StatelessWidget {
+  const _DeferredPhotoSlot({required this.file});
+
+  final XFile file;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.accent, width: 2),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: FutureBuilder<Uint8List>(
+            future: file.readAsBytes(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+              }
+              return Image.memory(
+                snapshot.data!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }

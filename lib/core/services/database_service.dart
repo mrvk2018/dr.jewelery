@@ -305,9 +305,10 @@ abstract class DatabaseService {
   /// Массовая активация всех черновиков (`stock_quantity = 0` → `1`).
   Future<int> activateAllDraftProducts();
 
-  /// Поштучное добавление на витрину (`stock_quantity = 1`).
+  /// Поштучное добавление: витрина (`stock_quantity = 1`) или черновик (`0`).
   Future<bool> insertManualProduct({
     required String sku,
+    required String name,
     required String metalType,
     required double weightGrams,
     double? sizeValue,
@@ -315,12 +316,14 @@ abstract class DatabaseService {
     String notes,
     String? qrCodePayload,
     List<String> additionalImages,
+    bool isDraft = false,
   });
 
   /// Ручное редактирование карточки на витрине (admin / RLS).
   Future<bool> updateManualProduct({
     required String productId,
     required String sku,
+    required String name,
     required String metalType,
     required double weightGrams,
     double? sizeValue,
@@ -1358,6 +1361,7 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<bool> insertManualProduct({
     required String sku,
+    required String name,
     required String metalType,
     required double weightGrams,
     double? sizeValue,
@@ -1365,6 +1369,7 @@ class CloudDatabaseService implements DatabaseService {
     String notes = '',
     String? qrCodePayload,
     List<String> additionalImages = const [],
+    bool isDraft = false,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1372,13 +1377,14 @@ class CloudDatabaseService implements DatabaseService {
       await _supabaseClient.from('products').insert({
         'id': normalizedSku,
         'sku': normalizedSku,
+        'name': name.trim(),
         'metal_type': metalType.trim(),
         'weight_grams': weightGrams,
-        if (sizeValue != null) 'size_value': sizeValue,
+        'size_value': ?sizeValue,
         'gem_inserts': gemInserts.trim(),
         'notes': notes.trim(),
         'qr_code_payload': (qrCodePayload ?? normalizedSku).trim(),
-        'stock_quantity': 1,
+        'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
       });
       return true;
@@ -1393,6 +1399,7 @@ class CloudDatabaseService implements DatabaseService {
   Future<bool> updateManualProduct({
     required String productId,
     required String sku,
+    required String name,
     required String metalType,
     required double weightGrams,
     double? sizeValue,
@@ -1403,6 +1410,7 @@ class CloudDatabaseService implements DatabaseService {
     if (normalizedSku.isEmpty) return false;
 
     final patch = <String, dynamic>{
+      'name': name.trim(),
       'metal_type': metalType.trim(),
       'weight_grams': weightGrams,
       'gem_inserts': gemInserts.trim(),

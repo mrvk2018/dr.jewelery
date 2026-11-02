@@ -265,60 +265,13 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     );
   }
 
-  Future<void> _editDescription() async {
+  Future<void> _editSelectedCard() async {
     final row = _selected;
     if (row == null) {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
-    final sku = _cell(row, 'sku');
-    final controller = TextEditingController(text: _cell(row, 'notes'));
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Описание · $sku', style: AppTypography.heading(fontSize: 18)),
-        content: SizedBox(
-          width: 480,
-          child: TextField(
-            controller: controller,
-            maxLines: 6,
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              labelText: 'notes',
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    if (saved != true || !mounted) return;
-
-    try {
-      final ok = await widget.database.updateProductNotesBySku(
-        sku,
-        controller.text,
-      );
-      if (!ok) {
-        _snack('Не удалось сохранить описание', error: true);
-        return;
-      }
-      _snack('Описание обновлено');
-      await _refreshCatalog();
-    } catch (error) {
-      _snack('Ошибка: $error', error: true);
-    } finally {
-      controller.dispose();
-    }
+    await _openManualProductDialog(editProduct: row);
   }
 
   Future<void> _writeOffSelected() async {
@@ -476,7 +429,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                   _BottomActionBar(
                     hasSelection: _selected != null,
                     onPrint: _printDuplicateLabel,
-                    onEdit: _editDescription,
+                    onEdit: _editSelectedCard,
                     onWriteOff: _writeOffSelected,
                   ),
                 ],
@@ -681,7 +634,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         side: const BorderSide(color: AppColors.border),
       ),
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -713,9 +666,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
               style: AppTypography.heading(fontSize: 16),
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: _ProductPhotoGrid(imageUrls: imageUrls),
-            ),
+            _ProductPhotoGrid(imageUrls: imageUrls),
             if (selected != null) ...[
               const SizedBox(height: 8),
               Align(
@@ -788,6 +739,8 @@ class _ProductPhotoGrid extends StatelessWidget {
       crossAxisCount: 2,
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: List.generate(ProductItem.maxGalleryImages, (index) {
         final url = index < imageUrls.length ? imageUrls[index] : null;
         return _PhotoSlot(url: url);
@@ -871,8 +824,8 @@ class _BottomActionBar extends StatelessWidget {
             ),
             OutlinedButton.icon(
               onPressed: hasSelection ? onEdit : null,
-              icon: const Icon(Icons.edit_note_outlined),
-              label: const Text('Редактировать описание'),
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Редактировать карточку'),
             ),
             OutlinedButton.icon(
               onPressed: hasSelection ? onWriteOff : null,
@@ -1012,10 +965,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
     _sizeController.text = _formatNumField(edit['size_value']);
-    _gemController.text = edit['gem_inserts']?.toString().trim() ?? '';
+    _gemController.text =
+        (edit['gem_inserts'] ?? edit['insert'])?.toString().trim() ?? '';
     _notesController.text = edit['notes']?.toString().trim() ?? '';
     _initPriceField(edit);
-    _applyMetalFromStored(edit['metal_type']?.toString() ?? '');
+    _applyMetalFromStored(
+      (edit['metal_type'] ?? edit['metal'])?.toString() ?? '',
+    );
     _imageUrls = _parseImageUrls(edit);
     _initNameFields(_extractStoredName(edit));
     _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
@@ -1288,7 +1244,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
-        _isEditMode ? 'Редактировать товар' : 'Добавить товар',
+        _isEditMode ? 'Редактировать карточку' : 'Добавить товар',
         style: AppTypography.heading(fontSize: 18),
       ),
       content: SizedBox(
@@ -1495,7 +1451,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           child: Text(
             _saving
                 ? 'Сохранение…'
-                : (_isEditMode ? 'Сохранить изменения' : 'Добавить на витрину'),
+                : (_isEditMode ? 'Сохранить' : 'Добавить на витрину'),
           ),
         ),
       ],

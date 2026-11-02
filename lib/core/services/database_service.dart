@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -1526,6 +1527,8 @@ class CloudDatabaseService implements DatabaseService {
   static const _productImagesBucket = 'product-images';
   static const _productImagesFolder = 'products';
   static const _gallerySlotSuffixes = ['', '_1', '_2', '_3'];
+  static const _productImageMaxSidePx = 1600;
+  static const _productImageWebpContentType = 'image/webp';
 
   static String _safeStorageSku(String sku) {
     return sku.replaceAll(RegExp(r'[^\w.-]+'), '_');
@@ -1538,6 +1541,33 @@ class CloudDatabaseService implements DatabaseService {
     return 'jpg';
   }
 
+  /// JPEG/PNG с picker → WebP (как [sync.js] / sharp для bucket `product-images`).
+  static Uint8List? _productImageBytesAsWebp(Uint8List raw) {
+    try {
+      final decoded = img.decodeImage(raw);
+      if (decoded == null) return null;
+
+      final oriented = img.bakeOrientation(decoded);
+      final w = oriented.width;
+      final h = oriented.height;
+      img.Image toEncode = oriented;
+      if (w > _productImageMaxSidePx || h > _productImageMaxSidePx) {
+        final scale = _productImageMaxSidePx / (w > h ? w : h);
+        toEncode = img.copyResize(
+          oriented,
+          width: (w * scale).round(),
+          height: (h * scale).round(),
+          interpolation: img.Interpolation.linear,
+        );
+      }
+
+      return Uint8List.fromList(img.encodeWebP(toEncode));
+    } catch (e) {
+      print('!!! WEB CONVERTER FAILED, FALLBACK TO ORIGINAL !!!: $e');
+      return null;
+    }
+  }
+
   @override
   Future<String?> uploadProductAdditionalImage({
     required String sku,
@@ -1545,7 +1575,13 @@ class CloudDatabaseService implements DatabaseService {
     required String contentType,
   }) async {
     final normalizedSku = sku.trim();
-    if (normalizedSku.isEmpty || bytes.isEmpty) return null;
+    if (normalizedSku.isEmpty || bytes.isEmpty) {
+      print(
+        '!!! UPLOAD FAILED AT: empty sku or bytes '
+        '(sku="$normalizedSku", bytes=${bytes.length})',
+      );
+      return null;
+    }
 
     try {
       final matches = await _supabaseClient
@@ -1554,36 +1590,69 @@ class CloudDatabaseService implements DatabaseService {
           .eq('sku', normalizedSku)
           .order('updated_at', ascending: false)
           .limit(1);
-      if (matches.isEmpty) return null;
+      if (matches.isEmpty) {
+        print(
+          '!!! UPLOAD FAILED AT: rows empty (no product for sku=$normalizedSku)',
+        );
+        return null;
+      }
 
       final existing = Map<String, dynamic>.from(matches.first as Map);
       final productId = existing['id']?.toString().trim() ?? '';
-      if (productId.isEmpty) return null;
+      if (productId.isEmpty) {
+        print('!!! UPLOAD FAILED AT: productId is null or empty');
+        return null;
+      }
 
       final currentRaw = existing['additional_images'];
       final current = currentRaw is List
           ? currentRaw.map((e) => e.toString()).where((u) => u.isNotEmpty).toList()
           : <String>[];
-      if (current.length >= ProductItem.maxGalleryImages) return null;
+      if (current.length >= ProductItem.maxGalleryImages) {
+        print(
+          '!!! UPLOAD FAILED AT: gallery limit reached '
+          '(${current.length}/${ProductItem.maxGalleryImages})',
+        );
+        return null;
+      }
+
+      final uploadContentType =
+          contentType.trim().isNotEmpty ? contentType.trim() : 'image/jpeg';
+      var uploadBytes = bytes;
+      var uploadMime = uploadContentType;
+      var fileExt = _extensionForContentType(uploadContentType);
+
+      try {
+        final webpBytes = _productImageBytesAsWebp(bytes);
+        if (webpBytes != null && webpBytes.isNotEmpty) {
+          uploadBytes = webpBytes;
+          uploadMime = _productImageWebpContentType;
+          fileExt = 'webp';
+        }
+      } catch (e) {
+        print('!!! WEB CONVERTER FAILED, FALLBACK TO ORIGINAL !!!: $e');
+      }
 
       final slot = current.length;
       final safeSku = _safeStorageSku(normalizedSku);
       final suffix = _gallerySlotSuffixes[slot];
-      final ext = _extensionForContentType(contentType);
-      final objectPath = '$_productImagesFolder/$safeSku$suffix.$ext';
+      final objectPath = '$_productImagesFolder/$safeSku$suffix.$fileExt';
 
       await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
             objectPath,
-            bytes,
+            uploadBytes,
             fileOptions: FileOptions(
-              contentType: contentType,
+              contentType: uploadMime,
               upsert: true,
             ),
           );
 
       final publicUrl =
           _supabaseClient.storage.from(_productImagesBucket).getPublicUrl(objectPath);
-      if (publicUrl.trim().isEmpty) return null;
+      if (publicUrl.trim().isEmpty) {
+        print('!!! UPLOAD FAILED AT: publicUrl empty (objectPath=$objectPath)');
+        return null;
+      }
 
       final versionedUrl = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
       final nextImages = [...current, versionedUrl];
@@ -1593,9 +1662,22 @@ class CloudDatabaseService implements DatabaseService {
           .update({'additional_images': nextImages})
           .eq('id', productId)
           .select('id');
-      return rows.isNotEmpty ? versionedUrl : null;
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $error');
+      if (rows.isEmpty) {
+        print(
+          '!!! UPLOAD FAILED AT: update additional_images returned no rows '
+          '(productId=$productId)',
+        );
+        return null;
+      }
+      return versionedUrl;
+    } catch (e, stackTrace) {
+      print('!!! UPLOAD ERROR !!!: $e');
+      if (e is StorageException) {
+        print('!!! STORAGE ERROR MESSAGE !!!: ${e.message}');
+        print('!!! STORAGE ERROR STATUS !!!: ${e.statusCode}');
+      }
+      print('STACKTRACE: $stackTrace');
+      debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $e');
       debugPrint('$stackTrace');
       return null;
     }

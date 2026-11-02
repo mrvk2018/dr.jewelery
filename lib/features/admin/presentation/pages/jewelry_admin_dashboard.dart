@@ -198,7 +198,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
   Future<void> _refreshCatalog() async {
     try {
-      final rows = await widget.database.fetchFacetedProducts();
+      final rows = await widget.database.fetchAllProductRowsForAdminCatalog();
       if (!mounted) return;
       _applyRows(rows);
     } catch (error, stackTrace) {

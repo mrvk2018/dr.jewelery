@@ -284,6 +284,9 @@ abstract class DatabaseService {
   /// Глобальные настройки welcome-акции (`app_settings`).
   Future<AppMarketingSettings> getAppMarketingSettings();
 
+  /// Полная выборка `products` для админ-рабочего стола (обход лимита PostgREST 1000).
+  Future<List<Map<String, dynamic>>> fetchAllProductRowsForAdminCatalog();
+
   /// Витрина: RPC [CatalogFacetedRpc.getAdvancedFacetedProducts] (строки `products` as Map).
   Future<List<Map<String, dynamic>>> fetchFacetedProducts({
     List<String>? baseTags,
@@ -1263,6 +1266,42 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.getAppMarketingSettings failed: $error');
       debugPrint('$stackTrace');
       return AppMarketingSettings.defaults;
+    }
+  }
+
+  static const _postgrestPageSize = 1000;
+
+  static const _adminCatalogProductColumns =
+      'id, sku, stock_quantity, weight_grams, size_value, metal_type, '
+      'gem_inserts, notes, additional_images, image_url, name, price, '
+      'sale_price, manufacturer, status, metal, insert';
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAllProductRowsForAdminCatalog() async {
+    final all = <Map<String, dynamic>>[];
+    var from = 0;
+    try {
+      for (;;) {
+        final to = from + _postgrestPageSize - 1;
+        final rows = await _supabaseClient
+            .from('products')
+            .select(_adminCatalogProductColumns)
+            .order('updated_at', ascending: false)
+            .range(from, to);
+        if (rows.isEmpty) break;
+        for (final row in rows) {
+          all.add(Map<String, dynamic>.from(row));
+        }
+        if (rows.length < _postgrestPageSize) break;
+        from += _postgrestPageSize;
+      }
+      return all;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchAllProductRowsForAdminCatalog failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return all;
     }
   }
 

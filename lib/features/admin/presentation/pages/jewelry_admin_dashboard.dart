@@ -1225,8 +1225,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       crossAxisCount: 2,
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
-      physics: const NeverScrollableScrollPhysics(),
+      childAspectRatio: 1,
       shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       children: List.generate(ProductItem.maxGalleryImages, (index) {
         if (index < _imageUrls.length) {
           return _PhotoSlot(url: _imageUrls[index]);
@@ -1252,6 +1253,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         child: Scrollbar(
           thumbVisibility: true,
           child: SingleChildScrollView(
+            primary: false,
             padding: const EdgeInsets.only(top: 4, right: 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1412,7 +1414,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 style: AppTypography.heading(fontSize: 15),
               ),
               const SizedBox(height: 8),
-              SizedBox(height: 200, child: _buildManualPhotoGrid()),
+              _buildManualPhotoGrid(),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _saving ? null : _pickPhoto,

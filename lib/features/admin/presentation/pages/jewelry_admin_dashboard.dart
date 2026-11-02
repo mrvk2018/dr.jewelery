@@ -1196,6 +1196,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
   }
 
+  static int? _restockQuantityIfMissing(Map<String, dynamic> row) {
+    final raw = row['stock_quantity'];
+    if (raw == null) return 1;
+    if (raw is num) {
+      return raw.toInt() <= 0 ? 1 : null;
+    }
+    final parsed = int.tryParse(raw.toString().trim());
+    if (parsed == null) return 1;
+    return parsed <= 0 ? 1 : null;
+  }
+
   Future<void> _submit({required bool asDraft}) async {
     final sku = _skuController.text.trim();
     final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
@@ -1233,6 +1244,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               gemInserts: _gemController.text,
               notes: notes,
               manufacturer: manufacturer,
+              stockQuantity: _restockQuantityIfMissing(widget.editProduct!),
             )
           : await widget.database.insertManualProduct(
               sku: sku,

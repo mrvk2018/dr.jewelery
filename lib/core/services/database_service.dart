@@ -337,6 +337,7 @@ abstract class DatabaseService {
     String gemInserts,
     String notes,
     String? manufacturer,
+    int? stockQuantity,
   });
 
   /// Обновление поля `notes` по SKU.
@@ -1471,9 +1472,9 @@ class CloudDatabaseService implements DatabaseService {
         'sale_price': priceKrw,
         'old_price': priceKrw,
         'status': 'active',
-        'stock_quantity': isDraft ? 0 : 1,
         'additional_images': additionalImages,
       };
+      payload['stock_quantity'] = isDraft ? 0 : 1;
       if (sizeValue != null) {
         payload['size_value'] = sizeValue;
       }
@@ -1501,6 +1502,7 @@ class CloudDatabaseService implements DatabaseService {
     String gemInserts = '',
     String notes = '',
     String? manufacturer,
+    int? stockQuantity,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1525,6 +1527,9 @@ class CloudDatabaseService implements DatabaseService {
     };
     if (sizeValue != null) {
       patch['size_value'] = sizeValue;
+    }
+    if (stockQuantity != null) {
+      patch['stock_quantity'] = stockQuantity.clamp(0, 999999);
     }
 
     try {

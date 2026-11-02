@@ -353,6 +353,12 @@ abstract class DatabaseService {
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
 
+  /// Админка: замена галереи `additional_images` (+ синхрон `image_url`) по `products.id`.
+  Future<bool> updateProductGalleryByProductId({
+    required String productId,
+    required List<String> additionalImages,
+  });
+
   /// Списание с витрины (`stock_quantity` → `0`).
   Future<bool> writeOffProductBySku(String sku);
 
@@ -1741,6 +1747,38 @@ class CloudDatabaseService implements DatabaseService {
       );
       debugPrint('$stackTrace');
       return null;
+    }
+  }
+
+  @override
+  Future<bool> updateProductGalleryByProductId({
+    required String productId,
+    required List<String> additionalImages,
+  }) async {
+    final id = productId.trim();
+    if (id.isEmpty) return false;
+    final nextImages = additionalImages
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .take(ProductItem.maxGalleryImages)
+        .toList();
+    final patch = <String, dynamic>{
+      'additional_images': nextImages,
+      'image_url': nextImages.isEmpty ? null : nextImages.first,
+    };
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update(patch)
+          .eq('id', id)
+          .select('id');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.updateProductGalleryByProductId failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return false;
     }
   }
 

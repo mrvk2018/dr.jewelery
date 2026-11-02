@@ -17,6 +17,45 @@ import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../screens/draft_intake_screen.dart';
 
+List<String> parseAdditionalImagesField(Object? raw) {
+  if (raw == null) return const [];
+  if (raw is List) {
+    return raw
+        .map((e) => e.toString().trim())
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+  if (raw is String) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is List) {
+        return decoded
+            .map((e) => e.toString().trim())
+            .where((url) => url.isNotEmpty)
+            .toList();
+      }
+    } catch (_) {
+      return const [];
+    }
+  }
+  return const [];
+}
+
+List<String> productGalleryImageUrls(Map<String, dynamic> row) {
+  final fromAdditional =
+      parseAdditionalImagesField(row['additional_images']);
+  if (fromAdditional.isNotEmpty) {
+    return fromAdditional.take(ProductItem.maxGalleryImages).toList();
+  }
+  final legacyUrl = row['image_url']?.toString().trim() ?? '';
+  if (legacyUrl.isNotEmpty) {
+    return [legacyUrl];
+  }
+  return const [];
+}
+
 /// Десктопный рабочий стол «Доктор Ювелир»: витрина + медиа + KPI.
 class JewelryAdminDashboard extends StatefulWidget {
   JewelryAdminDashboard({
@@ -65,43 +104,8 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
-  List<String> _parseAdditionalImagesField(Object? raw) {
-    if (raw == null) return const [];
-    if (raw is List) {
-      return raw
-          .map((e) => e.toString().trim())
-          .where((url) => url.isNotEmpty)
-          .toList();
-    }
-    if (raw is String) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) return const [];
-      try {
-        final decoded = jsonDecode(trimmed);
-        if (decoded is List) {
-          return decoded
-              .map((e) => e.toString().trim())
-              .where((url) => url.isNotEmpty)
-              .toList();
-        }
-      } catch (_) {
-        return const [];
-      }
-    }
-    return const [];
-  }
-
-  List<String> _imageUrls(Map<String, dynamic> row) {
-    final fromAdditional = _parseAdditionalImagesField(row['additional_images']);
-    if (fromAdditional.isNotEmpty) {
-      return fromAdditional.take(ProductItem.maxGalleryImages).toList();
-    }
-    final legacyUrl = row['image_url']?.toString().trim() ?? '';
-    if (legacyUrl.isNotEmpty) {
-      return [legacyUrl];
-    }
-    return const [];
-  }
+  List<String> _imageUrls(Map<String, dynamic> row) =>
+      productGalleryImageUrls(row);
 
   Future<void> _fetchAndMergeProductMedia(String sku) async {
     if (sku.isEmpty) return;
@@ -906,7 +910,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _silverType = '925 Родированное';
   bool _saving = false;
 
-  List<String> _imageUrls = const [];
+  List<String> _imageUrls = [];
   final List<XFile> _deferredPhotos = [];
 
   static const _goldTypes = [
@@ -972,9 +976,30 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _applyMetalFromStored(
       (edit['metal_type'] ?? edit['metal'])?.toString() ?? '',
     );
-    _imageUrls = _parseImageUrls(edit);
+    _imageUrls = List<String>.from(productGalleryImageUrls(edit));
     _initNameFields(_extractStoredName(edit));
     _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_hydrateGalleryFromServer());
+    });
+  }
+
+  Future<void> _hydrateGalleryFromServer() async {
+    if (!_isEditMode) return;
+    final sku = _skuController.text.trim();
+    if (sku.isEmpty) return;
+    try {
+      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      if (!mounted || media == null) return;
+      final merged = Map<String, dynamic>.from(widget.editProduct!)
+        ..addAll(media);
+      final urls = productGalleryImageUrls(merged);
+      if (urls.isEmpty) return;
+      setState(() => _imageUrls = List<String>.from(urls));
+    } catch (error, stackTrace) {
+      debugPrint('_ManualProductDialog._hydrateGalleryFromServer: $error');
+      debugPrint('$stackTrace');
+    }
   }
 
   void _initManufacturerFields(String storedManufacturer) {
@@ -1025,14 +1050,54 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     return '';
   }
 
-  static List<String> _parseImageUrls(Map<String, dynamic> row) {
-    final raw = row['additional_images'];
-    if (raw is! List) return const [];
-    return raw
-        .map((e) => e.toString().trim())
-        .where((url) => url.isNotEmpty)
-        .take(ProductItem.maxGalleryImages)
-        .toList();
+  Future<void> _confirmRemoveNetworkPhoto(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить фото?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.saleRed,
+            ),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (index < 0 || index >= _imageUrls.length) return;
+    setState(() => _imageUrls = List<String>.from(_imageUrls)..removeAt(index));
+  }
+
+  Future<void> _confirmRemoveDeferredPhoto(int index) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить фото?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.saleRed,
+            ),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    if (index < 0 || index >= _deferredPhotos.length) return;
+    setState(() => _deferredPhotos.removeAt(index));
   }
 
   @override
@@ -1194,6 +1259,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         return;
       }
 
+      if (_isEditMode) {
+        final productId = widget.editProduct!['id']?.toString().trim() ?? '';
+        final galleryOk = await widget.database.updateProductGalleryByProductId(
+          productId: productId,
+          additionalImages: _imageUrls,
+        );
+        if (!galleryOk) {
+          _snack('Карточка сохранена, но галерея фото не обновилась', error: true);
+        }
+      }
+
       if (_deferredPhotos.isNotEmpty) {
         await _uploadDeferredPhotos(sku);
       }
@@ -1230,13 +1306,19 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       physics: const NeverScrollableScrollPhysics(),
       children: List.generate(ProductItem.maxGalleryImages, (index) {
         if (index < _imageUrls.length) {
-          return _PhotoSlot(url: _imageUrls[index]);
+          return _ManualDialogPhotoSlot(
+            url: _imageUrls[index],
+            onRemove: () => _confirmRemoveNetworkPhoto(index),
+          );
         }
         final deferredIndex = index - _imageUrls.length;
         if (deferredIndex < _deferredPhotos.length) {
-          return _DeferredPhotoSlot(file: _deferredPhotos[deferredIndex]);
+          return _ManualDialogPhotoSlot(
+            deferredFile: _deferredPhotos[deferredIndex],
+            onRemove: () => _confirmRemoveDeferredPhoto(deferredIndex),
+          );
         }
-        return const _PhotoSlot();
+        return const _ManualDialogPhotoSlot();
       }),
     );
   }
@@ -1461,37 +1543,110 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 }
 
-class _DeferredPhotoSlot extends StatelessWidget {
-  const _DeferredPhotoSlot({required this.file});
+class _ManualDialogPhotoSlot extends StatelessWidget {
+  const _ManualDialogPhotoSlot({
+    this.url,
+    this.deferredFile,
+    this.onRemove,
+  });
 
-  final XFile file;
+  final String? url;
+  final XFile? deferredFile;
+  final VoidCallback? onRemove;
+
+  bool get _hasPhoto =>
+      (url != null && url!.isNotEmpty) || deferredFile != null;
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: 1,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.accent, width: 2),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: FutureBuilder<Uint8List>(
-            future: file.readAsBytes(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-              }
-              return Image.memory(
-                snapshot.data!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
-              );
-            },
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: !_hasPhoto
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.image_not_supported_outlined,
+                          color: AppColors.textSecondary.withValues(alpha: 0.5),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('Нет фото', style: AppTypography.productMeta()),
+                      ],
+                    )
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: url != null && url!.isNotEmpty
+                          ? Image.network(
+                              url!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  const Icon(Icons.broken_image_outlined),
+                            )
+                          : _DeferredPhotoPreview(file: deferredFile!),
+                    ),
+            ),
           ),
-        ),
+          if (_hasPhoto && onRemove != null)
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Material(
+                color: AppColors.saleRed,
+                elevation: 2,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onRemove,
+                  customBorder: const CircleBorder(),
+                  child: const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class _DeferredPhotoPreview extends StatelessWidget {
+  const _DeferredPhotoPreview({required this.file});
+
+  final XFile file;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Uint8List>(
+      future: file.readAsBytes(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+        return Image.memory(
+          snapshot.data!,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
+        );
+      },
     );
   }
 }

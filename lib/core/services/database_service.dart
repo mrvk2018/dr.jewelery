@@ -1548,12 +1548,17 @@ class CloudDatabaseService implements DatabaseService {
     if (normalizedSku.isEmpty || bytes.isEmpty) return null;
 
     try {
-      final existing = await _supabaseClient
+      final matches = await _supabaseClient
           .from('products')
-          .select('additional_images')
+          .select('id, additional_images')
           .eq('sku', normalizedSku)
-          .maybeSingle();
-      if (existing == null) return null;
+          .order('updated_at', ascending: false)
+          .limit(1);
+      if (matches.isEmpty) return null;
+
+      final existing = Map<String, dynamic>.from(matches.first as Map);
+      final productId = existing['id']?.toString().trim() ?? '';
+      if (productId.isEmpty) return null;
 
       final currentRaw = existing['additional_images'];
       final current = currentRaw is List
@@ -1586,8 +1591,8 @@ class CloudDatabaseService implements DatabaseService {
       final rows = await _supabaseClient
           .from('products')
           .update({'additional_images': nextImages})
-          .eq('sku', normalizedSku)
-          .select('sku');
+          .eq('id', productId)
+          .select('id');
       return rows.isNotEmpty ? versionedUrl : null;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $error');
@@ -1601,13 +1606,14 @@ class CloudDatabaseService implements DatabaseService {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return null;
     try {
-      final row = await _supabaseClient
+      final rows = await _supabaseClient
           .from('products')
           .select('additional_images, image_url')
           .eq('sku', normalizedSku)
-          .maybeSingle();
-      if (row == null) return null;
-      return Map<String, dynamic>.from(row);
+          .order('updated_at', ascending: false)
+          .limit(1);
+      if (rows.isEmpty) return null;
+      return Map<String, dynamic>.from(rows.first as Map);
     } catch (error, stackTrace) {
       debugPrint(
         'CloudDatabaseService.fetchProductMediaFieldsBySku failed: $error',

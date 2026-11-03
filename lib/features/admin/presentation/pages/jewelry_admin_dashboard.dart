@@ -271,8 +271,14 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       builder: (context) => _ManualProductDialog(
         database: widget.database,
         editProduct: editProduct,
-        onSaved: () async {
-          _snack(isEdit ? 'Карточка обновлена' : 'Товар добавлен на витрину');
+        onSaved: ({required bool asDraft}) async {
+          if (isEdit) {
+            _snack('Карточка обновлена');
+          } else if (asDraft) {
+            _snack('Товар успешно сохранен в черновики');
+          } else {
+            _snack('Товар успешно добавлен на витрину');
+          }
           await _refreshCatalog();
         },
       ),
@@ -923,7 +929,7 @@ class _ManualProductDialog extends StatefulWidget {
   });
 
   final DatabaseService database;
-  final VoidCallback onSaved;
+  final Future<void> Function({required bool asDraft}) onSaved;
   final Map<String, dynamic>? editProduct;
 
   bool get isEditMode => editProduct != null;
@@ -1357,11 +1363,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         await _uploadDeferredPhotos(sku);
       }
 
-      widget.onSaved();
+      await widget.onSaved(asDraft: asDraft);
       if (!mounted) return;
-      if (asDraft && !_isEditMode) {
-        _snack('Товар успешно сохранен в черновики (Приёмка)');
-      }
       Navigator.pop(context);
     } catch (error) {
       _snack('Ошибка: $error', error: true);

@@ -318,6 +318,56 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     }
   }
 
+  Future<void> _markSoldSelected() async {
+    final row = _selected;
+    if (row == null) {
+      _snack('Выберите товар в таблице', error: true);
+      return;
+    }
+    final sku = _cell(row, 'sku');
+    final productId = row['id']?.toString().trim() ?? '';
+    if (productId.isEmpty) {
+      _snack('У позиции нет id', error: true);
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Продано'),
+        content: Text(
+          'Зафиксировать ручную продажу изделия $sku и перенести в историю продаж?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF1B5E20),
+            ),
+            child: const Text('Продано'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final ok = await widget.database.markProductSoldByProductId(productId);
+      if (!ok) {
+        _snack('Продажа не зафиксирована (RLS?)', error: true);
+        return;
+      }
+      _snack('Продажа $sku зафиксирована · история обновится на сервере');
+      await _refreshCatalog();
+    } catch (error) {
+      _snack('Ошибка продажи: $error', error: true);
+    }
+  }
+
   Future<void> _printDuplicateLabel() async {
     final row = _selected;
     if (row == null) {
@@ -373,12 +423,6 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text(
-          'Доктор Ювелир · Рабочий стол',
-          style: AppTypography.heading(fontSize: 20),
-        ),
-      ),
       body: _initialLoading
           ? const Center(child: CircularProgressIndicator())
           : Padding(
@@ -434,6 +478,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     hasSelection: _selected != null,
                     onPrint: _printDuplicateLabel,
                     onEdit: _editSelectedCard,
+                    onMarkSold: _markSoldSelected,
                     onWriteOff: _writeOffSelected,
                   ),
                 ],
@@ -799,13 +844,17 @@ class _BottomActionBar extends StatelessWidget {
     required this.hasSelection,
     required this.onPrint,
     required this.onEdit,
+    required this.onMarkSold,
     required this.onWriteOff,
   });
 
   final bool hasSelection;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
+  final VoidCallback onMarkSold;
   final VoidCallback onWriteOff;
+
+  static const _soldGreen = Color(0xFF1B5E20);
 
   @override
   Widget build(BuildContext context) {
@@ -830,6 +879,15 @@ class _BottomActionBar extends StatelessWidget {
               onPressed: hasSelection ? onEdit : null,
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Редактировать карточку'),
+            ),
+            FilledButton.icon(
+              onPressed: hasSelection ? onMarkSold : null,
+              icon: const Icon(Icons.handshake_outlined),
+              label: const Text('Продано'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _soldGreen,
+                foregroundColor: Colors.white,
+              ),
             ),
             OutlinedButton.icon(
               onPressed: hasSelection ? onWriteOff : null,

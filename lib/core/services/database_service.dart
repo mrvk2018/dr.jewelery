@@ -363,6 +363,9 @@ abstract class DatabaseService {
   /// Списание с витрины (`stock_quantity` → `0`).
   Future<bool> writeOffProductBySku(String sku);
 
+  /// Ручная продажа админом: `status = sold`, `stock_quantity = 0` (триггер → sales_history).
+  Future<bool> markProductSoldByProductId(String productId);
+
   /// POS: карточка товара по `qr_code_payload`.
   Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload);
 
@@ -1800,6 +1803,24 @@ class CloudDatabaseService implements DatabaseService {
       return rows.isNotEmpty;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.writeOffProductBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> markProductSoldByProductId(String productId) async {
+    final id = productId.trim();
+    if (id.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'status': 'sold', 'stock_quantity': 0})
+          .eq('id', id)
+          .select('id');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.markProductSoldByProductId failed: $error');
       debugPrint('$stackTrace');
       return false;
     }

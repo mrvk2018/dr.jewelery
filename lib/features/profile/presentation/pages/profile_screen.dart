@@ -13,7 +13,7 @@ import '../../../../shared/providers/favorites_scope.dart';
 import '../../../../shared/providers/locale_provider.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../admin/presentation/pages/admin_panel_screen.dart';
-import '../../../admin/presentation/pages/jewelry_admin_dashboard.dart';
+import '../../../admin/presentation/pages/admin_web_shell.dart';
 import '../../../seller/presentation/screens/seller_terminal_screen.dart';
 import '../../../admin/presentation/widgets/admin_first_claim_dialog.dart';
 import '../../../admin/presentation/widgets/admin_unlock_dialog.dart';
@@ -242,7 +242,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => kIsWeb
-            ? JewelryAdminDashboard()
+            ? const AdminWebShell()
             : const AdminPanelScreen(),
       ),
     );

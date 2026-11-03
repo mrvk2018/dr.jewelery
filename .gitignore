@@ -66,6 +66,12 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+!migration/.env.example
+migration/.env
+migration/.venv/
+migration/migration_errors.log
+migration/.migration_checkpoint.json
+migration/*.log
 *.jks
 *.keystore
 **/google-services.json

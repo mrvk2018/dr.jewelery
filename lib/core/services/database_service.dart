@@ -55,6 +55,12 @@ abstract final class AdminOrdersRpc {
   static const adminEmailParam = 'p_admin_email';
 }
 
+/// RPC ручной продажи в админ-PWA (обход GRANT/RLS на products).
+abstract final class AdminCatalogRpc {
+  static const markProductSoldManual = 'mark_product_sold_manual';
+  static const productIdParam = 'p_product_id';
+}
+
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
 abstract final class CatalogFacetedRpc {
   static const getAdvancedFacetedProducts = 'get_advanced_faceted_products';
@@ -1813,12 +1819,19 @@ class CloudDatabaseService implements DatabaseService {
     final id = productId.trim();
     if (id.isEmpty) return false;
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update({'status': 'sold', 'stock_quantity': 0})
-          .eq('id', id)
-          .select('id');
-      return rows.isNotEmpty;
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.markProductSoldManual,
+        params: {
+          AdminCatalogRpc.productIdParam: id,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      if (result is bool) return result;
+      if (result is Map) {
+        final ok = result['ok'];
+        if (ok is bool) return ok;
+      }
+      return result == true;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.markProductSoldByProductId failed: $error');
       debugPrint('$stackTrace');

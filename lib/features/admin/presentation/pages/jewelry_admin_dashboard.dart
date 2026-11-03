@@ -89,6 +89,16 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return (row['stock_quantity'] as num?)?.toInt() ?? 0;
   }
 
+  String _catalogStatus(Map<String, dynamic> row) {
+    return row['status']?.toString().trim() ?? 'active';
+  }
+
+  /// Рабочий стол: только витрина в наличии (не черновики hidden, не нулевой остаток).
+  bool _isShowroomRow(Map<String, dynamic> row) {
+    if (_catalogStatus(row) == 'hidden') return false;
+    return _stockQty(row) > 0;
+  }
+
   String _cell(Map<String, dynamic> row, String key) {
     final value = row[key];
     if (value == null) return '—';
@@ -176,7 +186,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   }
 
   void _applyRows(List<Map<String, dynamic>> rows) {
-    final active = rows.where((row) => _stockQty(row) > 0).toList();
+    final active = rows.where(_isShowroomRow).toList();
     Map<String, dynamic>? selected = _selected;
     if (selected != null) {
       final sku = _cell(selected, 'sku');
@@ -1255,6 +1265,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 
   static int? _restockQuantityIfMissing(Map<String, dynamic> row) {
+    final status = row['status']?.toString().trim();
+    if (status == 'hidden') return null;
+
     final raw = row['stock_quantity'];
     if (raw == null) return 1;
     if (raw is num) {

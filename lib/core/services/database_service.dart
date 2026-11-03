@@ -59,6 +59,9 @@ abstract final class AdminOrdersRpc {
 abstract final class AdminCatalogRpc {
   static const markProductSoldManual = 'mark_product_sold_manual';
   static const productIdParam = 'p_product_id';
+  static const activateDraftBySku = 'activate_draft_product_by_sku';
+  static const activateAllDrafts = 'activate_all_draft_products';
+  static const skuParam = 'p_sku';
 }
 
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
@@ -1391,13 +1394,14 @@ class CloudDatabaseService implements DatabaseService {
     final normalized = sku.trim();
     if (normalized.isEmpty) return false;
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update({'stock_quantity': 1})
-          .eq('sku', normalized)
-          .eq('stock_quantity', 0)
-          .select('sku');
-      return rows.isNotEmpty;
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.activateDraftBySku,
+        params: {
+          AdminCatalogRpc.skuParam: normalized,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return result == true;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.activateDraftProductBySku failed: $error');
       debugPrint('$stackTrace');
@@ -1408,12 +1412,12 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<int> activateAllDraftProducts() async {
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update({'stock_quantity': 1})
-          .eq('stock_quantity', 0)
-          .select('sku');
-      return rows.length;
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.activateAllDrafts,
+        params: {AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail},
+      );
+      if (result is num) return result.toInt();
+      return int.tryParse(result?.toString() ?? '') ?? 0;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.activateAllDraftProducts failed: $error');
       debugPrint('$stackTrace');
@@ -1480,7 +1484,7 @@ class CloudDatabaseService implements DatabaseService {
         'price': priceKrw,
         'sale_price': priceKrw,
         'old_price': priceKrw,
-        'status': 'active',
+        'status': isDraft ? 'hidden' : 'active',
         'additional_images': additionalImages,
       };
       payload['stock_quantity'] = isDraft ? 0 : 1;

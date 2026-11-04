@@ -61,7 +61,12 @@ abstract final class AdminCatalogRpc {
   static const productIdParam = 'p_product_id';
   static const activateDraftBySku = 'activate_draft_product_by_sku';
   static const activateAllDrafts = 'activate_all_draft_products';
+  static const adminGetProductGalleryContextBySku =
+      'admin_get_product_gallery_context_by_sku';
+  static const adminSetProductAdditionalImages =
+      'admin_set_product_additional_images';
   static const skuParam = 'p_sku';
+  static const additionalImagesParam = 'p_additional_images';
 }
 
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
@@ -1604,6 +1609,51 @@ class CloudDatabaseService implements DatabaseService {
     return 'jpg';
   }
 
+  Future<Map<String, dynamic>?> _adminProductGalleryContextBySku(String sku) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.adminGetProductGalleryContextBySku,
+        params: {
+          AdminCatalogRpc.skuParam: sku,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      if (result is! Map) return null;
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] != true) return null;
+      return map;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._adminProductGalleryContextBySku failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  Future<bool> _adminSetProductAdditionalImages(
+    String productId,
+    List<String> additionalImages,
+  ) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.adminSetProductAdditionalImages,
+        params: {
+          AdminCatalogRpc.productIdParam: productId,
+          AdminCatalogRpc.additionalImagesParam: additionalImages,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return result == true;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._adminSetProductAdditionalImages failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
   /// JPEG/PNG с picker → WebP (как [sync.js] / sharp для bucket `product-images`).
   static Uint8List? _productImageBytesAsWebp(Uint8List raw) {
     try {
@@ -1647,20 +1697,14 @@ class CloudDatabaseService implements DatabaseService {
     }
 
     try {
-      final matches = await _supabaseClient
-          .from('products')
-          .select('id, additional_images')
-          .eq('sku', normalizedSku)
-          .order('updated_at', ascending: false)
-          .limit(1);
-      if (matches.isEmpty) {
+      final existing = await _adminProductGalleryContextBySku(normalizedSku);
+      if (existing == null) {
         print(
-          '!!! UPLOAD FAILED AT: rows empty (no product for sku=$normalizedSku)',
+          '!!! UPLOAD FAILED AT: rows empty (no product for sku=$normalizedSku, RLS/hidden?)',
         );
         return null;
       }
 
-      final existing = Map<String, dynamic>.from(matches.first as Map);
       final productId = existing['id']?.toString().trim() ?? '';
       if (productId.isEmpty) {
         print('!!! UPLOAD FAILED AT: productId is null or empty');
@@ -1720,14 +1764,10 @@ class CloudDatabaseService implements DatabaseService {
       final versionedUrl = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
       final nextImages = [...current, versionedUrl];
 
-      final rows = await _supabaseClient
-          .from('products')
-          .update({'additional_images': nextImages})
-          .eq('id', productId)
-          .select('id');
-      if (rows.isEmpty) {
+      final saved = await _adminSetProductAdditionalImages(productId, nextImages);
+      if (!saved) {
         print(
-          '!!! UPLOAD FAILED AT: update additional_images returned no rows '
+          '!!! UPLOAD FAILED AT: admin_set_product_additional_images '
           '(productId=$productId)',
         );
         return null;
@@ -1751,14 +1791,12 @@ class CloudDatabaseService implements DatabaseService {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return null;
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .select('additional_images, image_url')
-          .eq('sku', normalizedSku)
-          .order('updated_at', ascending: false)
-          .limit(1);
-      if (rows.isEmpty) return null;
-      return Map<String, dynamic>.from(rows.first as Map);
+      final ctx = await _adminProductGalleryContextBySku(normalizedSku);
+      if (ctx == null) return null;
+      return {
+        'additional_images': ctx['additional_images'],
+        'image_url': ctx['image_url'],
+      };
     } catch (error, stackTrace) {
       debugPrint(
         'CloudDatabaseService.fetchProductMediaFieldsBySku failed: $error',
@@ -1780,17 +1818,8 @@ class CloudDatabaseService implements DatabaseService {
         .where((url) => url.isNotEmpty)
         .take(ProductItem.maxGalleryImages)
         .toList();
-    final patch = <String, dynamic>{
-      'additional_images': nextImages,
-      'image_url': nextImages.isEmpty ? null : nextImages.first,
-    };
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update(patch)
-          .eq('id', id)
-          .select('id');
-      return rows.isNotEmpty;
+      return await _adminSetProductAdditionalImages(id, nextImages);
     } catch (error, stackTrace) {
       debugPrint(
         'CloudDatabaseService.updateProductGalleryByProductId failed: $error',

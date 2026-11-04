@@ -97,6 +97,18 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
+  static String? _thumbnailUrl(Map<String, dynamic> row) {
+    final direct = row['image_url']?.toString().trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final raw = row['additional_images'];
+    if (raw is List && raw.isNotEmpty) {
+      final first = raw.first?.toString().trim() ?? '';
+      if (first.isNotEmpty) return first;
+    }
+    return null;
+  }
+
   Future<String?> _confirmAcceptWithPreview(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
     return showDialog<String>(
@@ -374,6 +386,7 @@ class _DraftTable extends StatelessWidget {
                       AppColors.cardBackground,
                     ),
                     columns: const [
+                      DataColumn(label: Text('Фото')),
                       DataColumn(label: Text('SKU')),
                       DataColumn(label: Text('Металл')),
                       DataColumn(label: Text('Вес, г')),
@@ -386,6 +399,9 @@ class _DraftTable extends StatelessWidget {
                       final busy = busySkus.contains(sku);
                       return DataRow(
                         cells: [
+                          DataCell(
+                            _DraftThumbnail(url: _DraftIntakeScreenState._thumbnailUrl(row)),
+                          ),
                           DataCell(Text(sku)),
                           DataCell(
                             Text(_DraftIntakeScreenState._field(row, 'metal_type')),
@@ -424,6 +440,64 @@ class _DraftTable extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _DraftThumbnail extends StatelessWidget {
+  const _DraftThumbnail({this.url});
+
+  final String? url;
+
+  static const _size = 48.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolved = url?.trim();
+    if (resolved == null || resolved.isEmpty) {
+      return _placeholder();
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        resolved,
+        width: _size,
+        height: _size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => _placeholder(),
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return SizedBox(
+            width: _size,
+            height: _size,
+            child: const Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return Container(
+      width: _size,
+      height: _size,
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Icon(
+        Icons.image_not_supported_outlined,
+        size: 22,
+        color: AppColors.textSecondary,
       ),
     );
   }

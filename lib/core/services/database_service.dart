@@ -65,6 +65,7 @@ abstract final class AdminCatalogRpc {
       'admin_get_product_gallery_context_by_sku';
   static const adminSetProductAdditionalImages =
       'admin_set_product_additional_images';
+  static const deleteDraftBySku = 'delete_draft_product_by_sku';
   static const skuParam = 'p_sku';
   static const additionalImagesParam = 'p_additional_images';
 }
@@ -322,6 +323,9 @@ abstract class DatabaseService {
 
   /// Массовая активация всех черновиков (`stock_quantity = 0` → `1`).
   Future<int> activateAllDraftProducts();
+
+  /// Удаление черновика приёмки (RPC `delete_draft_product_by_sku`).
+  Future<bool> deleteDraftProductBySku(String sku);
 
   /// Поштучное добавление: витрина (`stock_quantity = 1`) или черновик (`0`).
   Future<bool> insertManualProduct({
@@ -1427,6 +1431,26 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.activateAllDraftProducts failed: $error');
       debugPrint('$stackTrace');
       return 0;
+    }
+  }
+
+  @override
+  Future<bool> deleteDraftProductBySku(String sku) async {
+    final normalized = sku.trim();
+    if (normalized.isEmpty) return false;
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.deleteDraftBySku,
+        params: {
+          AdminCatalogRpc.skuParam: normalized,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return result == true;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteDraftProductBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
     }
   }
 

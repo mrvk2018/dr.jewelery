@@ -168,6 +168,51 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }
   }
 
+  Future<void> _deleteSingle(Map<String, dynamic> row) async {
+    final sku = _field(row, 'sku');
+    if (sku == '—') return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить черновик?', style: AppTypography.heading(fontSize: 18)),
+        content: Text(
+          'SKU $sku будет удалён из базы без возможности восстановления.',
+          style: AppTypography.productMeta(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.saleRed),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _rowBusySkus.add(sku));
+    try {
+      final ok = await widget.database.deleteDraftProductBySku(sku);
+      if (!mounted) return;
+      if (!ok) {
+        _showSnack('Не удалось удалить $sku', isError: true);
+        return;
+      }
+      _showSnack('Черновик $sku удалён');
+      await _runSearch(_searchController.text);
+    } catch (error) {
+      if (!mounted) return;
+      _showSnack('Ошибка удаления: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _rowBusySkus.remove(sku));
+    }
+  }
+
   Future<void> _acceptEntireShipment() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -249,6 +294,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     loading: _searchLoading,
                     busySkus: _rowBusySkus,
                     onAcceptRow: _acceptSingle,
+                    onDeleteRow: _deleteSingle,
                   ),
                 ),
               ],
@@ -343,12 +389,14 @@ class _DraftTable extends StatelessWidget {
     required this.loading,
     required this.busySkus,
     required this.onAcceptRow,
+    required this.onDeleteRow,
   });
 
   final List<Map<String, dynamic>> drafts;
   final bool loading;
   final Set<String> busySkus;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
+  final Future<void> Function(Map<String, dynamic> row) onDeleteRow;
 
   @override
   Widget build(BuildContext context) {
@@ -420,15 +468,30 @@ class _DraftTable extends StatelessWidget {
                             Text(_DraftIntakeScreenState._field(row, 'gem_inserts')),
                           ),
                           DataCell(
-                            FilledButton.tonal(
-                              onPressed: busy ? null : () => onAcceptRow(row),
-                              child: busy
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Text('Принять и напечатать'),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                FilledButton.tonal(
+                                  onPressed: busy ? null : () => onAcceptRow(row),
+                                  child: busy
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Text('Принять и напечатать'),
+                                ),
+                                IconButton(
+                                  tooltip: 'Удалить черновик',
+                                  onPressed: busy ? null : () => onDeleteRow(row),
+                                  icon: Icon(
+                                    Icons.delete_outline,
+                                    color: busy
+                                        ? AppColors.textSecondary
+                                        : AppColors.saleRed,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],

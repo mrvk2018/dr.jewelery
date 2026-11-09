@@ -40,12 +40,12 @@ class CatalogProductGrid extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                'Ничего не найдено',
+                'Товары не найдены',
                 style: AppTypography.heading(fontSize: 18),
               ),
               const SizedBox(height: 4),
               Text(
-                'Попробуйте изменить фильтры или поисковый запрос',
+                'Измените параметры фильтрации или нажмите «Сбросить»',
                 textAlign: TextAlign.center,
                 style: AppTypography.productMetaStyle.copyWith(fontSize: 13),
               ),

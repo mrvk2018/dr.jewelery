@@ -8,6 +8,35 @@ double? _parseSizeToken(String raw) {
   return double.tryParse(normalized);
 }
 
+bool _metalMatchesFamily(String metal, Set<String> families) {
+  if (families.isEmpty) return true;
+  final m = metal.toLowerCase();
+  for (final family in families) {
+    switch (family) {
+      case CatalogMetalFamilies.gold:
+        if (m.contains('золот') || m.contains('gold') || m.contains('au')) {
+          return true;
+        }
+      case CatalogMetalFamilies.platinum:
+        if (m.contains('платин') || m.contains('pt') || m.contains('plat')) {
+          return true;
+        }
+      case CatalogMetalFamilies.silver:
+        if (m.contains('серебр') || m.contains('silver') || m.contains('ag')) {
+          return true;
+        }
+    }
+  }
+  return false;
+}
+
+bool _matchesFineness(ProductItem product, Set<String> finenessTokens) {
+  if (finenessTokens.isEmpty) return true;
+  final haystack =
+      '${product.metal} ${product.sku}'.toLowerCase();
+  return finenessTokens.any((token) => haystack.contains(token.toLowerCase()));
+}
+
 /// Faceted-фильтрация каталога (локальный fallback и превью drawer).
 List<ProductItem> filterCatalogProducts({
   required List<ProductItem> products,
@@ -18,6 +47,10 @@ List<ProductItem> filterCatalogProducts({
   List<String>? sizes,
   List<String>? inserts,
   CatalogFilterState filters = const CatalogFilterState(),
+  int? priceMinKrw,
+  int? priceMaxKrw,
+  double? weightMinGrams,
+  double? weightMaxGrams,
 }) {
   final query = searchQuery.trim().toLowerCase();
   final categorySet = {
@@ -36,6 +69,15 @@ List<ProductItem> filterCatalogProducts({
     ...?sizes?.map((s) => s.trim()).where((s) => s.isNotEmpty),
     ...filters.selectedSizes.map((s) => s.toString()),
   };
+
+  final effectivePriceMin =
+      priceMinKrw ?? filters.priceMinKrw;
+  final effectivePriceMax =
+      priceMaxKrw ?? filters.priceMaxKrw;
+  final effectiveWeightMin =
+      weightMinGrams ?? filters.weightMinGrams;
+  final effectiveWeightMax =
+      weightMaxGrams ?? filters.weightMaxGrams;
 
   return products.where((product) {
     final matchesCategory = categorySet.isEmpty ||
@@ -65,10 +107,26 @@ List<ProductItem> filterCatalogProducts({
           );
         });
 
+    final matchesPrice = product.salePrice >= effectivePriceMin &&
+        product.salePrice <= effectivePriceMax;
+
+    final weight = product.weightGrams;
+    final matchesWeight = weight == null ||
+        (weight >= effectiveWeightMin && weight <= effectiveWeightMax);
+
+    final matchesMetalFamily =
+        _metalMatchesFamily(product.metal, filters.selectedMetalFamilies);
+
+    final matchesFineness = _matchesFineness(product, filters.selectedFineness);
+
     return matchesCategory &&
         matchesSearch &&
         matchesMetal &&
         matchesInsert &&
-        matchesSize;
+        matchesSize &&
+        matchesPrice &&
+        matchesWeight &&
+        matchesMetalFamily &&
+        matchesFineness;
   }).toList();
 }

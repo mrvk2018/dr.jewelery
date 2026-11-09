@@ -9,6 +9,7 @@ class SalesHistoryRow {
     this.imageUrl,
     this.photoStatus,
     this.rawLegacyPayload,
+    this.migrationMeta,
   });
 
   final String id;
@@ -20,6 +21,12 @@ class SalesHistoryRow {
   final String? imageUrl;
   final String? photoStatus;
   final Map<String, dynamic>? rawLegacyPayload;
+  final Map<String, dynamic>? migrationMeta;
+
+  bool get isReturnLine =>
+      priceKrw < 0 ||
+      migrationMeta?['type']?.toString() == 'return' ||
+      legacyId.startsWith('return_');
 
   factory SalesHistoryRow.fromMap(Map<String, dynamic> map) {
     return SalesHistoryRow(
@@ -32,6 +39,33 @@ class SalesHistoryRow {
       imageUrl: map['image_url']?.toString().trim(),
       photoStatus: map['photo_status']?.toString().trim(),
       rawLegacyPayload: _parsePayload(map['raw_legacy_payload']),
+      migrationMeta: _parsePayload(map['migration_meta']),
+    );
+  }
+
+  SalesHistoryRow copyWith({
+    String? id,
+    String? legacyId,
+    String? sku,
+    int? priceKrw,
+    DateTime? soldAtUtc,
+    String? soldDateKst,
+    String? imageUrl,
+    String? photoStatus,
+    Map<String, dynamic>? rawLegacyPayload,
+    Map<String, dynamic>? migrationMeta,
+  }) {
+    return SalesHistoryRow(
+      id: id ?? this.id,
+      legacyId: legacyId ?? this.legacyId,
+      sku: sku ?? this.sku,
+      priceKrw: priceKrw ?? this.priceKrw,
+      soldAtUtc: soldAtUtc ?? this.soldAtUtc,
+      soldDateKst: soldDateKst ?? this.soldDateKst,
+      imageUrl: imageUrl ?? this.imageUrl,
+      photoStatus: photoStatus ?? this.photoStatus,
+      rawLegacyPayload: rawLegacyPayload ?? this.rawLegacyPayload,
+      migrationMeta: migrationMeta ?? this.migrationMeta,
     );
   }
 

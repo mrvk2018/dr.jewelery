@@ -5,10 +5,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../printing/application/label_print_service.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
-import '../../../printing/domain/jewelry_label_layout.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
+import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
 
 /// Складская приёмка черновиков (`stock_quantity = 0` → `1`) + печать этикеток.
 class DraftIntakeScreen extends StatefulWidget {
@@ -26,9 +25,6 @@ class DraftIntakeScreen extends StatefulWidget {
 class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   final _searchController = TextEditingController();
   Timer? _debounce;
-  final LabelPrintService _labelPrintService = const LabelPrintService(
-    protocol: LabelPrinterProtocol.tspl,
-  );
 
   List<Map<String, dynamic>> _drafts = const [];
   bool _searchLoading = false;
@@ -119,7 +115,12 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
 
   Future<void> _printLabelForProduct(Map<String, dynamic> row) async {
     try {
-      await _labelPrintService.printFromProductMap(row);
+      await JewelryLabelPrintDialog.showAndPrint(
+        context,
+        productRow: row,
+        titleSuffix: 'Приёмка',
+      );
+      if (mounted) _showSnack('Печать ценника запущена');
     } catch (error, stackTrace) {
       debugPrint('DraftIntakeScreen._printLabelForProduct failed: $error');
       debugPrint('$stackTrace');
@@ -158,7 +159,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
       final printRow = Map<String, dynamic>.from(row)..['notes'] = productName;
       await _printLabelForProduct(printRow);
 
-      _showSnack('Принят $sku — этикетка отправлена на печать');
+      _showSnack('Принят $sku — на витрине (stock=1)');
+      await _printLabelForProduct(printRow);
       await _runSearch(_searchController.text);
     } catch (error) {
       if (!mounted) return;
@@ -294,6 +296,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     loading: _searchLoading,
                     busySkus: _rowBusySkus,
                     onAcceptRow: _acceptSingle,
+                    onPrintRow: _printLabelForProduct,
                     onDeleteRow: _deleteSingle,
                   ),
                 ),
@@ -389,6 +392,7 @@ class _DraftTable extends StatelessWidget {
     required this.loading,
     required this.busySkus,
     required this.onAcceptRow,
+    required this.onPrintRow,
     required this.onDeleteRow,
   });
 
@@ -396,6 +400,7 @@ class _DraftTable extends StatelessWidget {
   final bool loading;
   final Set<String> busySkus;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
+  final Future<void> Function(Map<String, dynamic> row) onPrintRow;
   final Future<void> Function(Map<String, dynamic> row) onDeleteRow;
 
   @override
@@ -479,7 +484,17 @@ class _DraftTable extends StatelessWidget {
                                           height: 16,
                                           child: CircularProgressIndicator(strokeWidth: 2),
                                         )
-                                      : const Text('Принять и напечатать'),
+                                      : const Text('Принять'),
+                                ),
+                                IconButton(
+                                  tooltip: 'Печать ценника',
+                                  onPressed: busy ? null : () => onPrintRow(row),
+                                  icon: Icon(
+                                    Icons.print_outlined,
+                                    color: busy
+                                        ? AppColors.textSecondary
+                                        : AppColors.accent,
+                                  ),
                                 ),
                                 IconButton(
                                   tooltip: 'Удалить черновик',

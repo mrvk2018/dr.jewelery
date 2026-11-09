@@ -1,20 +1,60 @@
-name: Build Android APK
+name: Flutter Web and Android
 
+# Ручной запуск: экономия CI-минут (без auto-push APK на main).
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
+      build_web:
+        description: Build Flutter web (release, base-href /dr.jewelery/)
+        required: false
+        default: true
+        type: boolean
+      build_apk:
+        description: Build Android debug APK
+        required: false
+        default: false
+        type: boolean
       build_release:
-        description: Also build release APK
+        description: Also build Android release APK (requires build_apk)
         required: false
         default: false
         type: boolean
 
 jobs:
-  build-debug:
+  build-web:
+    name: Flutter Web
+    if: github.event_name == 'workflow_dispatch' && inputs.build_web == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Build web release
+        run: flutter build web --release --base-href "/dr.jewelery/"
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-jewelry-web
+          path: build/web
+          if-no-files-found: error
+
+  build-apk-debug:
     name: Flutter Debug APK
+    if: github.event_name == 'workflow_dispatch' && inputs.build_apk == true
     runs-on: ubuntu-latest
 
     steps:
@@ -49,9 +89,9 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
 
-  build-release:
+  build-apk-release:
     name: Flutter Release APK
-    if: github.event_name == 'workflow_dispatch' && inputs.build_release == true
+    if: github.event_name == 'workflow_dispatch' && inputs.build_apk == true && inputs.build_release == true
     runs-on: ubuntu-latest
 
     steps:

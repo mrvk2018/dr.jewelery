@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/services/database_service.dart';
 import '../../features/catalog/domain/models/catalog_constants.dart';
+import '../../features/catalog/domain/utils/catalog_filter_utils.dart';
+import '../../features/catalog/domain/utils/catalog_server_filter_utils.dart';
 import '../../features/home/domain/home_story_catalog_query.dart';
 import '../models/product_item.dart';
 
@@ -43,7 +45,36 @@ class CatalogController extends ChangeNotifier {
   bool _adminIsLoading = false;
   bool _adminIsLoadingMore = false;
 
+  CatalogFilterState _clientBrowseFilters = const CatalogFilterState();
+  CatalogFilterState? _clientPreviewExtras;
+
+  String _desktopSkuSearch = '';
+  Set<String> _serverMetalFamilies = {};
+  Set<String> _serverFineness = {};
+
   List<ProductItem> get products => List.unmodifiable(_products);
+
+  /// Серверная выборка + клиент (цена/вес); до Apply — превью по загруженным строкам.
+  List<ProductItem> get visibleBrowseProducts {
+    final preview = _clientPreviewExtras;
+    final merged = CatalogFilterState(
+      priceMinKrw: _clientBrowseFilters.priceMinKrw,
+      priceMaxKrw: _clientBrowseFilters.priceMaxKrw,
+      weightMinGrams: _clientBrowseFilters.weightMinGrams,
+      weightMaxGrams: _clientBrowseFilters.weightMaxGrams,
+      localSearchQuery:
+          preview != null ? preview.localSearchQuery : '',
+      selectedMetalFamilies: preview != null
+          ? preview.selectedMetalFamilies
+          : const {},
+      selectedFineness:
+          preview != null ? preview.selectedFineness : const {},
+    );
+    return filterCatalogProducts(
+      products: _products,
+      filters: merged,
+    );
+  }
 
   List<ProductItem> get recommendedProducts => List.unmodifiable(_homeProducts);
 
@@ -70,6 +101,34 @@ class CatalogController extends ChangeNotifier {
 
   int get drawerFilterActiveCount =>
       _selectedMetals.length + _selectedInserts.length + _selectedSizes.length;
+
+  int get desktopFilterActiveCount =>
+      drawerFilterActiveCount +
+      _selectedCategories.length +
+      _clientBrowseFilters.activeCount +
+      (_desktopSkuSearch.isNotEmpty ? 1 : 0) +
+      _serverMetalFamilies.length +
+      _serverFineness.length;
+
+  CatalogFilterState get appliedDesktopFilters => CatalogFilterState(
+        selectedMetals: Set<String>.from(_selectedMetals),
+        selectedInserts: Set<String>.from(_selectedInserts),
+        selectedSizes: _selectedSizes
+            .map((s) => double.tryParse(s.replaceAll(',', '.')))
+            .whereType<double>()
+            .toSet(),
+        selectedCategories: Set<String>.from(_selectedCategories),
+        localSearchQuery: _desktopSkuSearch,
+        priceMinKrw: _clientBrowseFilters.priceMinKrw,
+        priceMaxKrw: _clientBrowseFilters.priceMaxKrw,
+        weightMinGrams: _clientBrowseFilters.weightMinGrams,
+        weightMaxGrams: _clientBrowseFilters.weightMaxGrams,
+        selectedMetalFamilies: Set<String>.from(_serverMetalFamilies),
+        selectedFineness: Set<String>.from(_serverFineness),
+      );
+
+  List<String> get _browseMetalIlikePatterns =>
+      metalFamilyToIlikePatterns(_serverMetalFamilies);
 
   String? get homeStoryFilterKey => _homeStoryFilterKey;
 
@@ -215,6 +274,48 @@ class CatalogController extends ChangeNotifier {
     unawaited(refreshBrowse());
   }
 
+  /// Превью слайдеров (клиент) и draft chip-ов на загруженной выборке.
+  void setClientBrowseFilters(CatalogFilterState state) {
+    _clientBrowseFilters = state.clientBrowseSlice;
+    _clientPreviewExtras = state.clientPreviewSlice;
+    notifyListeners();
+  }
+
+  void applyDesktopSidebarFilters(CatalogFilterState state) {
+    _selectedCategories
+      ..clear()
+      ..addAll(state.selectedCategories);
+    _selectedMetals
+      ..clear()
+      ..addAll(state.selectedMetals);
+    _selectedInserts
+      ..clear()
+      ..addAll(state.selectedInserts);
+    _selectedSizes
+      ..clear()
+      ..addAll(state.sizeTokens);
+    _desktopSkuSearch = state.localSearchQuery.trim();
+    _serverMetalFamilies = Set<String>.from(state.selectedMetalFamilies);
+    _serverFineness = Set<String>.from(state.selectedFineness);
+    _clientBrowseFilters = state.clientBrowseSlice;
+    _clientPreviewExtras = null;
+    unawaited(refreshBrowse());
+  }
+
+  void resetDesktopSidebarFilters() {
+    _selectedCategories.clear();
+    _selectedMetals.clear();
+    _selectedInserts.clear();
+    _selectedSizes.clear();
+    _desktopSkuSearch = '';
+    _serverMetalFamilies = {};
+    _serverFineness = {};
+    _clientBrowseFilters = const CatalogFilterState();
+    _clientPreviewExtras = null;
+    _searchQuery = '';
+    unawaited(refreshBrowse());
+  }
+
   void toggleCategoryFilter(String category) {
     if (_selectedCategories.contains(category)) {
       _selectedCategories.remove(category);
@@ -260,13 +361,19 @@ class CatalogController extends ChangeNotifier {
       final page = await _database.getProductsAdvancedQuery(
         offset: 0,
         limit: pageSize,
-        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+        searchQuery:
+            _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
+        skuIlikeQuery:
+            _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
         categories: _selectedCategories.isEmpty
             ? null
             : _selectedCategories.toList(),
         metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
         inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
+        finenessTokens:
+            _serverFineness.isEmpty ? null : _serverFineness.toList(),
+        metalIlikePatterns: _browseMetalIlikePatterns,
       );
       _products
         ..clear()
@@ -287,13 +394,19 @@ class CatalogController extends ChangeNotifier {
       final page = await _database.getProductsAdvancedQuery(
         offset: _offset,
         limit: pageSize,
-        searchQuery: _searchQuery.isEmpty ? null : _searchQuery,
+        searchQuery:
+            _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
+        skuIlikeQuery:
+            _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
         categories: _selectedCategories.isEmpty
             ? null
             : _selectedCategories.toList(),
         metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
         inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
+        finenessTokens:
+            _serverFineness.isEmpty ? null : _serverFineness.toList(),
+        metalIlikePatterns: _browseMetalIlikePatterns,
       );
       if (page.isEmpty) {
         _hasMore = false;

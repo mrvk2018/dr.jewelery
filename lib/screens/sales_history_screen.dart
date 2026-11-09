@@ -38,6 +38,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   bool _hasMore = true;
   int _pageIndex = 0;
   String? _error;
+  String? _returnBusySku;
 
   @override
   void initState() {
@@ -141,6 +142,69 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     await _loadInitial();
   }
 
+  void _snack(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _confirmReturn(SalesHistoryRow row) async {
+    if (row.sku.isEmpty || row.isReturnLine) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Возврат на витрину', style: AppTypography.heading(fontSize: 18)),
+        content: Text(
+          'Вы уверены, что хотите оформить возврат товара ${row.sku} на витрину? '
+          'Финансовые показатели будут скорректированы.',
+          style: AppTypography.productMeta(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Возврат'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _returnBusySku = row.sku);
+    try {
+      final reversal = await _repo.processProductReturn(row.sku);
+      if (!mounted) return;
+      setState(() {
+        final idx = _rows.indexWhere(
+          (r) => r.legacyId == row.legacyId || r.id == row.id,
+        );
+        if (idx >= 0) {
+          _rows.insert(idx + 1, reversal);
+        } else {
+          _rows.insert(0, reversal);
+        }
+        if (_dayRevenueKrw != null) {
+          _dayRevenueKrw = _dayRevenueKrw! + reversal.priceKrw;
+        }
+        _returnBusySku = null;
+      });
+      _snack('Товар ${row.sku} возвращён на витрину');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _returnBusySku = null);
+      _snack(error.toString(), error: true);
+    }
+  }
+
   void _showPayloadDialog(SalesHistoryRow row) {
     final payload = row.rawLegacyPayload;
     final text = payload == null
@@ -215,7 +279,11 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         final row = _rows[index];
                         return _SalesHistoryTile(
                           row: row,
+                          returnBusy: _returnBusySku == row.sku,
                           onTap: () => _showPayloadDialog(row),
+                          onReturn: row.isReturnLine
+                              ? null
+                              : () => _confirmReturn(row),
                         );
                       },
                     ),
@@ -323,10 +391,17 @@ class _KpiHeader extends StatelessWidget {
 }
 
 class _SalesHistoryTile extends StatelessWidget {
-  const _SalesHistoryTile({required this.row, required this.onTap});
+  const _SalesHistoryTile({
+    required this.row,
+    required this.onTap,
+    this.onReturn,
+    this.returnBusy = false,
+  });
 
   final SalesHistoryRow row;
   final VoidCallback onTap;
+  final VoidCallback? onReturn;
+  final bool returnBusy;
 
   @override
   Widget build(BuildContext context) {
@@ -372,9 +447,42 @@ class _SalesHistoryTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  formatWon(row.priceKrw),
-                  style: AppTypography.price(fontSize: 15),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      formatWon(row.priceKrw),
+                      style: AppTypography.price(fontSize: 15).copyWith(
+                        color: row.isReturnLine ? AppColors.saleRed : null,
+                      ),
+                    ),
+                    if (onReturn != null) ...[
+                      const SizedBox(height: 6),
+                      SizedBox(
+                        height: 32,
+                        child: returnBusy
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : TextButton.icon(
+                                onPressed: onReturn,
+                                icon: Icon(
+                                  Icons.assignment_return_outlined,
+                                  size: 18,
+                                  color: AppColors.accent.withValues(alpha: 0.95),
+                                ),
+                                label: const Text('Возврат'),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

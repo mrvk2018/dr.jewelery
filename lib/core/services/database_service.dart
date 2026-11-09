@@ -66,6 +66,7 @@ abstract final class AdminCatalogRpc {
   static const adminSetProductAdditionalImages =
       'admin_set_product_additional_images';
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
+  static const processProductReturnManual = 'process_product_return_manual';
   static const skuParam = 'p_sku';
   static const additionalImagesParam = 'p_additional_images';
 }
@@ -190,10 +191,12 @@ abstract class DatabaseService {
     required int offset,
     int limit = 40,
     String? searchQuery,
+    String? skuIlikeQuery,
     List<String>? categories,
     List<String>? metals,
     List<String>? sizes,
     List<String>? inserts,
+    List<String>? finenessTokens,
     int? minDiscountPercent,
     bool orderIdDescending = false,
     List<String> categoryIlikePatterns = const [],
@@ -426,8 +429,8 @@ abstract class DatabaseService {
     int? daysLimit,
   });
 
-  /// Возврат на витрину: `stock_quantity = 1`, `product_status = 'Витрина'`.
-  Future<void> processProductReturn(String sku);
+  /// Возврат на витрину: RPC `process_product_return_manual` (сторно + active).
+  Future<Map<String, dynamic>> processProductReturn(String sku);
 }
 
 /// Облачное хранилище: Supabase (read/write по RLS и RPC).
@@ -556,10 +559,12 @@ class CloudDatabaseService implements DatabaseService {
   PostgrestFilterBuilder<PostgrestList> _applyAdvancedCatalogFilters(
     PostgrestFilterBuilder<PostgrestList> query, {
     String? searchQuery,
+    String? skuIlikeQuery,
     List<String>? categories,
     List<String>? metals,
     List<String>? sizes,
     List<String>? inserts,
+    List<String>? finenessTokens,
     int? minDiscountPercent,
     List<String> categoryIlikePatterns = const [],
     List<String> metalIlikePatterns = const [],
@@ -588,19 +593,39 @@ class CloudDatabaseService implements DatabaseService {
       filtered = filtered.inFilter('insert', insertList);
     }
 
-    final q = searchQuery?.trim();
-    if (q != null && q.isNotEmpty) {
-      final escaped = q.replaceAll(',', r'\,');
-      final pattern = '%$escaped%';
-      filtered = filtered.or(
-        'sku.ilike.$pattern,'
-        'category.ilike.$pattern,'
-        'metal.ilike.$pattern,'
-        'insert.ilike.$pattern,'
-        'name->>ru.ilike.$pattern,'
-        'name->>ko.ilike.$pattern,'
-        'name->>en.ilike.$pattern',
-      );
+    final skuQ = skuIlikeQuery?.trim();
+    if (skuQ != null && skuQ.isNotEmpty) {
+      final escaped = skuQ.replaceAll(',', r'\,');
+      filtered = filtered.ilike('sku', '%$escaped%');
+    } else {
+      final q = searchQuery?.trim();
+      if (q != null && q.isNotEmpty) {
+        final escaped = q.replaceAll(',', r'\,');
+        final pattern = '%$escaped%';
+        filtered = filtered.or(
+          'sku.ilike.$pattern,'
+          'category.ilike.$pattern,'
+          'metal.ilike.$pattern,'
+          'insert.ilike.$pattern,'
+          'name->>ru.ilike.$pattern,'
+          'name->>ko.ilike.$pattern,'
+          'name->>en.ilike.$pattern',
+        );
+      }
+    }
+
+    final finenessList = finenessTokens
+        ?.map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (finenessList != null && finenessList.isNotEmpty) {
+      final parts = <String>[];
+      for (final token in finenessList) {
+        final escaped = token.replaceAll(',', r'\,');
+        parts.add('metal.ilike.%$escaped%');
+        parts.add('sku.ilike.%$escaped%');
+      }
+      filtered = filtered.or(parts.join(','));
     }
 
     final sizeList =
@@ -648,10 +673,12 @@ class CloudDatabaseService implements DatabaseService {
     required int offset,
     int limit = 40,
     String? searchQuery,
+    String? skuIlikeQuery,
     List<String>? categories,
     List<String>? metals,
     List<String>? sizes,
     List<String>? inserts,
+    List<String>? finenessTokens,
     int? minDiscountPercent,
     bool orderIdDescending = false,
     List<String> categoryIlikePatterns = const [],
@@ -664,10 +691,12 @@ class CloudDatabaseService implements DatabaseService {
       query = _applyAdvancedCatalogFilters(
         query,
         searchQuery: searchQuery,
+        skuIlikeQuery: skuIlikeQuery,
         categories: categories,
         metals: metals,
         sizes: sizes,
         inserts: inserts,
+        finenessTokens: finenessTokens,
         minDiscountPercent: minDiscountPercent,
         categoryIlikePatterns: categoryIlikePatterns,
         metalIlikePatterns: metalIlikePatterns,
@@ -2023,28 +2052,43 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<void> processProductReturn(String sku) async {
+  Future<Map<String, dynamic>> processProductReturn(String sku) async {
     final normalized = sku.trim();
     if (normalized.isEmpty) {
       throw StateError('SKU пустой');
     }
     try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update({
-            'stock_quantity': 1,
-            'product_status': 'Витрина',
-          })
-          .eq('sku', normalized)
-          .select('sku');
-      if (rows.isEmpty) {
-        throw StateError('Товар $normalized не найден или RLS запретил возврат');
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.processProductReturnManual,
+        params: {
+          AdminCatalogRpc.skuParam: normalized,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      final map = _rpcJsonMap(result);
+      final ok = map['ok'] == true;
+      if (!ok) {
+        final err = map['error']?.toString() ?? 'unknown';
+        throw StateError(_returnErrorMessage(err, normalized));
       }
+      return map;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.processProductReturn failed: $error');
       debugPrint('$stackTrace');
       rethrow;
     }
+  }
+
+  static String _returnErrorMessage(String code, String sku) {
+    return switch (code) {
+      'empty_sku' => 'SKU пустой',
+      'forbidden' => 'Нет прав на возврат',
+      'product_not_found' => 'Товар $sku не найден',
+      'product_not_sold' => 'Товар $sku не в статусе продан',
+      'sale_not_found' => 'Запись продажи для $sku не найдена',
+      'already_returned' => 'Возврат для $sku уже оформлен',
+      _ => 'Возврат не выполнен: $code',
+    };
   }
 
   @override

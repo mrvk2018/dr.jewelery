@@ -56,6 +56,31 @@ List<String> productGalleryImageUrls(Map<String, dynamic> row) {
   return const [];
 }
 
+/// Склад/sync: камни в `insert`, legacy Pro — в `gem_inserts`.
+String adminProductInsertLabel(Map<String, dynamic> row) {
+  final gems = row['gem_inserts']?.toString().trim();
+  if (gems != null && gems.isNotEmpty) return gems;
+  final insert = row['insert']?.toString().trim();
+  if (insert != null && insert.isNotEmpty) return insert;
+  return '—';
+}
+
+/// Наименование витрины из `products.name` (jsonb или строка).
+String extractStoredProductName(Map<String, dynamic> row) {
+  final raw = row['name'];
+  if (raw is String) {
+    final text = raw.trim();
+    return text.isEmpty ? '—' : text;
+  }
+  if (raw is Map) {
+    for (final key in ['ru', 'ko', 'en']) {
+      final text = raw[key]?.toString().trim();
+      if (text != null && text.isNotEmpty) return text;
+    }
+  }
+  return '—';
+}
+
 /// Десктопный рабочий стол «Доктор Ювелир»: витрина + медиа + KPI.
 class JewelryAdminDashboard extends StatefulWidget {
   JewelryAdminDashboard({
@@ -466,6 +491,8 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                             onSelect: _selectProductRow,
                             onEdit: _openEditProductDialog,
                             cell: _cell,
+                            insertLabel: adminProductInsertLabel,
+                            productName: extractStoredProductName,
                             weight: _weight,
                             size: _size,
                           ),
@@ -577,6 +604,8 @@ class _ProductTablePanel extends StatefulWidget {
     required this.onSelect,
     required this.onEdit,
     required this.cell,
+    required this.insertLabel,
+    required this.productName,
     required this.weight,
     required this.size,
   });
@@ -586,6 +615,8 @@ class _ProductTablePanel extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onSelect;
   final ValueChanged<Map<String, dynamic>> onEdit;
   final String Function(Map<String, dynamic>, String) cell;
+  final String Function(Map<String, dynamic>) insertLabel;
+  final String Function(Map<String, dynamic>) productName;
   final double Function(Map<String, dynamic>) weight;
   final double Function(Map<String, dynamic>) size;
 
@@ -671,12 +702,12 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                               DataCell(
                                 Text(widget.size(row).toStringAsFixed(2)),
                               ),
-                              DataCell(Text(widget.cell(row, 'gem_inserts'))),
+                              DataCell(Text(widget.insertLabel(row))),
                               DataCell(
                                 SizedBox(
                                   width: 220,
                                   child: Text(
-                                    widget.cell(row, 'notes'),
+                                    widget.productName(row),
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -1086,7 +1117,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       (edit['metal_type'] ?? edit['metal'])?.toString() ?? '',
     );
     _imageUrls = List<String>.from(productGalleryImageUrls(edit));
-    _initNameFields(_extractStoredName(edit));
+    final storedName = extractStoredProductName(edit);
+    _initNameFields(storedName == '—' ? '' : storedName);
     _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateGalleryFromServer());
@@ -1145,18 +1177,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
     _productTypeCategory = 'Другое';
     _customNameController.text = storedName;
-  }
-
-  static String _extractStoredName(Map<String, dynamic> row) {
-    final raw = row['name'];
-    if (raw is String) return raw.trim();
-    if (raw is Map) {
-      for (final key in ['ru', 'ko', 'en']) {
-        final text = raw[key]?.toString().trim();
-        if (text != null && text.isNotEmpty) return text;
-      }
-    }
-    return '';
   }
 
   Future<void> _confirmRemoveNetworkPhoto(int index) async {

@@ -449,7 +449,10 @@ class CloudDatabaseService implements DatabaseService {
 
   static List<String> _rpcTagArray(List<String>? tags) {
     if (tags == null || tags.isEmpty) return const [];
-    return List<String>.from(tags);
+    return tags
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
   }
 
   static List<Map<String, dynamic>> _mapRpcRows(dynamic response) {

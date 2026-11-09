@@ -20,14 +20,17 @@ class SmartFilterWidget extends StatefulWidget {
   final double goldGramPrice;
   final double silverGramPrice;
 
+  /// Подписи = точные значения `products.metal` / `products.category` (склад DrJaw).
   static const List<String> baseFilterLabels = [
-    'Золото',
-    'Серебро',
-    'Кольца',
+    'Золото(585)',
+    '585 красное',
+    'Серебро(925)',
+    'Кольцо',
     'Серьги',
-    'Цепи',
-    'Подвески',
-    'Браслеты',
+    'Цепь',
+    'Подвеска',
+    'Браслет (женский)',
+    'Браслет (мужской)',
   ];
 
   @override

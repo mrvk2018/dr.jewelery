@@ -638,7 +638,7 @@ class _ProductTablePanel extends StatelessWidget {
                         }),
                         cells: [
                           DataCell(Text(sku)),
-                          DataCell(Text(cell(row, 'metal_type'))),
+                          DataCell(Text(cell(row, 'metal'))),
                           DataCell(Text(weight(row).toStringAsFixed(2))),
                           DataCell(Text(size(row).toStringAsFixed(2))),
                           DataCell(Text(cell(row, 'gem_inserts'))),

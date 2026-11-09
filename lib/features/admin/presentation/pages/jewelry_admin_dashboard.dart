@@ -570,7 +570,7 @@ class _TopControlBar extends StatelessWidget {
   }
 }
 
-class _ProductTablePanel extends StatelessWidget {
+class _ProductTablePanel extends StatefulWidget {
   const _ProductTablePanel({
     required this.products,
     required this.selectedSku,
@@ -590,7 +590,23 @@ class _ProductTablePanel extends StatelessWidget {
   final double Function(Map<String, dynamic>) size;
 
   @override
+  State<_ProductTablePanel> createState() => _ProductTablePanelState();
+}
+
+class _ProductTablePanelState extends State<_ProductTablePanel> {
+  final ScrollController _horizontalScroll = ScrollController();
+  final ScrollController _verticalScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _horizontalScroll.dispose();
+    _verticalScroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final products = widget.products;
     return Card(
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -606,62 +622,81 @@ class _ProductTablePanel extends StatelessWidget {
               ),
             )
           : Scrollbar(
+              controller: _horizontalScroll,
               thumbVisibility: true,
               child: SingleChildScrollView(
+                controller: _horizontalScroll,
                 scrollDirection: Axis.horizontal,
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    showCheckboxColumn: false,
-                    headingRowColor: WidgetStateProperty.all(
-                      AppColors.cardBackground,
-                    ),
-                    columns: const [
-                      DataColumn(label: Text('Артикул (SKU)')),
-                      DataColumn(label: Text('Металл')),
-                      DataColumn(label: Text('Вес, г')),
-                      DataColumn(label: Text('Размер')),
-                      DataColumn(label: Text('Вставки')),
-                      DataColumn(label: Text('Описание')),
-                      DataColumn(label: Text('')),
-                    ],
-                    rows: products.map((row) {
-                      final sku = cell(row, 'sku');
-                      final selected = sku == selectedSku;
-                      return DataRow(
-                        selected: selected,
-                        onSelectChanged: (_) => onSelect(row),
-                        color: WidgetStateProperty.resolveWith((states) {
-                          if (selected) {
-                            return AppColors.accent.withValues(alpha: 0.12);
-                          }
-                          return null;
-                        }),
-                        cells: [
-                          DataCell(Text(sku)),
-                          DataCell(Text(cell(row, 'metal'))),
-                          DataCell(Text(weight(row).toStringAsFixed(2))),
-                          DataCell(Text(size(row).toStringAsFixed(2))),
-                          DataCell(Text(cell(row, 'gem_inserts'))),
-                          DataCell(
-                            SizedBox(
-                              width: 220,
-                              child: Text(
-                                cell(row, 'notes'),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          DataCell(
-                            IconButton(
-                              tooltip: 'Редактировать карточку',
-                              icon: const Text('✏️', style: TextStyle(fontSize: 18)),
-                              onPressed: () => onEdit(row),
-                            ),
-                          ),
+                child: Scrollbar(
+                  controller: _verticalScroll,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _verticalScroll,
+                    scrollDirection: Axis.vertical,
+                    child: IntrinsicWidth(
+                      child: DataTable(
+                        columnSpacing: 28,
+                        horizontalMargin: 20,
+                        showCheckboxColumn: false,
+                        headingRowColor: WidgetStateProperty.all(
+                          AppColors.cardBackground,
+                        ),
+                        columns: const [
+                          DataColumn(label: Text('Артикул (SKU)')),
+                          DataColumn(label: Text('Металл')),
+                          DataColumn(label: Text('Вес, г')),
+                          DataColumn(label: Text('Размер')),
+                          DataColumn(label: Text('Вставки')),
+                          DataColumn(label: Text('Описание')),
+                          DataColumn(label: Text('')),
                         ],
-                      );
-                    }).toList(),
+                        rows: products.map((row) {
+                          final sku = widget.cell(row, 'sku');
+                          final selected = sku == widget.selectedSku;
+                          return DataRow(
+                            selected: selected,
+                            onSelectChanged: (_) => widget.onSelect(row),
+                            color: WidgetStateProperty.resolveWith((states) {
+                              if (selected) {
+                                return AppColors.accent.withValues(alpha: 0.12);
+                              }
+                              return null;
+                            }),
+                            cells: [
+                              DataCell(Text(sku)),
+                              DataCell(Text(widget.cell(row, 'metal'))),
+                              DataCell(
+                                Text(widget.weight(row).toStringAsFixed(2)),
+                              ),
+                              DataCell(
+                                Text(widget.size(row).toStringAsFixed(2)),
+                              ),
+                              DataCell(Text(widget.cell(row, 'gem_inserts'))),
+                              DataCell(
+                                SizedBox(
+                                  width: 220,
+                                  child: Text(
+                                    widget.cell(row, 'notes'),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                IconButton(
+                                  tooltip: 'Редактировать карточку',
+                                  icon: const Text(
+                                    '✏️',
+                                    style: TextStyle(fontSize: 18),
+                                  ),
+                                  onPressed: () => widget.onEdit(row),
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
                 ),
               ),

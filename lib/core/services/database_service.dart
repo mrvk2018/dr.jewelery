@@ -575,18 +575,6 @@ class CloudDatabaseService implements DatabaseService {
       filtered = filtered.gt('discount_percent', minDiscountPercent - 1);
     }
 
-    final categoryList =
-        categories?.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
-    if (categoryList != null && categoryList.isNotEmpty) {
-      filtered = filtered.inFilter('category', categoryList);
-    }
-
-    final metalList =
-        metals?.map((m) => m.trim()).where((m) => m.isNotEmpty).toList();
-    if (metalList != null && metalList.isNotEmpty) {
-      filtered = filtered.inFilter('metal', metalList);
-    }
-
     final insertList =
         inserts?.map((i) => i.trim()).where((i) => i.isNotEmpty).toList();
     if (insertList != null && insertList.isNotEmpty) {

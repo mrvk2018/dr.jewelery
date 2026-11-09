@@ -127,8 +127,13 @@ class CatalogController extends ChangeNotifier {
         selectedFineness: Set<String>.from(_serverFineness),
       );
 
-  List<String> get _browseMetalIlikePatterns =>
-      metalFamilyToIlikePatterns(_serverMetalFamilies);
+  List<String> get _browseCategoryIlikePatterns =>
+      categoryToIlikePatterns(_selectedCategories);
+
+  List<String> get _browseMetalIlikePatterns => buildBrowseMetalIlikePatterns(
+        families: _serverMetalFamilies,
+        exactMetals: _selectedMetals,
+      );
 
   String? get homeStoryFilterKey => _homeStoryFilterKey;
 
@@ -299,6 +304,7 @@ class CatalogController extends ChangeNotifier {
     _serverFineness = Set<String>.from(state.selectedFineness);
     _clientBrowseFilters = state.clientBrowseSlice;
     _clientPreviewExtras = null;
+    notifyListeners();
     unawaited(refreshBrowse());
   }
 
@@ -365,19 +371,17 @@ class CatalogController extends ChangeNotifier {
             _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
         skuIlikeQuery:
             _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
-        categories: _selectedCategories.isEmpty
-            ? null
-            : _selectedCategories.toList(),
-        metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
         inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
         finenessTokens:
             _serverFineness.isEmpty ? null : _serverFineness.toList(),
+        categoryIlikePatterns: _browseCategoryIlikePatterns,
         metalIlikePatterns: _browseMetalIlikePatterns,
       );
       _products
         ..clear()
         ..addAll(page);
+      _clientPreviewExtras = null;
       _offset = page.length;
       _hasMore = page.length >= pageSize;
     } finally {
@@ -398,14 +402,11 @@ class CatalogController extends ChangeNotifier {
             _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
         skuIlikeQuery:
             _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
-        categories: _selectedCategories.isEmpty
-            ? null
-            : _selectedCategories.toList(),
-        metals: _selectedMetals.isEmpty ? null : _selectedMetals.toList(),
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
         inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
         finenessTokens:
             _serverFineness.isEmpty ? null : _serverFineness.toList(),
+        categoryIlikePatterns: _browseCategoryIlikePatterns,
         metalIlikePatterns: _browseMetalIlikePatterns,
       );
       if (page.isEmpty) {

@@ -1,5 +1,3 @@
-import '../../catalog/domain/models/catalog_constants.dart';
-
 /// Параметры серверного запроса подборки «Истории» на главной.
 class HomeStoryCatalogQuery {
   const HomeStoryCatalogQuery({
@@ -26,13 +24,13 @@ class HomeStoryCatalogQuery {
         return const HomeStoryCatalogQuery(minDiscountPercent: 1);
       case 'rings':
         return const HomeStoryCatalogQuery(
-          categories: [CatalogCategories.rings],
+          categoryIlikePatterns: ['%Кольц%'],
         );
       case 'new':
         return const HomeStoryCatalogQuery(orderIdDescending: true);
       case 'earrings':
         return const HomeStoryCatalogQuery(
-          categories: [CatalogCategories.earrings],
+          categoryIlikePatterns: ['%Серьг%'],
         );
       case 'chains':
         return const HomeStoryCatalogQuery(
@@ -40,11 +38,17 @@ class HomeStoryCatalogQuery {
         );
       case 'gold':
         return const HomeStoryCatalogQuery(
-          metalIlikePatterns: ['%золото%', '%gold%'],
+          metalIlikePatterns: ['%Au%', '%золот%', '%gold%', '%585%', '%750%'],
         );
       case 'silver':
         return const HomeStoryCatalogQuery(
-          metalIlikePatterns: ['%серебро%', '%silver%'],
+          metalIlikePatterns: [
+            '%Серебр%',
+            '%серебр%',
+            '%Ag%',
+            '%925%',
+            '%silver%',
+          ],
         );
       case 'gifts':
         return const HomeStoryCatalogQuery(searchQuery: 'подар');

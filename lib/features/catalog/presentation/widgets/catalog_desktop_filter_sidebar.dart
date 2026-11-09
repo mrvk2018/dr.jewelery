@@ -171,7 +171,6 @@ class _CatalogDesktopFilterSidebarState extends State<CatalogDesktopFilterSideba
                         }
                         _emit(
                           draftFilters.copyWith(selectedMetalFamilies: updated),
-                          previewClient: true,
                         );
                       },
                     ),
@@ -213,7 +212,6 @@ class _CatalogDesktopFilterSidebarState extends State<CatalogDesktopFilterSideba
                         }
                         _emit(
                           draftFilters.copyWith(selectedFineness: updated),
-                          previewClient: true,
                         );
                       },
                     ),

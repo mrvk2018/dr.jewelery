@@ -293,18 +293,15 @@ class CatalogController extends ChangeNotifier {
     _selectedMetals
       ..clear()
       ..addAll(state.selectedMetals);
-    _selectedInserts
-      ..clear()
-      ..addAll(state.selectedInserts);
-    _selectedSizes
-      ..clear()
-      ..addAll(state.sizeTokens);
     _desktopSkuSearch = state.localSearchQuery.trim();
     _serverMetalFamilies = Set<String>.from(state.selectedMetalFamilies);
     _serverFineness = Set<String>.from(state.selectedFineness);
     _clientBrowseFilters = state.clientBrowseSlice;
     _clientPreviewExtras = null;
     notifyListeners();
+    _selectedInserts.clear();
+    _selectedSizes.clear();
+    _searchQuery = '';
     unawaited(refreshBrowse());
   }
 

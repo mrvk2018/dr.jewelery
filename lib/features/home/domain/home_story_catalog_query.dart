@@ -38,17 +38,11 @@ class HomeStoryCatalogQuery {
         );
       case 'gold':
         return const HomeStoryCatalogQuery(
-          metalIlikePatterns: ['%Au%', '%золот%', '%gold%', '%585%', '%750%'],
+          metalIlikePatterns: ['%золото%', '%585%', '%красн%'],
         );
       case 'silver':
         return const HomeStoryCatalogQuery(
-          metalIlikePatterns: [
-            '%Серебр%',
-            '%серебр%',
-            '%Ag%',
-            '%925%',
-            '%silver%',
-          ],
+          metalIlikePatterns: ['%серебр%', '%925%'],
         );
       case 'gifts':
         return const HomeStoryCatalogQuery(searchQuery: 'подар');

@@ -14,7 +14,9 @@ bool _metalMatchesFamily(String metal, Set<String> families) {
   for (final family in families) {
     switch (family) {
       case CatalogMetalFamilies.gold:
-        if (m.contains('золот') || m.contains('gold') || m.contains('au')) {
+        if (m.contains('золот') ||
+            m.contains('585') ||
+            m.contains('красн')) {
           return true;
         }
       case CatalogMetalFamilies.platinum:
@@ -22,7 +24,7 @@ bool _metalMatchesFamily(String metal, Set<String> families) {
           return true;
         }
       case CatalogMetalFamilies.silver:
-        if (m.contains('серебр') || m.contains('silver') || m.contains('ag')) {
+        if (m.contains('серебр') || m.contains('925')) {
           return true;
         }
     }

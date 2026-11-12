@@ -89,7 +89,8 @@ abstract final class SellerAdminRpc {
 abstract final class CatalogFacetedRpc {
   static const getAdvancedFacetedProducts = 'get_advanced_faceted_products';
   static const searchDraftProducts = 'search_draft_products';
-  static const baseTagsParam = 'base_tags';
+  static const metalTagsParam = 'metal_tags';
+  static const categoryTagsParam = 'category_tags';
   static const advancedTagsParam = 'advanced_tags';
   static const minPriceParam = 'min_price';
   static const maxPriceParam = 'max_price';
@@ -328,7 +329,8 @@ abstract class DatabaseService {
 
   /// Витрина: RPC [CatalogFacetedRpc.getAdvancedFacetedProducts] (строки `products` as Map).
   Future<List<Map<String, dynamic>>> fetchFacetedProducts({
-    List<String>? baseTags,
+    List<String>? metalTags,
+    List<String>? categoryTags,
     List<String>? advancedTags,
     double? minPrice,
     double? maxPrice,
@@ -1429,7 +1431,8 @@ class CloudDatabaseService implements DatabaseService {
 
   @override
   Future<List<Map<String, dynamic>>> fetchFacetedProducts({
-    List<String>? baseTags,
+    List<String>? metalTags,
+    List<String>? categoryTags,
     List<String>? advancedTags,
     double? minPrice,
     double? maxPrice,
@@ -1440,7 +1443,8 @@ class CloudDatabaseService implements DatabaseService {
       final response = await _supabaseClient.rpc(
         CatalogFacetedRpc.getAdvancedFacetedProducts,
         params: {
-          CatalogFacetedRpc.baseTagsParam: _rpcTagArray(baseTags),
+          CatalogFacetedRpc.metalTagsParam: _rpcTagArray(metalTags),
+          CatalogFacetedRpc.categoryTagsParam: _rpcTagArray(categoryTags),
           CatalogFacetedRpc.advancedTagsParam: _rpcTagArray(advancedTags),
           CatalogFacetedRpc.minPriceParam: minPrice,
           CatalogFacetedRpc.maxPriceParam: maxPrice,

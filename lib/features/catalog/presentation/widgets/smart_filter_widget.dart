@@ -5,7 +5,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 
-/// Двухуровневая фильтрация витрины (Supabase RPC `get_advanced_faceted_products`).
+/// Фасетная фильтрация витрины (RPC `get_advanced_faceted_products`).
 class SmartFilterWidget extends StatefulWidget {
   SmartFilterWidget({
     super.key,
@@ -20,11 +20,24 @@ class SmartFilterWidget extends StatefulWidget {
   final double goldGramPrice;
   final double silverGramPrice;
 
-  /// Подписи = точные значения `products.metal` / `products.category` (склад DrJaw).
-  static const List<String> baseFilterLabels = [
-    'Золото(585)',
-    '585 красное',
-    'Серебро(925)',
+  static const String goldUmbrella = 'Золото';
+
+  static const List<String> metalFilterLabels = [
+    goldUmbrella,
+    'Красное золото',
+    'Жёлтое золото',
+    'Белое золото',
+    'Серебро',
+  ];
+
+  static const List<String> goldColorMetalLabels = [
+    'Красное золото',
+    'Жёлтое золото',
+    'Белое золото',
+  ];
+
+  /// Значения `products.category` (склад DrJaw / ручной ввод).
+  static const List<String> categoryFilterLabels = [
     'Кольцо',
     'Серьги',
     'Цепь',
@@ -41,10 +54,12 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   final _minPriceController = TextEditingController();
   final _maxPriceController = TextEditingController();
 
-  final Set<String> _selectedBaseTags = {};
+  final Set<String> _selectedMetalTags = {};
+  final Set<String> _selectedCategoryTags = {};
   final Set<String> _selectedSlangTags = {};
 
   bool _isApplying = false;
+  int _applyGeneration = 0;
 
   @override
   void dispose() {
@@ -60,33 +75,63 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   }
 
   Future<void> _applyFilter() async {
-    if (_isApplying) return;
-    setState(() => _isApplying = true);
+    final generation = ++_applyGeneration;
+    if (mounted) setState(() => _isApplying = true);
     try {
       final products = await widget.database.fetchFacetedProducts(
-        baseTags: _selectedBaseTags.toList(),
+        metalTags: _selectedMetalTags.toList(),
+        categoryTags: _selectedCategoryTags.toList(),
         advancedTags: _selectedSlangTags.toList(),
         minPrice: _parsePrice(_minPriceController.text),
         maxPrice: _parsePrice(_maxPriceController.text),
         goldGramPrice: widget.goldGramPrice,
         silverGramPrice: widget.silverGramPrice,
       );
-      if (!mounted) return;
+      if (!mounted || generation != _applyGeneration) return;
       widget.onFilterApplied(products);
     } finally {
-      if (mounted) setState(() => _isApplying = false);
+      if (mounted && generation == _applyGeneration) {
+        setState(() => _isApplying = false);
+      }
     }
   }
 
-  void _toggleBaseTag(String label) {
+  void _toggleMetalTag(String label) {
     setState(() {
-      if (_selectedBaseTags.contains(label)) {
-        _selectedBaseTags.remove(label);
+      if (_selectedMetalTags.contains(label)) {
+        _selectedMetalTags.remove(label);
       } else {
-        _selectedBaseTags.add(label);
+        _selectedMetalTags.add(label);
+        if (label == SmartFilterWidget.goldUmbrella) {
+          _selectedMetalTags.removeAll(SmartFilterWidget.goldColorMetalLabels);
+        } else if (SmartFilterWidget.goldColorMetalLabels.contains(label)) {
+          _selectedMetalTags.remove(SmartFilterWidget.goldUmbrella);
+        }
       }
     });
     _applyFilter();
+  }
+
+  void _toggleCategoryTag(String label) {
+    setState(() {
+      if (_selectedCategoryTags.contains(label)) {
+        _selectedCategoryTags.remove(label);
+      } else {
+        _selectedCategoryTags.add(label);
+      }
+    });
+    _applyFilter();
+  }
+
+  Future<void> _resetFilter() async {
+    setState(() {
+      _selectedMetalTags.clear();
+      _selectedCategoryTags.clear();
+      _selectedSlangTags.clear();
+      _minPriceController.clear();
+      _maxPriceController.clear();
+    });
+    await _applyFilter();
   }
 
   Future<void> _openSlangDialog() async {
@@ -242,20 +287,18 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                   },
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: SmartFilterWidget.baseFilterLabels.map((label) {
-                    final selected = _selectedBaseTags.contains(label);
-                    return FilterChip(
-                      label: Text(label),
-                      selected: selected,
-                      onSelected: (_) => _toggleBaseTag(label),
-                      selectedColor: AppColors.accent.withValues(alpha: 0.25),
-                      checkmarkColor: AppColors.accent,
-                      side: const BorderSide(color: AppColors.border),
-                    );
-                  }).toList(),
+                _FacetChipSection(
+                  title: 'Металл',
+                  labels: SmartFilterWidget.metalFilterLabels,
+                  selected: _selectedMetalTags,
+                  onToggle: _toggleMetalTag,
+                ),
+                const SizedBox(height: 14),
+                _FacetChipSection(
+                  title: 'Категория',
+                  labels: SmartFilterWidget.categoryFilterLabels,
+                  selected: _selectedCategoryTags,
+                  onToggle: _toggleCategoryTag,
                 ),
                 if (_selectedSlangTags.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -283,6 +326,19 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                         ),
                       ),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: _isApplying ? null : _resetFilter,
+                      icon: const Icon(Icons.refresh_rounded, size: 20),
+                      label: const Text('Сбросить'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textSecondary,
+                        side: const BorderSide(color: AppColors.border),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
                     FilledButton.icon(
                       onPressed: _isApplying ? null : _applyFilter,
                       icon: _isApplying
@@ -292,7 +348,9 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.search_rounded, size: 20),
-                      label: Text(_isApplying ? 'Загрузка…' : 'Показать результаты'),
+                      label: Text(
+                        _isApplying ? 'Загрузка…' : 'Показать результаты',
+                      ),
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.accent,
                         foregroundColor: AppColors.textOnAccent,
@@ -309,6 +367,52 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FacetChipSection extends StatelessWidget {
+  const _FacetChipSection({
+    required this.title,
+    required this.labels,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  final String title;
+  final List<String> labels;
+  final Set<String> selected;
+  final ValueChanged<String> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: AppTypography.productMeta().copyWith(
+            fontWeight: FontWeight.w700,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: labels.map((label) {
+            final isSelected = selected.contains(label);
+            return FilterChip(
+              label: Text(label),
+              selected: isSelected,
+              onSelected: (_) => onToggle(label),
+              selectedColor: AppColors.accent.withValues(alpha: 0.25),
+              checkmarkColor: AppColors.accent,
+              side: const BorderSide(color: AppColors.border),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }

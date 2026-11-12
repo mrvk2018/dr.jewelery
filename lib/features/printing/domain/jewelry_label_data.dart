@@ -22,7 +22,7 @@ class JewelryLabelData {
   factory JewelryLabelData.fromProductMap(Map<String, dynamic> map) {
     final name = _resolveProductName(map);
 
-    final sku = (map['sku'] ?? map['id'] ?? '').toString().trim();
+    final sku = (map['sku'] ?? '').toString().trim();
 
     final probe = _probeFromMap(map);
     final size = _formatNum(map['size_value']);
@@ -36,7 +36,10 @@ class JewelryLabelData {
         (map['price_krw'] as num?)?.toInt() ??
         0;
 
-    final qr = (map['qr_code_payload'] ?? sku).toString().trim();
+    final productId = map['id']?.toString().trim() ?? '';
+    final qr = productId.isNotEmpty
+        ? productId
+        : (map['qr_code_payload'] ?? sku).toString().trim();
 
     return JewelryLabelData(
       productName: name,

@@ -17,14 +17,54 @@ class SalesHistoryRepository {
   static const _table = 'sales_history';
   static const _listColumns =
       'id, legacy_id, sku, price_krw, sold_at_utc, sold_date_kst, '
-      'image_url, photo_status, raw_legacy_payload, migration_meta';
+      'image_url, photo_status, source_system, raw_legacy_payload, migration_meta';
+
+  static const rpcProcessPosProductReturn = 'process_pos_product_return';
+  static const posReturnProductIdParam = 'p_product_id';
+  static const posReturnReasonParam = 'p_reason';
+  static const posReturnAdminNameParam = 'p_admin_name';
 
   static const defaultPageSize = 50;
+
+  /// `products.id` → `status` (лёгкий батч для кнопки возврата).
+  Future<Map<String, String>> fetchProductStatusesByIds(Set<String> productIds) async {
+    if (productIds.isEmpty) return const {};
+    final ids = productIds.where((id) => id.trim().isNotEmpty).toList();
+    if (ids.isEmpty) return const {};
+
+    final statuses = <String, String>{};
+    const chunkSize = 80;
+
+    try {
+      for (var offset = 0; offset < ids.length; offset += chunkSize) {
+        final end = (offset + chunkSize > ids.length) ? ids.length : offset + chunkSize;
+        final chunk = ids.sublist(offset, end);
+        final rows = await _client
+            .from('products')
+            .select('id, status')
+            .inFilter('id', chunk);
+        for (final row in rows) {
+          final map = Map<String, dynamic>.from(row);
+          final id = map['id']?.toString();
+          final status = map['status']?.toString().trim();
+          if (id != null && id.isNotEmpty && status != null && status.isNotEmpty) {
+            statuses[id] = status;
+          }
+        }
+      }
+      return statuses;
+    } catch (error, stackTrace) {
+      debugPrint('SalesHistoryRepository.fetchProductStatusesByIds failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
 
   Future<List<SalesHistoryRow>> fetchPage({
     required int pageIndex,
     int pageSize = defaultPageSize,
-    String? soldDateKst,
+    required String soldDateKstStart,
+    required String soldDateKstEnd,
   }) async {
     final from = pageIndex * pageSize;
     final to = from + pageSize - 1;
@@ -32,8 +72,13 @@ class SalesHistoryRepository {
     try {
       var query = _client.from(_table).select(_listColumns);
 
-      if (soldDateKst != null && soldDateKst.isNotEmpty) {
-        query = query.eq('sold_date_kst', soldDateKst);
+      final start = soldDateKstStart.trim();
+      final end = soldDateKstEnd.trim();
+      if (start.isNotEmpty) {
+        query = query.gte('sold_date_kst', start);
+      }
+      if (end.isNotEmpty) {
+        query = query.lte('sold_date_kst', end);
       }
 
       final rows = await query
@@ -50,9 +95,14 @@ class SalesHistoryRepository {
     }
   }
 
-  /// SUM(price_krw) за календарный день KST (пагинация только price_krw).
-  Future<int> sumPriceKrwForSoldDateKst(String soldDateKst) async {
-    if (soldDateKst.trim().isEmpty) return 0;
+  /// SUM(price_krw) за диапазон sold_date_kst (включительно, KST).
+  Future<int> sumPriceKrwForSoldDateRangeKst(
+    String soldDateKstStart,
+    String soldDateKstEnd,
+  ) async {
+    final start = soldDateKstStart.trim();
+    final end = soldDateKstEnd.trim();
+    if (start.isEmpty || end.isEmpty) return 0;
 
     var total = 0;
     var from = 0;
@@ -63,7 +113,8 @@ class SalesHistoryRepository {
         final rows = await _client
             .from(_table)
             .select('price_krw')
-            .eq('sold_date_kst', soldDateKst)
+            .gte('sold_date_kst', start)
+            .lte('sold_date_kst', end)
             .order('legacy_id')
             .range(from, from + chunk - 1);
 
@@ -84,9 +135,45 @@ class SalesHistoryRepository {
       }
       return total;
     } catch (error, stackTrace) {
-      debugPrint('SalesHistoryRepository.sumPriceKrwForSoldDateKst failed: $error');
+      debugPrint('SalesHistoryRepository.sumPriceKrwForSoldDateRangeKst failed: $error');
       debugPrint('$stackTrace');
       rethrow;
+    }
+  }
+
+  /// POS-возврат по `products.id` (`process_pos_product_return`).
+  Future<void> processPosProductReturn({
+    required String productId,
+    required String reason,
+    required String adminName,
+  }) async {
+    final id = productId.trim();
+    final r = reason.trim();
+    final admin = adminName.trim();
+    if (id.isEmpty || r.isEmpty || admin.isEmpty) {
+      throw StateError('Укажите product_id, причину и имя администратора');
+    }
+    try {
+      final result = await _client.rpc(
+        rpcProcessPosProductReturn,
+        params: {
+          posReturnProductIdParam: id,
+          posReturnReasonParam: r,
+          posReturnAdminNameParam: admin,
+        },
+      );
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        final ok = map['ok'] == true || map['success'] == true;
+        if (!ok) {
+          final err = map['error']?.toString() ?? map['message']?.toString();
+          throw StateError(err ?? 'Возврат не выполнен');
+        }
+      }
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint('SalesHistoryRepository.processPosProductReturn: $error');
+      debugPrint('$stackTrace');
+      throw StateError(error.message);
     }
   }
 

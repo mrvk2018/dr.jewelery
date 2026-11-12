@@ -4,8 +4,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../../core/admin/admin_access.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../shared/providers/profile_scope.dart';
+import '../../application/pos_cart_controller.dart';
+import '../widgets/admin_pos_cart_sheet.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -13,6 +18,7 @@ import '../../../catalog/presentation/widgets/smart_filter_widget.dart';
 import '../../../printing/application/label_print_service.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/domain/jewelry_label_layout.dart';
+import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../screens/draft_intake_screen.dart';
@@ -86,9 +92,11 @@ class JewelryAdminDashboard extends StatefulWidget {
   JewelryAdminDashboard({
     super.key,
     DatabaseService? database,
+    this.onPosSaleArchived,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
+  final VoidCallback? onPosSaleArchived;
 
   @override
   State<JewelryAdminDashboard> createState() => _JewelryAdminDashboardState();
@@ -98,6 +106,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   final LabelPrintService _labelPrintService = const LabelPrintService(
     protocol: LabelPrinterProtocol.tspl,
   );
+  final PosCartController _posCart = PosCartController();
 
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
@@ -107,7 +116,19 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   @override
   void initState() {
     super.initState();
+    _posCart.addListener(_onPosCartChanged);
     _refreshCatalog();
+  }
+
+  @override
+  void dispose() {
+    _posCart.removeListener(_onPosCartChanged);
+    _posCart.dispose();
+    super.dispose();
+  }
+
+  void _onPosCartChanged() {
+    if (mounted) setState(() {});
   }
 
   int _stockQty(Map<String, dynamic> row) {
@@ -359,6 +380,44 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     }
   }
 
+  void _addSelectedToPosCart() {
+    final row = _selected;
+    if (row == null) {
+      _snack('Выберите товар в таблице', error: true);
+      return;
+    }
+    try {
+      final product = ProductItem.fromJson(
+        CloudDatabaseService.productRowToClientJson(row),
+      );
+      if (!_posCart.containsProduct(product.id)) {
+        _posCart.addToCart(product);
+        _snack('В POS-корзине: ${product.sku}');
+      } else {
+        _snack('Уже в POS-корзине: ${product.sku}');
+      }
+    } catch (error) {
+      _snack('Не удалось добавить в корзину: $error', error: true);
+    }
+  }
+
+  Future<void> _openPosCartSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => AdminPosCartSheet(
+        cart: _posCart,
+        database: widget.database,
+        onArchived: () async {
+          _posCart.clearCart();
+          await _refreshCatalog();
+          widget.onPosSaleArchived?.call();
+        },
+      ),
+    );
+  }
+
   Future<void> _markSoldSelected() async {
     final row = _selected;
     if (row == null) {
@@ -460,6 +519,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = ProfileScope.of(context);
+    final isSuperAdmin = AdminAccess.isSuperAdmin(
+      supabaseUser: Supabase.instance.client.auth.currentUser,
+      localPanelAdmin: profile.isLocalAdminAuthenticated,
+    );
     final selectedSku = _selected == null ? null : _cell(_selected!, 'sku');
 
     return Scaffold(
@@ -473,6 +537,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                 children: [
                   _TopControlBar(
                     database: widget.database,
+                    isSuperAdmin: isSuperAdmin,
                     onFilterApplied: _applyRows,
                     onOpenDraft: _openDraftIntake,
                     onAddProduct: _openAddProductDialog,
@@ -488,6 +553,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                           child: _ProductTablePanel(
                             products: _products,
                             selectedSku: selectedSku,
+                            isSuperAdmin: isSuperAdmin,
                             onSelect: _selectProductRow,
                             onEdit: _openEditProductDialog,
                             cell: _cell,
@@ -519,6 +585,10 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                   const SizedBox(height: 12),
                   _BottomActionBar(
                     hasSelection: _selected != null,
+                    isSuperAdmin: isSuperAdmin,
+                    posCartCount: _posCart.lineCount,
+                    onAddToPosCart: _addSelectedToPosCart,
+                    onOpenPosCart: _openPosCartSheet,
                     onPrint: _printDuplicateLabel,
                     onEdit: _editSelectedCard,
                     onMarkSold: _markSoldSelected,
@@ -534,6 +604,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 class _TopControlBar extends StatelessWidget {
   const _TopControlBar({
     required this.database,
+    required this.isSuperAdmin,
     required this.onFilterApplied,
     required this.onOpenDraft,
     required this.onAddProduct,
@@ -541,6 +612,7 @@ class _TopControlBar extends StatelessWidget {
   });
 
   final DatabaseService database;
+  final bool isSuperAdmin;
   final void Function(List<Map<String, dynamic>> products) onFilterApplied;
   final VoidCallback onOpenDraft;
   final VoidCallback onAddProduct;
@@ -564,24 +636,26 @@ class _TopControlBar extends StatelessWidget {
               runSpacing: 12,
               alignment: WrapAlignment.end,
               children: [
-                OutlinedButton.icon(
-                  onPressed: onOpenDraft,
-                  icon: const Icon(Icons.move_to_inbox_outlined),
-                  label: const Text('Перейти в режим Приёмки (Черновики)'),
-                ),
+                if (isSuperAdmin) ...[
+                  OutlinedButton.icon(
+                    onPressed: onOpenDraft,
+                    icon: const Icon(Icons.move_to_inbox_outlined),
+                    label: const Text('Перейти в режим Приёмки (Черновики)'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: onAddProduct,
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Добавить товар'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.textOnPrimary,
+                    ),
+                  ),
+                ],
                 OutlinedButton.icon(
                   onPressed: onProductReturn,
                   icon: const Icon(Icons.replay_outlined),
                   label: const Text('Возврат товара'),
-                ),
-                FilledButton.icon(
-                  onPressed: onAddProduct,
-                  icon: const Icon(Icons.add_circle_outline),
-                  label: const Text('Добавить товар'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textOnPrimary,
-                  ),
                 ),
               ],
             ),
@@ -601,6 +675,7 @@ class _ProductTablePanel extends StatefulWidget {
   const _ProductTablePanel({
     required this.products,
     required this.selectedSku,
+    required this.isSuperAdmin,
     required this.onSelect,
     required this.onEdit,
     required this.cell,
@@ -612,6 +687,7 @@ class _ProductTablePanel extends StatefulWidget {
 
   final List<Map<String, dynamic>> products;
   final String? selectedSku;
+  final bool isSuperAdmin;
   final ValueChanged<Map<String, dynamic>> onSelect;
   final ValueChanged<Map<String, dynamic>> onEdit;
   final String Function(Map<String, dynamic>, String) cell;
@@ -714,14 +790,16 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                                 ),
                               ),
                               DataCell(
-                                IconButton(
-                                  tooltip: 'Редактировать карточку',
-                                  icon: const Text(
-                                    '✏️',
-                                    style: TextStyle(fontSize: 18),
-                                  ),
-                                  onPressed: () => widget.onEdit(row),
-                                ),
+                                widget.isSuperAdmin
+                                    ? IconButton(
+                                        tooltip: 'Редактировать карточку',
+                                        icon: const Text(
+                                          '✏️',
+                                          style: TextStyle(fontSize: 18),
+                                        ),
+                                        onPressed: () => widget.onEdit(row),
+                                      )
+                                    : const SizedBox.shrink(),
                               ),
                             ],
                           );
@@ -924,6 +1002,10 @@ class _PhotoSlot extends StatelessWidget {
 class _BottomActionBar extends StatelessWidget {
   const _BottomActionBar({
     required this.hasSelection,
+    required this.isSuperAdmin,
+    required this.posCartCount,
+    required this.onAddToPosCart,
+    required this.onOpenPosCart,
     required this.onPrint,
     required this.onEdit,
     required this.onMarkSold,
@@ -931,6 +1013,10 @@ class _BottomActionBar extends StatelessWidget {
   });
 
   final bool hasSelection;
+  final bool isSuperAdmin;
+  final int posCartCount;
+  final VoidCallback onAddToPosCart;
+  final VoidCallback onOpenPosCart;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
   final VoidCallback onMarkSold;
@@ -952,34 +1038,57 @@ class _BottomActionBar extends StatelessWidget {
           spacing: 12,
           runSpacing: 8,
           children: [
+            FilledButton.icon(
+              onPressed: hasSelection ? onAddToPosCart : null,
+              icon: const Icon(Icons.add_shopping_cart_outlined),
+              label: const Text('В POS-корзину'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+              ),
+            ),
+            Badge(
+              isLabelVisible: posCartCount > 0,
+              label: Text('$posCartCount'),
+              child: OutlinedButton.icon(
+                onPressed: onOpenPosCart,
+                icon: const Icon(Icons.shopping_cart_checkout_outlined),
+                label: Text(
+                  posCartCount > 0
+                      ? 'POS-корзина ($posCartCount)'
+                      : 'POS-корзина',
+                ),
+              ),
+            ),
             FilledButton.tonalIcon(
               onPressed: hasSelection ? onPrint : null,
               icon: const Icon(Icons.print_outlined),
               label: const Text('Распечатать дубликат бирки'),
             ),
-            OutlinedButton.icon(
-              onPressed: hasSelection ? onEdit : null,
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('Редактировать карточку'),
-            ),
-            FilledButton.icon(
-              onPressed: hasSelection ? onMarkSold : null,
-              icon: const Icon(Icons.handshake_outlined),
-              label: const Text('Продано'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _soldGreen,
-                foregroundColor: Colors.white,
+            if (isSuperAdmin) ...[
+              OutlinedButton.icon(
+                onPressed: hasSelection ? onEdit : null,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Редактировать карточку'),
               ),
-            ),
-            OutlinedButton.icon(
-              onPressed: hasSelection ? onWriteOff : null,
-              icon: const Icon(Icons.remove_shopping_cart_outlined),
-              label: const Text('Списать / Изъять с витрины'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.saleRed,
-                side: const BorderSide(color: AppColors.saleRed),
+              FilledButton.icon(
+                onPressed: hasSelection ? onMarkSold : null,
+                icon: const Icon(Icons.handshake_outlined),
+                label: const Text('Продано'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _soldGreen,
+                  foregroundColor: Colors.white,
+                ),
               ),
-            ),
+              OutlinedButton.icon(
+                onPressed: hasSelection ? onWriteOff : null,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Списать / Изъять с витрины'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.saleRed,
+                  side: const BorderSide(color: AppColors.saleRed),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1403,6 +1512,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         return;
       }
 
+      if (!_isEditMode && !asDraft) {
+        _safeFireAndForgetLabelPrintAfterManualSave(sku);
+      }
+
       if (_isEditMode) {
         final productId = widget.editProduct!['id']?.toString().trim() ?? '';
         final galleryOk = await widget.database.updateProductGalleryByProductId(
@@ -1435,6 +1548,34 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         backgroundColor: error ? AppColors.saleRed : AppColors.primary,
       ),
     );
+  }
+
+  void _safeFireAndForgetLabelPrintAfterManualSave(String sku) {
+    Future.microtask(() async {
+      try {
+        final row = await widget.database.fetchProductRowForLabelBySku(sku);
+        if (row == null) {
+          debugPrint(
+            '_ManualProductDialog: label print skipped, row not found for $sku',
+          );
+          return;
+        }
+        final data = JewelryLabelData.fromProductMap(row);
+        const labelService = LabelPrintService(
+          protocol: LabelPrinterProtocol.tspl,
+        );
+        await labelService.printLabel(data);
+        await printJewelryLabelPlatform(
+          data,
+          labelPrintService: labelService,
+        );
+      } catch (error, stackTrace) {
+        debugPrint(
+          'Тихая ошибка печати после ручного сохранения ($sku): $error',
+        );
+        debugPrint('$stackTrace');
+      }
+    });
   }
 
   Widget _buildManualPhotoGrid() {

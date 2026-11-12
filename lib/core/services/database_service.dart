@@ -6,6 +6,9 @@ import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/admin/domain/admin_pos_archive_result.dart';
+import '../../features/admin/domain/admin_pos_sale_exception.dart';
+
 import '../constants/supabase_config.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
@@ -58,6 +61,10 @@ abstract final class AdminOrdersRpc {
 /// RPC ручной продажи в админ-PWA (обход GRANT/RLS на products).
 abstract final class AdminCatalogRpc {
   static const markProductSoldManual = 'mark_product_sold_manual';
+  static const archiveAdminPosSale = 'archive_admin_pos_sale';
+  static const posSaleLinesParam = 'p_lines';
+  static const posSellerNameParam = 'p_seller_name';
+  static const posPaymentMethodParam = 'p_payment_method';
   static const productIdParam = 'p_product_id';
   static const activateDraftBySku = 'activate_draft_product_by_sku';
   static const activateAllDrafts = 'activate_all_draft_products';
@@ -69,6 +76,13 @@ abstract final class AdminCatalogRpc {
   static const processProductReturnManual = 'process_product_return_manual';
   static const skuParam = 'p_sku';
   static const additionalImagesParam = 'p_additional_images';
+}
+
+abstract final class SellerAdminRpc {
+  static const upsertSellerByAdmin = 'upsert_seller_by_admin';
+  static const promoCodeParam = 'p_promo_code';
+  static const nameParam = 'p_name';
+  static const isActiveParam = 'p_is_active';
 }
 
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
@@ -224,6 +238,13 @@ abstract class DatabaseService {
   /// Картотека продавцов (промокоды). Только [UserRole.admin].
   Future<List<SellerItem>> getSellers(UserRole actorRole);
 
+  /// Создание/обновление продавца (`upsert_seller_by_admin`, SECURITY DEFINER).
+  Future<void> upsertSellerByAdmin({
+    required String promoCode,
+    required String name,
+    required bool isActive,
+  });
+
   /// Заказы пользователя. На облаке: `WHERE user_id = :userId`.
   Future<List<OrderItem>> getOrders(String userId);
 
@@ -375,6 +396,9 @@ abstract class DatabaseService {
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
 
+  /// Строка `products` для печати бирки после ручного сохранения (в т.ч. `id`).
+  Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku);
+
   /// Админка: замена галереи `additional_images` (+ синхрон `image_url`) по `products.id`.
   Future<bool> updateProductGalleryByProductId({
     required String productId,
@@ -386,6 +410,13 @@ abstract class DatabaseService {
 
   /// Ручная продажа админом: `status = sold`, `stock_quantity = 0` (триггер → sales_history).
   Future<bool> markProductSoldByProductId(String productId);
+
+  /// Мульти-позиционная POS-продажа (только RPC, `SECURITY DEFINER`).
+  Future<AdminPosArchiveResult> archiveAdminPosSale({
+    required List<Map<String, dynamic>> lines,
+    required String sellerName,
+    required String paymentMethod,
+  });
 
   /// POS: карточка товара по `qr_code_payload`.
   Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload);
@@ -494,6 +525,9 @@ class CloudDatabaseService implements DatabaseService {
   ///
   /// Складской sync часто оставляет [metal], [insert], [category] пустыми — без
   /// дефолтов [ProductItem.fromJson] падает и [getProducts] возвращал [] целиком.
+  static Map<String, dynamic> productRowToClientJson(Map<String, dynamic> row) =>
+      _productRowToClientJson(row);
+
   static Map<String, dynamic> _productRowToClientJson(
     Map<String, dynamic> row,
   ) {
@@ -854,6 +888,46 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.getSellers failed: $error');
       debugPrint('$stackTrace');
       return _readCloudSellersCache();
+    }
+  }
+
+  @override
+  Future<void> upsertSellerByAdmin({
+    required String promoCode,
+    required String name,
+    required bool isActive,
+  }) async {
+    final code = SellerItem.normalizePromoCode(promoCode);
+    final trimmedName = name.trim();
+    if (code.isEmpty || trimmedName.isEmpty) {
+      throw StateError('Укажите имя и код сотрудника');
+    }
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerAdminRpc.upsertSellerByAdmin,
+        params: {
+          SellerAdminRpc.promoCodeParam: code,
+          SellerAdminRpc.nameParam: trimmedName,
+          SellerAdminRpc.isActiveParam: isActive,
+        },
+      );
+      final ok = result == true ||
+          (result is Map && (result['ok'] == true || result['success'] == true));
+      if (!ok) {
+        throw StateError('Сервер не подтвердил сохранение');
+      }
+      try {
+        await getSellers(UserRole.admin);
+      } catch (_) {}
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.upsertSellerByAdmin failed: $error');
+      debugPrint('$stackTrace');
+      final detail = error.message.trim();
+      throw StateError(detail.isEmpty ? 'Ошибка сохранения на сервере' : detail);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.upsertSellerByAdmin failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
     }
   }
 
@@ -1831,6 +1905,29 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return null;
+    try {
+      final row = await _supabaseClient
+          .from('products')
+          .select(_adminCatalogProductColumns)
+          .eq('sku', normalizedSku)
+          .order('updated_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (row == null) return null;
+      return Map<String, dynamic>.from(row);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchProductRowForLabelBySku failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return null;
@@ -1913,6 +2010,74 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.markProductSoldByProductId failed: $error');
       debugPrint('$stackTrace');
       return false;
+    }
+  }
+
+  @override
+  Future<AdminPosArchiveResult> archiveAdminPosSale({
+    required List<Map<String, dynamic>> lines,
+    required String sellerName,
+    required String paymentMethod,
+  }) async {
+    if (lines.isEmpty) {
+      return AdminPosArchiveResult.failure(
+        const AdminPosSaleException(
+          AdminPosSaleFailure.validation,
+          message: 'Корзина пуста',
+        ),
+      );
+    }
+    final seller = sellerName.trim();
+    final payment = paymentMethod.trim();
+    if (seller.isEmpty || payment.isEmpty) {
+      return AdminPosArchiveResult.failure(
+        const AdminPosSaleException(
+          AdminPosSaleFailure.validation,
+          message: 'Укажите продавца и способ оплаты',
+        ),
+      );
+    }
+
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.archiveAdminPosSale,
+        params: {
+          AdminCatalogRpc.posSaleLinesParam: lines,
+          AdminCatalogRpc.posSellerNameParam: seller,
+          AdminCatalogRpc.posPaymentMethodParam: payment,
+        },
+      );
+      if (result == null || result == true) {
+        return AdminPosArchiveResult.success();
+      }
+      final map = _rpcJsonMap(result);
+      final ok = map['ok'] == true || map['success'] == true;
+      if (!ok && map['raw'] == true) {
+        return AdminPosArchiveResult.success();
+      }
+      if (!ok) {
+        final message = map['error']?.toString() ?? map['message']?.toString();
+        final failure = AdminPosSaleException.classify(
+          message ?? 'rpc_failed',
+          rpcMessage: message,
+        );
+        return AdminPosArchiveResult.failure(
+          AdminPosSaleException(failure, message: message),
+        );
+      }
+      final orderId = map['order_id']?.toString();
+      return AdminPosArchiveResult.success(orderId: orderId);
+    } on PostgrestException catch (error) {
+      debugPrint('CloudDatabaseService.archiveAdminPosSale: $error');
+      final failure = AdminPosSaleException.classify(error, rpcMessage: error.message);
+      return AdminPosArchiveResult.failure(
+        AdminPosSaleException(failure, message: error.message),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.archiveAdminPosSale failed: $error');
+      debugPrint('$stackTrace');
+      final failure = AdminPosSaleException.classify(error);
+      return AdminPosArchiveResult.failure(AdminPosSaleException(failure));
     }
   }
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_typography.dart';
@@ -8,12 +9,25 @@ import '../core/utils/won_format.dart';
 import '../models/sales_history_row.dart';
 import '../services/sales_history_service.dart';
 
-String kstTodayIsoDate() {
-  final kst = DateTime.now().toUtc().add(const Duration(hours: 9));
-  final y = kst.year.toString().padLeft(4, '0');
-  final m = kst.month.toString().padLeft(2, '0');
-  final d = kst.day.toString().padLeft(2, '0');
+DateTime _kstNow() => DateTime.now().toUtc().add(const Duration(hours: 9));
+
+String _isoDateKst(DateTime date) {
+  final y = date.year.toString().padLeft(4, '0');
+  final m = date.month.toString().padLeft(2, '0');
+  final d = date.day.toString().padLeft(2, '0');
   return '$y-$m-$d';
+}
+
+DateTimeRange defaultSalesHistoryRangeKst() {
+  final kst = _kstNow();
+  final start = DateTime(kst.year, kst.month, 1);
+  final end = DateTime(kst.year, kst.month, kst.day);
+  return DateTimeRange(start: start, end: end);
+}
+
+String formatSalesRangeLabel(DateTimeRange range) {
+  final fmt = DateFormat('d MMM y', 'ru');
+  return '${fmt.format(range.start)} — ${fmt.format(range.end)}';
 }
 
 class SalesHistoryScreen extends StatefulWidget {
@@ -22,28 +36,35 @@ class SalesHistoryScreen extends StatefulWidget {
   final SalesHistoryRepository? repository;
 
   @override
-  State<SalesHistoryScreen> createState() => _SalesHistoryScreenState();
+  State<SalesHistoryScreen> createState() => SalesHistoryScreenState();
 }
 
-class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
+class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   late final SalesHistoryRepository _repo;
   final _scrollController = ScrollController();
   final _rows = <SalesHistoryRow>[];
 
-  String _selectedDateKst = kstTodayIsoDate();
-  int? _dayRevenueKrw;
+  late DateTimeRange _selectedRange;
+  int? _periodRevenueKrw;
   bool _kpiLoading = false;
   bool _listLoading = false;
   bool _loadingMore = false;
   bool _hasMore = true;
   int _pageIndex = 0;
   String? _error;
-  String? _returnBusySku;
+  String? _returnBusyKey;
+  Set<String> _reversedLegacyIds = const {};
+  Map<String, String> _latestSaleLegacyByProductId = const {};
+  Map<String, String> _productStatusById = const {};
+
+  String get _rangeStartIso => _isoDateKst(_selectedRange.start);
+  String get _rangeEndIso => _isoDateKst(_selectedRange.end);
 
   @override
   void initState() {
     super.initState();
     _repo = widget.repository ?? SalesHistoryRepository();
+    _selectedRange = defaultSalesHistoryRangeKst();
     _scrollController.addListener(_onScroll);
     _loadInitial();
   }
@@ -56,6 +77,40 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     super.dispose();
   }
 
+  /// Повторная загрузка списка и KPI с текущим [_selectedRange] (IndexedStack / после POS).
+  void reload() {
+    if (!mounted) return;
+    _loadInitial();
+  }
+
+  void _recomputeReversalIndex() {
+    _reversedLegacyIds = SalesHistoryRow.collectReversedLegacyIds(_rows);
+    _latestSaleLegacyByProductId =
+        SalesHistoryRow.latestPwaSaleLegacyByProductId(_rows);
+  }
+
+  Future<Map<String, String>> _fetchProductStatusesForRows() {
+    return _repo.fetchProductStatusesByIds(
+      SalesHistoryRow.pwaProductIdsFromRows(_rows),
+    );
+  }
+
+  bool _canShowReturnButton(SalesHistoryRow row) {
+    if (!row.canProcessPosReturn) return false;
+    if (_reversedLegacyIds.contains(row.legacyId)) return false;
+    final productId = row.resolvedProductId;
+    if (productId == null || productId.isEmpty) return false;
+    final latestLegacy = _latestSaleLegacyByProductId[productId];
+    if (latestLegacy != row.legacyId) return false;
+    return _productStatusById[productId] == 'sold';
+  }
+
+  bool _showReturnedBadge(SalesHistoryRow row) {
+    return row.isPwaSale &&
+        !row.isReturnLine &&
+        _reversedLegacyIds.contains(row.legacyId);
+  }
+
   Future<void> _loadInitial() async {
     setState(() {
       _listLoading = true;
@@ -64,20 +119,33 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
       _rows.clear();
       _pageIndex = 0;
       _hasMore = true;
+      _reversedLegacyIds = const {};
+      _latestSaleLegacyByProductId = const {};
+      _productStatusById = const {};
     });
 
     try {
-      final revenue = await _repo.sumPriceKrwForSoldDateKst(_selectedDateKst);
+      final revenue = await _repo.sumPriceKrwForSoldDateRangeKst(
+        _rangeStartIso,
+        _rangeEndIso,
+      );
       final page = await _repo.fetchPage(
         pageIndex: 0,
-        soldDateKst: _selectedDateKst,
+        soldDateKstStart: _rangeStartIso,
+        soldDateKstEnd: _rangeEndIso,
       );
+      _rows
+        ..clear()
+        ..addAll(page);
+      _recomputeReversalIndex();
+      final productStatuses =
+          await _fetchProductStatusesForRows();
       if (!mounted) return;
       setState(() {
-        _dayRevenueKrw = revenue;
-        _rows.addAll(page);
+        _periodRevenueKrw = revenue;
         _hasMore = page.length >= SalesHistoryRepository.defaultPageSize;
         _pageIndex = 1;
+        _productStatusById = productStatuses;
         _listLoading = false;
         _kpiLoading = false;
       });
@@ -97,11 +165,17 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     try {
       final page = await _repo.fetchPage(
         pageIndex: _pageIndex,
-        soldDateKst: _selectedDateKst,
+        soldDateKstStart: _rangeStartIso,
+        soldDateKstEnd: _rangeEndIso,
+      );
+      _rows.addAll(page);
+      _recomputeReversalIndex();
+      final newStatuses = await _repo.fetchProductStatusesByIds(
+        SalesHistoryRow.pwaProductIdsFromRows(page),
       );
       if (!mounted) return;
       setState(() {
-        _rows.addAll(page);
+        _productStatusById = {..._productStatusById, ...newStatuses};
         _hasMore = page.length >= SalesHistoryRepository.defaultPageSize;
         _pageIndex += 1;
         _loadingMore = false;
@@ -124,21 +198,17 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final initial = DateTime.tryParse(_selectedDateKst) ?? DateTime.now();
-    final picked = await showDatePicker(
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(
       context: context,
-      initialDate: initial,
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2024),
       lastDate: DateTime.now().add(const Duration(days: 1)),
-      helpText: 'День продажи (KST)',
+      initialDateRange: _selectedRange,
+      locale: const Locale('ru', 'RU'),
+      helpText: 'Период продаж (KST)',
     );
     if (picked == null || !mounted) return;
-    final iso =
-        '${picked.year.toString().padLeft(4, '0')}-'
-        '${picked.month.toString().padLeft(2, '0')}-'
-        '${picked.day.toString().padLeft(2, '0')}';
-    setState(() => _selectedDateKst = iso);
+    setState(() => _selectedRange = picked);
     await _loadInitial();
   }
 
@@ -152,56 +222,43 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
     );
   }
 
-  Future<void> _confirmReturn(SalesHistoryRow row) async {
-    if (row.sku.isEmpty || row.isReturnLine) return;
+  Future<void> _openPosReturnDialog(SalesHistoryRow row) async {
+    if (!_canShowReturnButton(row)) {
+      _snack(
+        'Возврат недоступен для этой продажи (legacy ${row.legacyId})',
+        error: true,
+      );
+      return;
+    }
 
-    final confirmed = await showDialog<bool>(
+    final productId = row.resolvedProductId!;
+    final result = await showDialog<_PosReturnFormData>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Возврат на витрину', style: AppTypography.heading(fontSize: 18)),
-        content: Text(
-          'Вы уверены, что хотите оформить возврат товара ${row.sku} на витрину? '
-          'Финансовые показатели будут скорректированы.',
-          style: AppTypography.productMeta(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Возврат'),
-          ),
-        ],
+      builder: (context) => _PosReturnDialog(
+        sku: row.sku,
+        productId: productId,
       ),
     );
+    if (result == null || !mounted) return;
 
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _returnBusySku = row.sku);
+    setState(() => _returnBusyKey = row.legacyId);
     try {
-      final reversal = await _repo.processProductReturn(row.sku);
+      await _repo.processPosProductReturn(
+        productId: productId,
+        reason: result.reason,
+        adminName: result.adminName,
+      );
       if (!mounted) return;
-      setState(() {
-        final idx = _rows.indexWhere(
-          (r) => r.legacyId == row.legacyId || r.id == row.id,
-        );
-        if (idx >= 0) {
-          _rows.insert(idx + 1, reversal);
-        } else {
-          _rows.insert(0, reversal);
-        }
-        if (_dayRevenueKrw != null) {
-          _dayRevenueKrw = _dayRevenueKrw! + reversal.priceKrw;
-        }
-        _returnBusySku = null;
-      });
-      _snack('Товар ${row.sku} возвращён на витрину');
+      setState(() => _returnBusyKey = null);
+      _snack('Товар успешно возвращен на витрину!');
+      await _loadInitial();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _returnBusySku = null);
-      _snack(error.toString(), error: true);
+      setState(() => _returnBusyKey = null);
+      final message = error is StateError
+          ? error.message
+          : error.toString().replaceFirst('Exception: ', '');
+      _snack(message, error: true);
     }
   }
 
@@ -246,10 +303,10 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _KpiHeader(
-            selectedDateKst: _selectedDateKst,
-            revenueKrw: _dayRevenueKrw,
+            rangeLabel: formatSalesRangeLabel(_selectedRange),
+            revenueKrw: _periodRevenueKrw,
             loading: _kpiLoading,
-            onPickDate: _pickDate,
+            onPickRange: _pickDateRange,
           ),
           if (_error != null)
             Padding(
@@ -279,11 +336,12 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
                         final row = _rows[index];
                         return _SalesHistoryTile(
                           row: row,
-                          returnBusy: _returnBusySku == row.sku,
+                          returnBusy: _returnBusyKey == row.legacyId,
+                          showReturnedBadge: _showReturnedBadge(row),
                           onTap: () => _showPayloadDialog(row),
-                          onReturn: row.isReturnLine
-                              ? null
-                              : () => _confirmReturn(row),
+                          onReturn: _canShowReturnButton(row)
+                              ? () => _openPosReturnDialog(row)
+                              : null,
                         );
                       },
                     ),
@@ -297,16 +355,16 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
 class _KpiHeader extends StatelessWidget {
   const _KpiHeader({
-    required this.selectedDateKst,
+    required this.rangeLabel,
     required this.revenueKrw,
     required this.loading,
-    required this.onPickDate,
+    required this.onPickRange,
   });
 
-  final String selectedDateKst;
+  final String rangeLabel;
   final int? revenueKrw;
   final bool loading;
-  final VoidCallback onPickDate;
+  final VoidCallback onPickRange;
 
   @override
   Widget build(BuildContext context) {
@@ -338,7 +396,7 @@ class _KpiHeader extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Выручка за день (KST)',
+                  'Выручка за период (KST)',
                   style: AppTypography.caption(
                     color: AppColors.textOnPrimary,
                     fontWeight: FontWeight.w600,
@@ -346,9 +404,13 @@ class _KpiHeader extends StatelessWidget {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: onPickDate,
-                icon: const Icon(Icons.calendar_month_outlined, size: 18),
-                label: Text(selectedDateKst),
+                onPressed: onPickRange,
+                icon: const Icon(Icons.date_range_outlined, size: 18),
+                label: Text(
+                  rangeLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.textOnPrimary,
                   side: BorderSide(color: AppColors.textOnPrimary.withValues(alpha: 0.6)),
@@ -379,7 +441,7 @@ class _KpiHeader extends StatelessWidget {
             ),
           const SizedBox(height: 4),
           Text(
-            'Сумма price_krw по sold_date_kst',
+            'Сумма price_krw за выбранный период (sold_date_kst)',
             style: AppTypography.productMeta().copyWith(
               color: AppColors.textOnPrimary.withValues(alpha: 0.85),
             ),
@@ -396,12 +458,14 @@ class _SalesHistoryTile extends StatelessWidget {
     required this.onTap,
     this.onReturn,
     this.returnBusy = false,
+    this.showReturnedBadge = false,
   });
 
   final SalesHistoryRow row;
   final VoidCallback onTap;
   final VoidCallback? onReturn;
   final bool returnBusy;
+  final bool showReturnedBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -456,6 +520,27 @@ class _SalesHistoryTile extends StatelessWidget {
                         color: row.isReturnLine ? AppColors.saleRed : null,
                       ),
                     ),
+                    if (showReturnedBadge) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.textSecondary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Возвращено',
+                          style: AppTypography.productMeta().copyWith(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (onReturn != null) ...[
                       const SizedBox(height: 6),
                       SizedBox(
@@ -473,7 +558,7 @@ class _SalesHistoryTile extends StatelessWidget {
                                   size: 18,
                                   color: AppColors.accent.withValues(alpha: 0.95),
                                 ),
-                                label: const Text('Возврат'),
+                                label: const Text('Возврат товара'),
                                 style: TextButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(horizontal: 8),
                                   minimumSize: Size.zero,
@@ -489,6 +574,142 @@ class _SalesHistoryTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PosReturnFormData {
+  const _PosReturnFormData({required this.reason, required this.adminName});
+
+  final String reason;
+  final String adminName;
+}
+
+class _PosReturnDialog extends StatefulWidget {
+  const _PosReturnDialog({
+    required this.sku,
+    required this.productId,
+  });
+
+  final String sku;
+  final String productId;
+
+  @override
+  State<_PosReturnDialog> createState() => _PosReturnDialogState();
+}
+
+class _PosReturnDialogState extends State<_PosReturnDialog> {
+  final _reasonController = TextEditingController();
+  final _adminController = TextEditingController(text: 'Администратор');
+  String? _error;
+
+  static const _reasonPresets = [
+    'Передумал',
+    'Брак',
+    'Размер не подошёл',
+  ];
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    _adminController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final reason = _reasonController.text.trim();
+    final admin = _adminController.text.trim();
+    if (reason.isEmpty || admin.isEmpty) {
+      setState(() => _error = 'Заполните причину и имя администратора');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _PosReturnFormData(reason: reason, adminName: admin),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        'Возврат товара',
+        style: AppTypography.heading(fontSize: 20),
+      ),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'SKU ${widget.sku}',
+                style: AppTypography.productName(),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'ID ${widget.productId}',
+                style: AppTypography.productMeta(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Причина возврата',
+                  hintText: 'Например: Передумал',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.sentences,
+                maxLines: 2,
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: _reasonPresets.map((preset) {
+                  return ActionChip(
+                    label: Text(preset),
+                    onPressed: () {
+                      _reasonController.text = preset;
+                      setState(() => _error = null);
+                    },
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _adminController,
+                decoration: const InputDecoration(
+                  labelText: 'Администратор / кассир',
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: AppTypography.productMeta().copyWith(
+                    color: AppColors.saleRed,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        FilledButton.icon(
+          onPressed: _submit,
+          icon: const Icon(Icons.assignment_return_outlined),
+          label: const Text('Оформить возврат'),
+        ),
+      ],
     );
   }
 }

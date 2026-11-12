@@ -18,6 +18,11 @@ class ProfileController extends ChangeNotifier {
   bool isAnonymousAccount = false;
   bool isLinkingSocialAccount = false;
 
+  /// Успешный PIN входа в веб-панель (`verifyAdminPinForPanel` / `unlockAdminWithPin`).
+  bool isPanelAdminAuthenticated = false;
+
+  bool get isLocalAdminAuthenticated => isPanelAdminAuthenticated;
+
   List<OrderItem> get orders => List.unmodifiable(_orders);
 
   bool get isLoading => _isLoading;
@@ -136,13 +141,22 @@ class ProfileController extends ChangeNotifier {
     final ok = await _database.verifyAdminPin(pin);
     if (!ok) return false;
     signInAdmin();
+    isPanelAdminAuthenticated = true;
+    notifyListeners();
     return true;
   }
 
-  Future<bool> verifyAdminPinForPanel(String pin) =>
-      _database.verifyAdminPin(pin);
+  Future<bool> verifyAdminPinForPanel(String pin) async {
+    final ok = await _database.verifyAdminPin(pin);
+    if (ok) {
+      isPanelAdminAuthenticated = true;
+      notifyListeners();
+    }
+    return ok;
+  }
 
   Future<void> logout() async {
+    isPanelAdminAuthenticated = false;
     if (user.isAdmin) {
       final refreshed = await _database.refreshCustomerProfileFromCloud();
       if (refreshed != null) {

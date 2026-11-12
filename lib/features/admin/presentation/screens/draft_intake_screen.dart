@@ -113,20 +113,37 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     );
   }
 
-  Future<void> _printLabelForProduct(Map<String, dynamic> row) async {
+  void _safeFireAndForgetPrint(Map<String, dynamic> productRow) {
+    Future.microtask(() async {
+      try {
+        await _printLabelForProduct(productRow, userFeedback: false);
+      } catch (error, stackTrace) {
+        debugPrint('Тихая ошибка печати в песочнице: $error');
+        debugPrint('$stackTrace');
+      }
+    });
+  }
+
+  Future<void> _printLabelForProduct(
+    Map<String, dynamic> row, {
+    bool userFeedback = true,
+  }) async {
     try {
       await JewelryLabelPrintDialog.showAndPrint(
         context,
         productRow: row,
         titleSuffix: 'Приёмка',
       );
-      if (mounted) _showSnack('Печать ценника запущена');
+      if (userFeedback && mounted) {
+        _showSnack('Печать ценника запущена');
+      }
     } catch (error, stackTrace) {
       debugPrint('DraftIntakeScreen._printLabelForProduct failed: $error');
       debugPrint('$stackTrace');
-      if (mounted) {
+      if (userFeedback && mounted) {
         _showSnack('Ошибка печати: $error', isError: true);
       }
+      rethrow;
     }
   }
 
@@ -157,10 +174,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
       }
 
       final printRow = Map<String, dynamic>.from(row)..['notes'] = productName;
-      await _printLabelForProduct(printRow);
-
       _showSnack('Принят $sku — на витрине (stock=1)');
-      await _printLabelForProduct(printRow);
+      if (mounted) setState(() => _rowBusySkus.remove(sku));
+      _safeFireAndForgetPrint(printRow);
       await _runSearch(_searchController.text);
     } catch (error) {
       if (!mounted) return;
@@ -251,7 +267,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
       }
 
       for (final row in snapshot) {
-        await _printLabelForProduct(row);
+        _safeFireAndForgetPrint(row);
       }
 
       _showSnack('Активировано $activated поз. — буфер печати сформирован');

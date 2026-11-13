@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../features/catalog/domain/models/catalog_constants.dart';
 import '../../features/admin/domain/admin_pos_archive_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
@@ -216,6 +217,11 @@ abstract class DatabaseService {
     bool orderIdDescending = false,
     List<String> categoryIlikePatterns = const [],
     List<String> metalIlikePatterns = const [],
+    List<String> insertIlikePatterns = const [],
+    int? minSalePriceKrw,
+    int? maxSalePriceKrw,
+    double? minWeightGrams,
+    double? maxWeightGrams,
   });
 
   /// Постраничный список для админки (все статусы, без витринного RLS-фильтра active).
@@ -607,17 +613,58 @@ class CloudDatabaseService implements DatabaseService {
     int? minDiscountPercent,
     List<String> categoryIlikePatterns = const [],
     List<String> metalIlikePatterns = const [],
+    List<String> insertIlikePatterns = const [],
+    int? minSalePriceKrw,
+    int? maxSalePriceKrw,
+    double? minWeightGrams,
+    double? maxWeightGrams,
   }) {
-    var filtered = query.eq('status', 'active');
+    var filtered = query.eq('status', 'active').gt('stock_quantity', 0);
 
     if (minDiscountPercent != null && minDiscountPercent > 0) {
       filtered = filtered.gt('discount_percent', minDiscountPercent - 1);
     }
 
-    final insertList =
-        inserts?.map((i) => i.trim()).where((i) => i.isNotEmpty).toList();
-    if (insertList != null && insertList.isNotEmpty) {
-      filtered = filtered.inFilter('insert', insertList);
+    if (insertIlikePatterns.isNotEmpty) {
+      final orParts = <String>[];
+      for (final pattern in insertIlikePatterns) {
+        final escaped = pattern.replaceAll(',', r'\,');
+        orParts.add('insert.ilike.$escaped');
+      }
+      filtered = filtered.or(orParts.join(','));
+    } else {
+      final insertList =
+          inserts?.map((i) => i.trim()).where((i) => i.isNotEmpty).toList();
+      if (insertList != null && insertList.isNotEmpty) {
+        final orParts = <String>[];
+        for (final token in insertList) {
+          final escaped = token.replaceAll(',', r'\,');
+          orParts.add('insert.ilike.%$escaped%');
+        }
+        filtered = filtered.or(orParts.join(','));
+      }
+    }
+
+    final priceMin = minSalePriceKrw;
+    if (priceMin != null &&
+        priceMin > CatalogDesktopFilterBounds.priceMinKrw) {
+      filtered = filtered.gte('sale_price', priceMin);
+    }
+    final priceMax = maxSalePriceKrw;
+    if (priceMax != null &&
+        priceMax < CatalogDesktopFilterBounds.priceMaxKrw) {
+      filtered = filtered.lte('sale_price', priceMax);
+    }
+
+    final wMin = minWeightGrams;
+    if (wMin != null &&
+        wMin > CatalogDesktopFilterBounds.weightMinGrams) {
+      filtered = filtered.gte('weight_grams', wMin);
+    }
+    final wMax = maxWeightGrams;
+    if (wMax != null &&
+        wMax < CatalogDesktopFilterBounds.weightMaxGrams) {
+      filtered = filtered.lte('weight_grams', wMax);
     }
 
     final skuQ = skuIlikeQuery?.trim();
@@ -683,13 +730,13 @@ class CloudDatabaseService implements DatabaseService {
     }
 
     if (metalIlikePatterns.isNotEmpty) {
-      final orParts = metalIlikePatterns
-          .map((p) {
-            final escaped = p.replaceAll(',', r'\,');
-            return 'metal.ilike.$escaped';
-          })
-          .join(',');
-      filtered = filtered.or(orParts);
+      final orParts = <String>[];
+      for (final p in metalIlikePatterns) {
+        final escaped = p.replaceAll(',', r'\,');
+        orParts.add('metal.ilike.$escaped');
+        orParts.add('metal_type.ilike.$escaped');
+      }
+      filtered = filtered.or(orParts.join(','));
     }
 
     return filtered;
@@ -710,6 +757,11 @@ class CloudDatabaseService implements DatabaseService {
     bool orderIdDescending = false,
     List<String> categoryIlikePatterns = const [],
     List<String> metalIlikePatterns = const [],
+    List<String> insertIlikePatterns = const [],
+    int? minSalePriceKrw,
+    int? maxSalePriceKrw,
+    double? minWeightGrams,
+    double? maxWeightGrams,
   }) async {
     try {
       final from = offset;
@@ -727,6 +779,11 @@ class CloudDatabaseService implements DatabaseService {
         minDiscountPercent: minDiscountPercent,
         categoryIlikePatterns: categoryIlikePatterns,
         metalIlikePatterns: metalIlikePatterns,
+        insertIlikePatterns: insertIlikePatterns,
+        minSalePriceKrw: minSalePriceKrw,
+        maxSalePriceKrw: maxSalePriceKrw,
+        minWeightGrams: minWeightGrams,
+        maxWeightGrams: maxWeightGrams,
       );
       final rows = await query
           .order('id', ascending: !orderIdDescending)

@@ -25,8 +25,10 @@ class CatalogScreen extends StatefulWidget {
 
 class _CatalogScreenState extends State<CatalogScreen> {
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _scrollController = ScrollController();
+  CatalogController? _catalog;
 
   CatalogFilterState _draftFilters = const CatalogFilterState();
   CatalogFilterState _desktopDraftFilters = const CatalogFilterState();
@@ -37,20 +39,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final catalog = CatalogScope.of(context);
+      _catalog = catalog;
+      catalog.addListener(_syncSearchFieldFromCatalog);
       if (catalog.products.isEmpty && !catalog.isLoading) {
         catalog.refreshBrowse();
       }
       setState(() => _desktopDraftFilters = catalog.appliedDesktopFilters);
+      _syncSearchFieldFromCatalog();
     });
   }
 
   @override
   void dispose() {
+    _catalog?.removeListener(_syncSearchFieldFromCatalog);
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  void _syncSearchFieldFromCatalog() {
+    if (!mounted || _searchFocus.hasFocus) return;
+    final q = (_catalog ?? CatalogScope.of(context)).searchQuery;
+    if (_searchController.text.trim() != q) {
+      _searchController.text = q;
+      _searchController.selection = TextSelection.collapsed(offset: q.length);
+    }
   }
 
   void _onScroll() {
@@ -94,6 +110,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
     });
   }
 
+  void _resetMobileBrowseFilters() {
+    CatalogScope.of(context).resetAllBrowseFilters();
+    _searchController.clear();
+  }
+
   Widget _buildCatalogSlivers({
     required CatalogController catalog,
     required List<ProductItem> products,
@@ -115,10 +136,49 @@ class _CatalogScreenState extends State<CatalogScreen> {
           SliverToBoxAdapter(
             child: CatalogSearchBar(
               controller: _searchController,
-              activeFilterCount: catalog.drawerFilterActiveCount +
-                  catalog.selectedCategories.length,
+              focusNode: _searchFocus,
+              activeFilterCount: catalog.browseFilterActiveCount,
               onFilterTap: _openFilters,
               onChanged: catalog.setSearchQuery,
+            ),
+          ),
+        if (!isDesktop && catalog.browseFilterActiveCount > 0)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.accent),
+                    ),
+                    child: Text(
+                      'Активных фильтров: ${catalog.browseFilterActiveCount}',
+                      style: AppTypography.caption(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ).copyWith(fontSize: 12),
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: _resetMobileBrowseFilters,
+                    child: Text(
+                      'Сбросить',
+                      style: AppTypography.caption(
+                        color: AppColors.accent,
+                        fontWeight: FontWeight.w700,
+                      ).copyWith(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: 12)),

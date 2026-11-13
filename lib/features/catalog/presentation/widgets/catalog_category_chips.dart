@@ -20,6 +20,7 @@ class CatalogCategoryChips extends StatelessWidget {
   static const _categoryIcons = {
     CatalogCategories.rings: Icons.diamond_outlined,
     CatalogCategories.earrings: Icons.blur_circular_outlined,
+    CatalogCategories.chains: Icons.link_rounded,
     CatalogCategories.pendants: Icons.favorite_border_rounded,
     CatalogCategories.bracelets: Icons.watch_outlined,
     CatalogCategories.watches: Icons.watch_rounded,

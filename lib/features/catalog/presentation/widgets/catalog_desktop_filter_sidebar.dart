@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../domain/models/catalog_constants.dart';
+import '../../domain/utils/catalog_metal_facet_utils.dart';
 
 /// Боковая панель фильтров каталога (desktop, ≥960px).
 class CatalogDesktopFilterSidebar extends StatefulWidget {
@@ -179,14 +180,10 @@ class _CatalogDesktopFilterSidebarState extends State<CatalogDesktopFilterSideba
                       options: CatalogMetals.items,
                       selected: draftFilters.selectedMetals,
                       onToggle: (value) {
-                        final updated = Set<String>.from(
+                        final updated = toggleCatalogMetalFacet(
                           draftFilters.selectedMetals,
+                          value,
                         );
-                        if (updated.contains(value)) {
-                          updated.remove(value);
-                        } else {
-                          updated.add(value);
-                        }
                         _emit(draftFilters.copyWith(selectedMetals: updated));
                       },
                     ),

@@ -24,8 +24,10 @@ const MSSQL_CONNECT_TIMEOUT_MS = Number(
 );
 /** SELECT каталога Items ⨝ Articuls. */
 const MSSQL_QUERY_TIMEOUT_MS = Number(process.env.MSSQL_QUERY_TIMEOUT_MS || 60000);
-/** BLOB Articuls.Image — отдельный лимит на скачивание. */
-const MSSQL_BLOB_TIMEOUT_MS = Number(process.env.MSSQL_BLOB_TIMEOUT_MS || 25000);
+/** BLOB Articuls.Image + articul_images — тяжёлые varbinary, склад отвечает медленно. */
+const MSSQL_BLOB_TIMEOUT_MS = Number(process.env.MSSQL_BLOB_TIMEOUT_MS || 90000);
+const MSSQL_RETRY_ATTEMPTS = Number(process.env.MSSQL_RETRY_ATTEMPTS || 3);
+const MSSQL_RETRY_DELAY_MS = Number(process.env.MSSQL_RETRY_DELAY_MS || 2500);
 
 const MSSQL_CONFIG = {
   server: process.env.MSSQL_HOST || '211.176.43.226',
@@ -35,7 +37,7 @@ const MSSQL_CONFIG = {
   database: process.env.MSSQL_DATABASE || 'DrJaw',
   connectionTimeout: MSSQL_CONNECT_TIMEOUT_MS,
   /** Верхняя граница для tedious; точные лимиты — request.timeout в каждом запросе. */
-  requestTimeout: MSSQL_BLOB_TIMEOUT_MS,
+  requestTimeout: Math.max(MSSQL_BLOB_TIMEOUT_MS, MSSQL_QUERY_TIMEOUT_MS),
   options: {
     encrypt: false,
     trustServerCertificate: true,
@@ -43,15 +45,25 @@ const MSSQL_CONFIG = {
   pool: { max: 5, min: 0, idleTimeoutMillis: 30000 },
 };
 
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isMssqlTimeoutError(err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /MSSQL timeout after/i.test(msg) || /\bETIMEOUT\b/i.test(msg);
+}
+
 /**
- * MSSQL-операция с Promise.race (на случай зависания ниже драйвера).
+ * Одна попытка MSSQL с Promise.race (если tedious завис ниже request.timeout).
+ * @template T
  * @param {string} label
  * @param {(import('mssql').ConnectionPool) => Promise<T>} operation
  * @param {import('mssql').ConnectionPool | null} pool
- * @param {number} [timeoutMs=MSSQL_QUERY_TIMEOUT_MS]
+ * @param {number} timeoutMs
  * @returns {Promise<T>}
  */
-async function runMssqlWithTimeout(label, operation, pool, timeoutMs = MSSQL_QUERY_TIMEOUT_MS) {
+async function runMssqlWithTimeoutOnce(label, operation, pool, timeoutMs) {
   let timer;
   const timeoutPromise = new Promise((_, reject) => {
     timer = setTimeout(() => {
@@ -63,6 +75,42 @@ async function runMssqlWithTimeout(label, operation, pool, timeoutMs = MSSQL_QUE
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * MSSQL-операция с таймаутом и повторами при ETIMEOUT / обёртке Promise.race.
+ * @template T
+ * @param {string} label
+ * @param {(import('mssql').ConnectionPool) => Promise<T>} operation
+ * @param {import('mssql').ConnectionPool | null} pool
+ * @param {number} [timeoutMs=MSSQL_QUERY_TIMEOUT_MS]
+ * @param {number} [retryAttempts=1]
+ * @returns {Promise<T>}
+ */
+async function runMssqlWithTimeout(
+  label,
+  operation,
+  pool,
+  timeoutMs = MSSQL_QUERY_TIMEOUT_MS,
+  retryAttempts = 1,
+) {
+  const attempts = Math.max(1, retryAttempts);
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await runMssqlWithTimeoutOnce(label, operation, pool, timeoutMs);
+    } catch (err) {
+      lastError = err;
+      const canRetry = isMssqlTimeoutError(err) && attempt < attempts;
+      if (!canRetry) throw err;
+      console.warn(
+        `[mssql] ${label}: timeout (попытка ${attempt}/${attempts}), ` +
+          `повтор через ${MSSQL_RETRY_DELAY_MS}ms…`,
+      );
+      await sleepMs(MSSQL_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
 }
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -84,7 +132,7 @@ const DELETE_CHUNK_SIZE = 500;
 
 /** Поля products для зеркальной сверки MSSQL ↔ Supabase. */
 const MIRROR_PRODUCT_COLUMNS =
-  'id, sku, stock_quantity, status, name, description, metal, sale_price, old_price, ' +
+  'id, sku, stock_quantity, status, name, description, metal, metal_type, sale_price, old_price, ' +
   'discount_percent, category, insert, icon_index, available_sizes, warehouse_attributes, ' +
   'weight_grams, image_url, images';
 
@@ -95,6 +143,7 @@ const MIRROR_SCALAR_KEYS = [
   'name',
   'description',
   'metal',
+  'metal_type',
   'sale_price',
   'old_price',
   'discount_percent',
@@ -137,6 +186,27 @@ function buildRussianTitle(row) {
   const stones = (row.Stones || '').trim();
   const stonesPart = stones ? ` с ${stones}` : '';
   return `${type} ${articul}${stonesPart}`.replace(/\s+/g, ' ').trim();
+}
+
+function parseGoldColorFromComment(comment) {
+  const c = String(comment || '').toLowerCase();
+  if (/красн/.test(c)) return 'красное';
+  if (/бел/.test(c)) return 'белое';
+  if (/ж[её]лт/.test(c)) return 'жёлтое';
+  return null;
+}
+
+function isGoldMetall(metall) {
+  const m = String(metall || '').toLowerCase();
+  return /золот/.test(m) || /\b585\b/.test(m) || /\b750\b/.test(m);
+}
+
+function resolveMetalLabelForRow(row) {
+  const base = String(row.Metall || '').trim() || '—';
+  if (!isGoldMetall(base)) return base;
+  const color = parseGoldColorFromComment(row.Comment);
+  if (!color) return base;
+  return `${base} ${color}`;
 }
 
 function isRateLimitError(err) {
@@ -412,6 +482,7 @@ async function fetchArticulImageBuffers(pool, articul) {
     },
     pool,
     MSSQL_BLOB_TIMEOUT_MS,
+    MSSQL_RETRY_ATTEMPTS,
   );
 }
 
@@ -527,6 +598,7 @@ async function fetchDrJawRows(pool) {
       i.Stones,
       i.Status,
       i.Mart,
+      i.Comment,
       a.Type,
       a.Metall
     FROM Items AS i
@@ -750,7 +822,8 @@ async function buildDesiredScalarsForRow(row) {
       uz: name.uz,
       en: name.en,
     },
-    metal: String(row.Metall || '').trim() || '—',
+    metal: resolveMetalLabelForRow(row),
+    metal_type: resolveMetalLabelForRow(row),
     sale_price: salePrice,
     old_price: salePrice,
     discount_percent: 0,

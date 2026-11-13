@@ -6,6 +6,7 @@ import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../cart/presentation/pages/cart_screen.dart';
 import '../../../catalog/presentation/pages/catalog_screen.dart';
+import '../../../../shared/providers/catalog_scope.dart';
 import '../../../favorites/presentation/pages/favorites_screen.dart';
 import '../../../home/presentation/pages/home_screen.dart';
 import '../../../profile/presentation/pages/profile_screen.dart';
@@ -98,7 +99,15 @@ class _MainScreenState extends State<MainScreen> {
           ),
           child: BottomNavigationBar(
             currentIndex: _currentIndex,
-            onTap: (index) => setState(() => _currentIndex = index),
+            onTap: (index) {
+              if (index == 1 && _currentIndex != 1) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  CatalogScope.of(context).pingBrowseUiSync();
+                });
+              }
+              setState(() => _currentIndex = index);
+            },
             items: [
               for (var index = 0; index < NavConstants.tabs.length; index++)
                 BottomNavigationBarItem(

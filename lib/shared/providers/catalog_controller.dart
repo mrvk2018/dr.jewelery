@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/services/database_service.dart';
 import '../../features/catalog/domain/models/catalog_constants.dart';
-import '../../features/catalog/domain/utils/catalog_filter_utils.dart';
+import '../../features/catalog/domain/utils/catalog_metal_facet_utils.dart';
 import '../../features/catalog/domain/utils/catalog_server_filter_utils.dart';
 import '../../features/home/domain/home_story_catalog_query.dart';
 import '../models/product_item.dart';
@@ -14,6 +14,7 @@ class CatalogController extends ChangeNotifier {
   CatalogController(this._database);
 
   static const int pageSize = 40;
+  static const Duration searchDebounce = Duration(milliseconds: 350);
 
   final DatabaseService _database;
   DatabaseService get database => _database;
@@ -34,6 +35,8 @@ class CatalogController extends ChangeNotifier {
   bool _hasMore = true;
   bool _isLoading = false;
   bool _isLoadingMore = false;
+  int _browseRequestGeneration = 0;
+  Timer? _searchDebounceTimer;
 
   int _homeOffset = 0;
   bool _homeHasMore = true;
@@ -46,7 +49,6 @@ class CatalogController extends ChangeNotifier {
   bool _adminIsLoadingMore = false;
 
   CatalogFilterState _clientBrowseFilters = const CatalogFilterState();
-  CatalogFilterState? _clientPreviewExtras;
 
   String _desktopSkuSearch = '';
   Set<String> _serverMetalFamilies = {};
@@ -54,27 +56,8 @@ class CatalogController extends ChangeNotifier {
 
   List<ProductItem> get products => List.unmodifiable(_products);
 
-  /// Серверная выборка + клиент (цена/вес); до Apply — превью по загруженным строкам.
-  List<ProductItem> get visibleBrowseProducts {
-    final preview = _clientPreviewExtras;
-    final merged = CatalogFilterState(
-      priceMinKrw: _clientBrowseFilters.priceMinKrw,
-      priceMaxKrw: _clientBrowseFilters.priceMaxKrw,
-      weightMinGrams: _clientBrowseFilters.weightMinGrams,
-      weightMaxGrams: _clientBrowseFilters.weightMaxGrams,
-      localSearchQuery:
-          preview != null ? preview.localSearchQuery : '',
-      selectedMetalFamilies: preview != null
-          ? preview.selectedMetalFamilies
-          : const {},
-      selectedFineness:
-          preview != null ? preview.selectedFineness : const {},
-    );
-    return filterCatalogProducts(
-      products: _products,
-      filters: merged,
-    );
-  }
+  /// Покупательская витрина: только серверная выборка (без клиентской обрезки).
+  List<ProductItem> get visibleBrowseProducts => List.unmodifiable(_products);
 
   List<ProductItem> get recommendedProducts => List.unmodifiable(_homeProducts);
 
@@ -99,16 +82,36 @@ class CatalogController extends ChangeNotifier {
   bool get adminIsLoading => _adminIsLoading;
   bool get adminIsLoadingMore => _adminIsLoadingMore;
 
-  int get drawerFilterActiveCount =>
-      _selectedMetals.length + _selectedInserts.length + _selectedSizes.length;
+  bool get _priceFilterActive =>
+      _clientBrowseFilters.priceMinKrw >
+          CatalogDesktopFilterBounds.priceMinKrw ||
+      _clientBrowseFilters.priceMaxKrw <
+          CatalogDesktopFilterBounds.priceMaxKrw;
+
+  bool get _weightFilterActive =>
+      _clientBrowseFilters.weightMinGrams >
+          CatalogDesktopFilterBounds.weightMinGrams ||
+      _clientBrowseFilters.weightMaxGrams <
+          CatalogDesktopFilterBounds.weightMaxGrams;
+
+  int get browseFilterActiveCount {
+    var n = _selectedCategories.length +
+        _selectedMetals.length +
+        _selectedInserts.length +
+        _selectedSizes.length;
+    if (_searchQuery.isNotEmpty) n++;
+    if (_priceFilterActive) n++;
+    if (_weightFilterActive) n++;
+    return n;
+  }
+
+  int get drawerFilterActiveCount => browseFilterActiveCount;
 
   int get desktopFilterActiveCount =>
-      drawerFilterActiveCount +
-      _selectedCategories.length +
-      _clientBrowseFilters.activeCount +
-      (_desktopSkuSearch.isNotEmpty ? 1 : 0) +
+      browseFilterActiveCount +
       _serverMetalFamilies.length +
-      _serverFineness.length;
+      _serverFineness.length +
+      (_desktopSkuSearch.isNotEmpty ? 1 : 0);
 
   CatalogFilterState get appliedDesktopFilters => CatalogFilterState(
         selectedMetals: Set<String>.from(_selectedMetals),
@@ -127,15 +130,27 @@ class CatalogController extends ChangeNotifier {
         selectedFineness: Set<String>.from(_serverFineness),
       );
 
+  Set<String> get _browseMetalFacetLabels => {
+        ..._selectedMetals,
+        ..._serverMetalFamilies,
+      };
+
   List<String> get _browseCategoryIlikePatterns =>
       categoryToIlikePatterns(_selectedCategories);
 
-  List<String> get _browseMetalIlikePatterns => buildBrowseMetalIlikePatterns(
-        families: _serverMetalFamilies,
-        exactMetals: _selectedMetals,
-      );
+  List<String> get _browseMetalIlikePatterns =>
+      metalFacetLabelsToIlikePatterns(_browseMetalFacetLabels);
+
+  List<String> get _browseInsertIlikePatterns =>
+      insertLabelsToIlikePatterns(_selectedInserts.toList());
 
   String? get homeStoryFilterKey => _homeStoryFilterKey;
+
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    super.dispose();
+  }
 
   Future<void> toggleHomeStoryFilter(String filterKey) async {
     if (filterKey == 'all') {
@@ -150,6 +165,7 @@ class CatalogController extends ChangeNotifier {
   }
 
   Future<void> _fetchAdvancedPage({
+    required int requestGeneration,
     required int offset,
     required void Function(List<ProductItem> page) onSuccess,
     String? searchQuery,
@@ -161,20 +177,35 @@ class CatalogController extends ChangeNotifier {
     bool orderIdDescending = false,
     List<String> categoryIlikePatterns = const [],
     List<String> metalIlikePatterns = const [],
+    List<String> insertIlikePatterns = const [],
+    int? minSalePriceKrw,
+    int? maxSalePriceKrw,
+    double? minWeightGrams,
+    double? maxWeightGrams,
+    String? skuIlikeQuery,
+    List<String>? finenessTokens,
   }) async {
     final page = await _database.getProductsAdvancedQuery(
       offset: offset,
       limit: pageSize,
       searchQuery: searchQuery,
+      skuIlikeQuery: skuIlikeQuery,
       categories: categories,
       metals: metals,
       sizes: sizes,
       inserts: inserts,
+      finenessTokens: finenessTokens,
       minDiscountPercent: minDiscountPercent,
       orderIdDescending: orderIdDescending,
       categoryIlikePatterns: categoryIlikePatterns,
       metalIlikePatterns: metalIlikePatterns,
+      insertIlikePatterns: insertIlikePatterns,
+      minSalePriceKrw: minSalePriceKrw,
+      maxSalePriceKrw: maxSalePriceKrw,
+      minWeightGrams: minWeightGrams,
+      maxWeightGrams: maxWeightGrams,
     );
+    if (requestGeneration != _browseRequestGeneration) return;
     onSuccess(page);
   }
 
@@ -190,6 +221,7 @@ class CatalogController extends ChangeNotifier {
     try {
       final query = _activeHomeStoryQuery;
       await _fetchAdvancedPage(
+        requestGeneration: _browseRequestGeneration,
         offset: 0,
         searchQuery: query.searchQuery,
         categories: query.categories,
@@ -219,6 +251,7 @@ class CatalogController extends ChangeNotifier {
     try {
       final query = _activeHomeStoryQuery;
       await _fetchAdvancedPage(
+        requestGeneration: _browseRequestGeneration,
         offset: _homeOffset,
         searchQuery: query.searchQuery,
         categories: query.categories,
@@ -257,6 +290,8 @@ class CatalogController extends ChangeNotifier {
             .map((s) => double.tryParse(s.replaceAll(',', '.')))
             .whereType<double>()
             .toSet(),
+        priceMinKrw: _clientBrowseFilters.priceMinKrw,
+        priceMaxKrw: _clientBrowseFilters.priceMaxKrw,
       );
 
   void applyDrawerFilters(CatalogFilterState state) {
@@ -269,6 +304,10 @@ class CatalogController extends ChangeNotifier {
     _selectedSizes
       ..clear()
       ..addAll(state.sizeTokens);
+    _clientBrowseFilters = _clientBrowseFilters.copyWith(
+      priceMinKrw: state.priceMinKrw,
+      priceMaxKrw: state.priceMaxKrw,
+    );
     unawaited(refreshBrowse());
   }
 
@@ -276,13 +315,34 @@ class CatalogController extends ChangeNotifier {
     _selectedMetals.clear();
     _selectedInserts.clear();
     _selectedSizes.clear();
+    _clientBrowseFilters = _clientBrowseFilters.copyWith(
+      priceMinKrw: CatalogDesktopFilterBounds.priceMinKrw,
+      priceMaxKrw: CatalogDesktopFilterBounds.priceMaxKrw,
+    );
     unawaited(refreshBrowse());
   }
 
-  /// Превью слайдеров (клиент) и draft chip-ов на загруженной выборке.
+  void resetAllBrowseFilters() {
+    _selectedCategories.clear();
+    _selectedMetals.clear();
+    _selectedInserts.clear();
+    _selectedSizes.clear();
+    _searchQuery = '';
+    _desktopSkuSearch = '';
+    _serverMetalFamilies = {};
+    _serverFineness = {};
+    _clientBrowseFilters = const CatalogFilterState();
+    _searchDebounceTimer?.cancel();
+    notifyListeners();
+    unawaited(refreshBrowse());
+  }
+
+  /// Синхронизация UI поиска при возврате на вкладку каталога.
+  void pingBrowseUiSync() => notifyListeners();
+
+  /// Обновление черновика слайдеров цены/веса (desktop) до «Применить».
   void setClientBrowseFilters(CatalogFilterState state) {
     _clientBrowseFilters = state.clientBrowseSlice;
-    _clientPreviewExtras = state.clientPreviewSlice;
     notifyListeners();
   }
 
@@ -297,7 +357,6 @@ class CatalogController extends ChangeNotifier {
     _serverMetalFamilies = Set<String>.from(state.selectedMetalFamilies);
     _serverFineness = Set<String>.from(state.selectedFineness);
     _clientBrowseFilters = state.clientBrowseSlice;
-    _clientPreviewExtras = null;
     notifyListeners();
     _selectedInserts.clear();
     _selectedSizes.clear();
@@ -306,17 +365,7 @@ class CatalogController extends ChangeNotifier {
   }
 
   void resetDesktopSidebarFilters() {
-    _selectedCategories.clear();
-    _selectedMetals.clear();
-    _selectedInserts.clear();
-    _selectedSizes.clear();
-    _desktopSkuSearch = '';
-    _serverMetalFamilies = {};
-    _serverFineness = {};
-    _clientBrowseFilters = const CatalogFilterState();
-    _clientPreviewExtras = null;
-    _searchQuery = '';
-    unawaited(refreshBrowse());
+    resetAllBrowseFilters();
   }
 
   void toggleCategoryFilter(String category) {
@@ -329,11 +378,10 @@ class CatalogController extends ChangeNotifier {
   }
 
   void toggleMetalFilter(String metal) {
-    if (_selectedMetals.contains(metal)) {
-      _selectedMetals.remove(metal);
-    } else {
-      _selectedMetals.add(metal);
-    }
+    final next = toggleCatalogMetalFacet(_selectedMetals, metal);
+    _selectedMetals
+      ..clear()
+      ..addAll(next);
     unawaited(refreshBrowse());
   }
 
@@ -347,8 +395,19 @@ class CatalogController extends ChangeNotifier {
   }
 
   void setSearchQuery(String query) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(searchDebounce, () {
+      final normalized = query.trim();
+      if (normalized == _searchQuery) return;
+      _searchQuery = normalized;
+      unawaited(refreshBrowse());
+    });
+  }
+
+  void syncSearchQueryFromField(String query) {
     final normalized = query.trim();
     if (normalized == _searchQuery) return;
+    _searchDebounceTimer?.cancel();
     _searchQuery = normalized;
     unawaited(refreshBrowse());
   }
@@ -356,73 +415,90 @@ class CatalogController extends ChangeNotifier {
   Future<void> load() => refreshBrowse();
 
   Future<void> refreshBrowse() async {
+    final generation = ++_browseRequestGeneration;
     _isLoading = true;
     _offset = 0;
     _hasMore = true;
     notifyListeners();
     try {
-      final page = await _database.getProductsAdvancedQuery(
+      await _fetchAdvancedPage(
+        requestGeneration: generation,
         offset: 0,
-        limit: pageSize,
         searchQuery:
             _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
-        skuIlikeQuery:
-            _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
+        skuIlikeQuery: _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
-        inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
         finenessTokens:
             _serverFineness.isEmpty ? null : _serverFineness.toList(),
         categoryIlikePatterns: _browseCategoryIlikePatterns,
         metalIlikePatterns: _browseMetalIlikePatterns,
+        insertIlikePatterns: _browseInsertIlikePatterns,
+        minSalePriceKrw: _clientBrowseFilters.priceMinKrw,
+        maxSalePriceKrw: _clientBrowseFilters.priceMaxKrw,
+        minWeightGrams: _clientBrowseFilters.weightMinGrams,
+        maxWeightGrams: _clientBrowseFilters.weightMaxGrams,
+        onSuccess: (page) {
+          if (generation != _browseRequestGeneration) return;
+          _products
+            ..clear()
+            ..addAll(page);
+          _offset = page.length;
+          _hasMore = page.length >= pageSize;
+        },
       );
-      _products
-        ..clear()
-        ..addAll(page);
-      _clientPreviewExtras = null;
-      _offset = page.length;
-      _hasMore = page.length >= pageSize;
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (generation == _browseRequestGeneration) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> loadNextPage() async {
     if (_isLoading || _isLoadingMore || !_hasMore) return;
+    final generation = _browseRequestGeneration;
     _isLoadingMore = true;
     notifyListeners();
     try {
-      final page = await _database.getProductsAdvancedQuery(
+      await _fetchAdvancedPage(
+        requestGeneration: generation,
         offset: _offset,
-        limit: pageSize,
         searchQuery:
             _desktopSkuSearch.isNotEmpty ? null : (_searchQuery.isEmpty ? null : _searchQuery),
-        skuIlikeQuery:
-            _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
+        skuIlikeQuery: _desktopSkuSearch.isEmpty ? null : _desktopSkuSearch,
         sizes: _selectedSizes.isEmpty ? null : _selectedSizes.toList(),
-        inserts: _selectedInserts.isEmpty ? null : _selectedInserts.toList(),
         finenessTokens:
             _serverFineness.isEmpty ? null : _serverFineness.toList(),
         categoryIlikePatterns: _browseCategoryIlikePatterns,
         metalIlikePatterns: _browseMetalIlikePatterns,
+        insertIlikePatterns: _browseInsertIlikePatterns,
+        minSalePriceKrw: _clientBrowseFilters.priceMinKrw,
+        maxSalePriceKrw: _clientBrowseFilters.priceMaxKrw,
+        minWeightGrams: _clientBrowseFilters.weightMinGrams,
+        maxWeightGrams: _clientBrowseFilters.weightMaxGrams,
+        onSuccess: (page) {
+          if (generation != _browseRequestGeneration) return;
+          if (page.isEmpty) {
+            _hasMore = false;
+            return;
+          }
+          final existingIds = _products.map((p) => p.id).toSet();
+          for (final item in page) {
+            if (existingIds.add(item.id)) {
+              _products.add(item);
+            }
+          }
+          _offset += page.length;
+          if (page.length < pageSize) {
+            _hasMore = false;
+          }
+        },
       );
-      if (page.isEmpty) {
-        _hasMore = false;
-        return;
-      }
-      final existingIds = _products.map((p) => p.id).toSet();
-      for (final item in page) {
-        if (existingIds.add(item.id)) {
-          _products.add(item);
-        }
-      }
-      _offset += page.length;
-      if (page.length < pageSize) {
-        _hasMore = false;
-      }
     } finally {
-      _isLoadingMore = false;
-      notifyListeners();
+      if (generation == _browseRequestGeneration) {
+        _isLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -476,5 +552,4 @@ class CatalogController extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 }

@@ -9,11 +9,13 @@ class CatalogSearchBar extends StatelessWidget {
     super.key,
     required this.controller,
     required this.onFilterTap,
+    this.focusNode,
     this.activeFilterCount = 0,
     this.onChanged,
   });
 
   final TextEditingController controller;
+  final FocusNode? focusNode;
   final VoidCallback onFilterTap;
   final int activeFilterCount;
   final ValueChanged<String>? onChanged;
@@ -41,6 +43,7 @@ class CatalogSearchBar extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 onChanged: onChanged,
                 style: AppTypography.caption(
                   color: AppColors.textPrimary,

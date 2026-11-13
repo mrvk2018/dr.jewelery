@@ -5,6 +5,7 @@ import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../domain/models/catalog_constants.dart';
+import '../../domain/utils/catalog_metal_facet_utils.dart';
 
 /// Выдвижная панель фильтров каталога (EndDrawer).
 class CatalogFilterDrawer extends StatelessWidget {
@@ -38,6 +39,23 @@ class CatalogFilterDrawer extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: [
                   _FilterExpansionSection(
+                    title: 'Цена (₩)',
+                    initiallyExpanded: true,
+                    child: _PriceRangeFields(
+                      minKrw: draftFilters.priceMinKrw,
+                      maxKrw: draftFilters.priceMaxKrw,
+                      onChanged: (minKrw, maxKrw) {
+                        onDraftChanged(
+                          draftFilters.copyWith(
+                            priceMinKrw: minKrw,
+                            priceMaxKrw: maxKrw,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _FilterExpansionSection(
                     title: 'Размер',
                     child: _SizeSelector(
                       selectedSizes: draftFilters.selectedSizes,
@@ -64,14 +82,10 @@ class CatalogFilterDrawer extends StatelessWidget {
                       options: CatalogMetals.items,
                       selected: draftFilters.selectedMetals,
                       onToggle: (value) {
-                        final updated = Set<String>.from(
+                        final updated = toggleCatalogMetalFacet(
                           draftFilters.selectedMetals,
+                          value,
                         );
-                        if (updated.contains(value)) {
-                          updated.remove(value);
-                        } else {
-                          updated.add(value);
-                        }
                         onDraftChanged(
                           draftFilters.copyWith(selectedMetals: updated),
                         );
@@ -310,6 +324,119 @@ class _FilterOptionChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PriceRangeFields extends StatefulWidget {
+  const _PriceRangeFields({
+    required this.minKrw,
+    required this.maxKrw,
+    required this.onChanged,
+  });
+
+  final int minKrw;
+  final int maxKrw;
+  final void Function(int minKrw, int maxKrw) onChanged;
+
+  @override
+  State<_PriceRangeFields> createState() => _PriceRangeFieldsState();
+}
+
+class _PriceRangeFieldsState extends State<_PriceRangeFields> {
+  late final TextEditingController _minController;
+  late final TextEditingController _maxController;
+
+  @override
+  void initState() {
+    super.initState();
+    _minController = TextEditingController(
+      text: _formatPrice(widget.minKrw),
+    );
+    _maxController = TextEditingController(
+      text: _formatPrice(widget.maxKrw),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PriceRangeFields oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.minKrw != widget.minKrw) {
+      _minController.text = _formatPrice(widget.minKrw);
+    }
+    if (oldWidget.maxKrw != widget.maxKrw) {
+      _maxController.text = _formatPrice(widget.maxKrw);
+    }
+  }
+
+  @override
+  void dispose() {
+    _minController.dispose();
+    _maxController.dispose();
+    super.dispose();
+  }
+
+  String _formatPrice(int value) {
+    if (value <= CatalogDesktopFilterBounds.priceMinKrw) return '';
+    return '$value';
+  }
+
+  int _parsePrice(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.isEmpty) return CatalogDesktopFilterBounds.priceMinKrw;
+    return int.tryParse(digits) ?? CatalogDesktopFilterBounds.priceMinKrw;
+  }
+
+  void _emit() {
+    var minKrw = _parsePrice(_minController.text);
+    var maxKrw = _parsePrice(_maxController.text);
+    if (maxKrw == CatalogDesktopFilterBounds.priceMinKrw) {
+      maxKrw = CatalogDesktopFilterBounds.priceMaxKrw;
+    }
+    if (minKrw > maxKrw) {
+      final swap = minKrw;
+      minKrw = maxKrw;
+      maxKrw = swap;
+    }
+    widget.onChanged(minKrw, maxKrw);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _minController,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _emit(),
+            decoration: InputDecoration(
+              labelText: 'От',
+              hintText: '0',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              isDense: true,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: TextField(
+            controller: _maxController,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => _emit(),
+            decoration: InputDecoration(
+              labelText: 'До',
+              hintText: 'Любая',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              isDense: true,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

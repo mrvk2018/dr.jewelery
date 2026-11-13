@@ -42,13 +42,16 @@ BEGIN
         OR ((m ~ '585' OR m ~ '750') AND m !~ 'сереб');
     WHEN 'красное золото' THEN
       RETURN m ~ 'красн'
-        OR m ~ '585[[:space:]]*красн';
+        OR m ~ '585[[:space:]]*красн'
+        OR m ~ 'золото\([^)]+\)[[:space:]]*красн';
     WHEN 'жёлтое золото' THEN
       RETURN m ~ 'ж[её]лт'
-        OR m ~ '585[[:space:]]*ж[её]лт';
+        OR m ~ '585[[:space:]]*ж[её]лт'
+        OR m ~ 'золото\([^)]+\)[[:space:]]*ж[её]лт';
     WHEN 'белое золото' THEN
       RETURN m ~ 'бел'
-        OR m ~ '585[[:space:]]*бел';
+        OR m ~ '585[[:space:]]*бел'
+        OR m ~ 'золото\([^)]+\)[[:space:]]*бел';
     WHEN 'серебро' THEN
       RETURN m ~ 'сереб' OR m ~ '925';
     ELSE

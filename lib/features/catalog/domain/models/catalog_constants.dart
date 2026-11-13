@@ -3,6 +3,7 @@ abstract final class CatalogCategories {
   static const all = 'Все';
   static const rings = 'Кольца';
   static const earrings = 'Серьги';
+  static const chains = 'Цепи';
   static const pendants = 'Подвески';
   static const bracelets = 'Браслеты';
   static const watches = 'Часы';
@@ -10,6 +11,7 @@ abstract final class CatalogCategories {
   static const List<String> items = [
     rings,
     earrings,
+    chains,
     pendants,
     bracelets,
     watches,
@@ -29,18 +31,21 @@ abstract final class CatalogRingSizes {
   ];
 }
 
-/// Варианты металла для фильтра.
+/// Варианты металла для фильтра (фасеты витрины).
 abstract final class CatalogMetals {
+  static const gold = 'Золото';
   static const redGold = 'Красное золото';
+  static const yellowGold = 'Жёлтое золото';
   static const whiteGold = 'Белое золото';
   static const silver = 'Серебро';
   static const platinum = 'Платина';
 
   static const List<String> items = [
+    gold,
     redGold,
+    yellowGold,
     whiteGold,
     silver,
-    platinum,
   ];
 }
 

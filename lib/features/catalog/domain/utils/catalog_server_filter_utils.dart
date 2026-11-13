@@ -17,12 +17,12 @@ List<String> categoryToIlikePatterns(Set<String> categories) {
         patterns.addAll(['%Серьг%', '%Пусcет%', '%Кафф%', '%Конго%']);
       case CatalogCategories.pendants:
         patterns.addAll(['%Подвес%', '%Крест%', '%Икона%']);
+      case CatalogCategories.chains:
+        patterns.addAll(['%Цеп%', '%Гайтан%']);
       case CatalogCategories.bracelets:
         patterns.addAll(['%Браслет%']);
       case CatalogCategories.watches:
         patterns.addAll(['%Час%']);
-      case 'Цепи':
-        patterns.addAll(['%Цеп%', '%Гайтан%']);
       default:
         if (category.trim().isNotEmpty) {
           patterns.add('%${category.trim()}%');
@@ -60,8 +60,12 @@ List<String> catalogMetalsToIlikePatterns(Set<String> metals) {
     switch (metal) {
       case CatalogMetals.redGold:
         patterns.addAll(['%красн%', '%585%']);
+      case CatalogMetals.yellowGold:
+        patterns.addAll(['%жёлт%', '%желт%']);
       case CatalogMetals.whiteGold:
         patterns.addAll(['%золото%', '%бел%', '%585%']);
+      case CatalogMetals.gold:
+        patterns.addAll(['%золото%', '%585%', '%750%']);
       case CatalogMetals.silver:
         patterns.addAll(['%серебр%', '%925%']);
       case CatalogMetals.platinum:
@@ -76,6 +80,7 @@ List<String> catalogMetalsToIlikePatterns(Set<String> metals) {
 }
 
 /// Семейство + точные чипсы → один OR-блок `metal.ilike` в PostgREST.
+@Deprecated('Use metalFacetLabelsToIlikePatterns from catalog_metal_facet_utils')
 List<String> buildBrowseMetalIlikePatterns({
   required Set<String> families,
   required Set<String> exactMetals,

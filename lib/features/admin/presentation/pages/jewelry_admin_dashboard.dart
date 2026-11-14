@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/admin/admin_access.dart';
+import '../../../../core/constants/jewelry_gem_inserts.dart';
+import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
@@ -1180,6 +1182,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   final _gemController = TextEditingController();
   final _notesController = TextEditingController();
 
+  Set<String> _selectedCatalogGems = {};
+  List<String> _legacyGemValues = [];
+
   String _productTypeCategory = _nameCategories.first;
   String _manufacturerCategory = _manufacturerOptions.first;
   String _metalCategory = 'gold';
@@ -1246,8 +1251,12 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
     _sizeController.text = _formatNumField(edit['size_value']);
-    _gemController.text =
-        (edit['gem_inserts'] ?? edit['insert'])?.toString().trim() ?? '';
+    final parsed = parseGemInsertsFromProductField(
+      edit['gem_inserts'] ?? edit['insert'],
+    );
+    _selectedCatalogGems = Set<String>.from(parsed.catalog);
+    _legacyGemValues = parsed.legacy.toList();
+    _syncGemControllerFromSelection();
     _notesController.text = edit['notes']?.toString().trim() ?? '';
     _initPriceField(edit);
     _applyMetalFromStored(
@@ -1314,6 +1323,27 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
     _productTypeCategory = 'Другое';
     _customNameController.text = storedName;
+  }
+
+  void _syncGemControllerFromSelection() {
+    _gemController.text = formatGemInsertsForStorage(
+      catalog: _selectedCatalogGems,
+      legacy: _legacyGemValues,
+    );
+  }
+
+  Future<void> _openGemInsertsPicker() async {
+    final result = await showJewelryGemInsertPickerDialog(
+      context: context,
+      initialCatalog: _selectedCatalogGems,
+      initialLegacy: _legacyGemValues,
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _selectedCatalogGems = Set<String>.from(result.catalog);
+      _legacyGemValues = List<String>.from(result.legacy);
+      _syncGemControllerFromSelection();
+    });
   }
 
   Future<void> _confirmRemoveNetworkPhoto(int index) async {
@@ -1510,7 +1540,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               weightGrams: weight,
               price: price,
               sizeValue: size,
-              gemInserts: _gemController.text,
+              gemInserts: formatGemInsertsForStorage(
+                catalog: _selectedCatalogGems,
+                legacy: _legacyGemValues,
+              ),
               notes: notes,
               manufacturer: manufacturer,
               stockQuantity: _restockQuantityIfMissing(widget.editProduct!),
@@ -1522,7 +1555,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               weightGrams: weight,
               price: price,
               sizeValue: size,
-              gemInserts: _gemController.text,
+              gemInserts: formatGemInsertsForStorage(
+                catalog: _selectedCatalogGems,
+                legacy: _legacyGemValues,
+              ),
               notes: notes,
               isDraft: asDraft,
               manufacturer: manufacturer,
@@ -1786,9 +1822,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               const SizedBox(height: 8),
               TextField(
                 controller: _gemController,
-                decoration: const InputDecoration(
+                readOnly: true,
+                onTap: _saving ? null : _openGemInsertsPicker,
+                decoration: InputDecoration(
                   labelText: 'Вставки',
-                  border: OutlineInputBorder(),
+                  hintText: 'Выберите вставки',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    tooltip: 'Выбрать вставки',
+                    onPressed: _saving ? null : _openGemInsertsPicker,
+                    icon: const Icon(Icons.checklist_rounded),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/constants/jewelry_gem_inserts.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 
@@ -158,95 +160,27 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
     await _applyFilter();
   }
 
-  Future<void> _openSlangDialog() async {
+  Future<void> _openAdditionalFilterDialog() async {
     final slangWords = await widget.database.fetchJewelryThesaurusSlang();
     if (!mounted) return;
 
-    final draftSelection = Set<String>.from(_selectedSlangTags);
+    final extraThesaurusTags = slangWords
+        .where((word) => !isKnownJewelryGemCatalogLabel(word))
+        .toList();
 
-    await showDialog<void>(
+    final result = await showJewelryAdditionalFilterDialog(
       context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: AppColors.background,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Text(
-                'Дополнительный сленг',
-                style: AppTypography.heading(fontSize: 20),
-              ),
-              content: SizedBox(
-                width: _dialogWidth(context),
-                child: slangWords.isEmpty
-                    ? Text(
-                        'Список сленга пуст или недоступен. '
-                        'Проверьте RLS для jewelry_thesaurus.',
-                        style: AppTypography.productMeta(),
-                      )
-                    : SingleChildScrollView(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: slangWords.map((word) {
-                            final selected = draftSelection.contains(word);
-                            return FilterChip(
-                              label: Text(word),
-                              selected: selected,
-                              onSelected: (value) {
-                                setDialogState(() {
-                                  if (value) {
-                                    draftSelection.add(word);
-                                  } else {
-                                    draftSelection.remove(word);
-                                  }
-                                });
-                              },
-                              selectedColor:
-                                  AppColors.accent.withValues(alpha: 0.25),
-                              checkmarkColor: AppColors.accent,
-                              side: const BorderSide(color: AppColors.border),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: const Text('Отмена'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    setState(() {
-                      _selectedSlangTags
-                        ..clear()
-                        ..addAll(draftSelection);
-                    });
-                    Navigator.of(dialogContext).pop();
-                    _applyFilter();
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.textOnPrimary,
-                  ),
-                  child: const Text('Принять сленг'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      initialSelection: _selectedSlangTags,
+      extraThesaurusTags: extraThesaurusTags,
     );
-  }
+    if (result == null || !mounted) return;
 
-  double _dialogWidth(BuildContext context) {
-    final width = MediaQuery.sizeOf(context).width;
-    if (width >= 900) return 560;
-    if (width >= 600) return width * 0.75;
-    return width * 0.92;
+    setState(() {
+      _selectedSlangTags
+        ..clear()
+        ..addAll(result.selectedTags);
+    });
+    await _applyFilter();
   }
 
   @override
@@ -412,9 +346,13 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                   alignment: WrapAlignment.end,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _isApplying ? null : _openSlangDialog,
+                      onPressed: _isApplying ? null : _openAdditionalFilterDialog,
                       icon: const Icon(Icons.tune_rounded, size: 20),
-                      label: const Text('Дополнительно'),
+                      label: Text(
+                        _selectedSlangTags.isEmpty
+                            ? 'Дополнительно'
+                            : 'Дополнительно (${_selectedSlangTags.length})',
+                      ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primary,
                         side: const BorderSide(color: AppColors.border),

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -32,10 +35,20 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
   final _skuController = TextEditingController();
   final _weightController = TextEditingController();
 
-  int? _daysLimit;
+  int? _daysLimit = 90;
+  DateTime? _dateFrom;
+  DateTime? _dateTo;
   bool _searching = false;
   bool _returnBusy = false;
   List<Map<String, dynamic>> _results = const [];
+
+  static final DateFormat _soldAtFormat = DateFormat('dd.MM.yyyy HH:mm');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_runSearch()));
+  }
 
   @override
   void dispose() {
@@ -59,17 +72,8 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
     final weightText = _weightController.text.trim().replaceAll(',', '.');
     final weight = weightText.isEmpty ? null : double.tryParse(weightText);
 
-    if (sku.isEmpty && weight == null && _daysLimit == null) {
-      _snack(
-        'Укажите артикул, вес или период (не «За всё время» без других фильтров)',
-        error: true,
-      );
-      return;
-    }
-
     setState(() {
       _searching = true;
-      _results = const [];
     });
 
     try {
@@ -77,18 +81,66 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
         sku: sku.isEmpty ? null : sku,
         weight: weight,
         daysLimit: _daysLimit,
+        dateFrom: _dateFrom,
+        dateTo: _dateTo,
       );
       if (!mounted) return;
       setState(() => _results = rows);
       if (rows.isEmpty) {
         _snack('Ничего не найдено по заданным фильтрам');
       }
+    } on SoldProductsSearchException catch (error) {
+      if (!mounted) return;
+      setState(() => _results = const []);
+      _snack(error.message, error: true);
     } catch (error) {
       if (!mounted) return;
+      setState(() => _results = const []);
       _snack('Ошибка поиска: $error', error: true);
     } finally {
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  Future<void> _pickDate({required bool isFrom}) async {
+    final initial =
+        isFrom ? (_dateFrom ?? DateTime.now()) : (_dateTo ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2015),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      if (isFrom) {
+        _dateFrom = picked;
+      } else {
+        _dateTo = picked;
+      }
+      _daysLimit = null;
+    });
+    await _runSearch();
+  }
+
+  void _clearDate({required bool isFrom}) {
+    setState(() {
+      if (isFrom) {
+        _dateFrom = null;
+      } else {
+        _dateTo = null;
+      }
+    });
+    unawaited(_runSearch());
+  }
+
+  void _selectPeriod(int? days) {
+    setState(() {
+      _daysLimit = days;
+      _dateFrom = null;
+      _dateTo = null;
+    });
+    unawaited(_runSearch());
   }
 
   Future<void> _processReturn(Map<String, dynamic> row) async {
@@ -125,13 +177,31 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
     return '—';
   }
 
+  static String _soldAtLine(Map<String, dynamic> row) {
+    final raw = row['sold_at'] ?? row['updated_at'];
+    if (raw == null) return '—';
+    DateTime? parsed;
+    if (raw is DateTime) {
+      parsed = raw.toLocal();
+    } else {
+      parsed = DateTime.tryParse(raw.toString())?.toLocal();
+    }
+    if (parsed == null) return '—';
+    return _ProductReturnDialogState._soldAtFormat.format(parsed);
+  }
+
+  String _dateLabel(DateTime? value) {
+    if (value == null) return '—';
+    return DateFormat('dd.MM.yyyy').format(value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('Возврат товара', style: AppTypography.heading(fontSize: 18)),
       content: SizedBox(
         width: 560,
-        height: 520,
+        height: 560,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -142,6 +212,7 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
                 labelText: 'Артикул (SKU)',
                 border: OutlineInputBorder(),
               ),
+              onSubmitted: (_) => _runSearch(),
             ),
             const SizedBox(height: 8),
             TextField(
@@ -151,6 +222,7 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
                 labelText: 'Вес, г (строгое совпадение)',
                 border: OutlineInputBorder(),
               ),
+              onSubmitted: (_) => _runSearch(),
             ),
             const SizedBox(height: 12),
             Text('Период продажи', style: AppTypography.productMeta()),
@@ -162,28 +234,68 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
                 _PeriodChip(
                   label: '3 дня',
                   selected: _daysLimit == 3,
-                  onSelected: () => setState(() => _daysLimit = 3),
+                  onSelected: () => _selectPeriod(3),
                 ),
                 _PeriodChip(
                   label: 'Неделя',
                   selected: _daysLimit == 7,
-                  onSelected: () => setState(() => _daysLimit = 7),
+                  onSelected: () => _selectPeriod(7),
                 ),
                 _PeriodChip(
                   label: 'Месяц',
                   selected: _daysLimit == 30,
-                  onSelected: () => setState(() => _daysLimit = 30),
+                  onSelected: () => _selectPeriod(30),
                 ),
                 _PeriodChip(
                   label: '3 месяца',
                   selected: _daysLimit == 90,
-                  onSelected: () => setState(() => _daysLimit = 90),
+                  onSelected: () => _selectPeriod(90),
                 ),
                 _PeriodChip(
                   label: 'За все время',
-                  selected: _daysLimit == null,
-                  onSelected: () => setState(() => _daysLimit = null),
+                  selected: _daysLimit == null &&
+                      _dateFrom == null &&
+                      _dateTo == null,
+                  onSelected: () => _selectPeriod(null),
                 ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _searching || _returnBusy
+                        ? null
+                        : () => _pickDate(isFrom: true),
+                    child: Text('Дата с: ${_dateLabel(_dateFrom)}'),
+                  ),
+                ),
+                if (_dateFrom != null)
+                  IconButton(
+                    tooltip: 'Очистить дату «с»',
+                    onPressed: _searching || _returnBusy
+                        ? null
+                        : () => _clearDate(isFrom: true),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _searching || _returnBusy
+                        ? null
+                        : () => _pickDate(isFrom: false),
+                    child: Text('Дата по: ${_dateLabel(_dateTo)}'),
+                  ),
+                ),
+                if (_dateTo != null)
+                  IconButton(
+                    tooltip: 'Очистить дату «по»',
+                    onPressed: _searching || _returnBusy
+                        ? null
+                        : () => _clearDate(isFrom: false),
+                    icon: const Icon(Icons.close, size: 18),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -203,7 +315,9 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
               child: _results.isEmpty
                   ? Center(
                       child: Text(
-                        'Результаты появятся после поиска',
+                        _searching
+                            ? 'Загрузка…'
+                            : 'Результаты появятся после поиска',
                         style: AppTypography.productMeta(),
                       ),
                     )
@@ -218,6 +332,7 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
                           sku: _field(row, 'sku'),
                           weight: _field(row, 'weight_grams'),
                           price: _priceLine(row),
+                          soldAt: _soldAtLine(row),
                           busy: _returnBusy,
                           onReturn: () => _processReturn(row),
                         );
@@ -264,6 +379,7 @@ class _SoldProductReturnCard extends StatelessWidget {
     required this.sku,
     required this.weight,
     required this.price,
+    required this.soldAt,
     required this.busy,
     required this.onReturn,
   });
@@ -272,6 +388,7 @@ class _SoldProductReturnCard extends StatelessWidget {
   final String sku;
   final String weight;
   final String price;
+  final String soldAt;
   final bool busy;
   final VoidCallback onReturn;
 
@@ -291,7 +408,14 @@ class _SoldProductReturnCard extends StatelessWidget {
             Text(name, style: AppTypography.heading(fontSize: 15)),
             const SizedBox(height: 4),
             Text('SKU: $sku', style: AppTypography.productMeta()),
-            Text('Вес: $weight г · $price', style: AppTypography.productMeta()),
+            Text(
+              'Вес: $weight г · $price',
+              style: AppTypography.productMeta(),
+            ),
+            Text(
+              'Продажа: $soldAt',
+              style: AppTypography.productMeta(),
+            ),
             const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: busy ? null : onReturn,

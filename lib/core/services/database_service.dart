@@ -104,6 +104,18 @@ abstract final class CatalogFacetedRpc {
   static const soldSearchSkuParam = 'p_sku';
   static const soldSearchWeightParam = 'p_weight';
   static const soldSearchDaysParam = 'p_days_limit';
+  static const soldSearchDateFromParam = 'p_date_from';
+  static const soldSearchDateToParam = 'p_date_to';
+}
+
+/// Ошибка RPC поиска проданных позиций (возврат на витрину).
+class SoldProductsSearchException implements Exception {
+  SoldProductsSearchException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// RPC кассы продавца (Android APK) и перемещений между магазинами.
@@ -472,6 +484,8 @@ abstract class DatabaseService {
     String? sku,
     double? weight,
     int? daysLimit,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   });
 
   /// Возврат на витрину: RPC `process_product_return_manual` (сторно + active).
@@ -2257,11 +2271,21 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static String? _rpcDateOnly(DateTime? value) {
+    if (value == null) return null;
+    final y = value.year.toString().padLeft(4, '0');
+    final m = value.month.toString().padLeft(2, '0');
+    final d = value.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
   @override
   Future<List<Map<String, dynamic>>> searchSoldProducts({
     String? sku,
     double? weight,
     int? daysLimit,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) async {
     final trimmedSku = sku?.trim();
     final skuParam =
@@ -2274,13 +2298,25 @@ class CloudDatabaseService implements DatabaseService {
           CatalogFacetedRpc.soldSearchSkuParam: skuParam,
           CatalogFacetedRpc.soldSearchWeightParam: weight,
           CatalogFacetedRpc.soldSearchDaysParam: daysLimit,
+          CatalogFacetedRpc.soldSearchDateFromParam: _rpcDateOnly(dateFrom),
+          CatalogFacetedRpc.soldSearchDateToParam: _rpcDateOnly(dateTo),
         },
       );
       return _mapRpcRows(response);
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.searchSoldProducts failed: $error');
+      debugPrint('$stackTrace');
+      final hint = error.message.trim();
+      final detail = error.details?.toString().trim();
+      throw SoldProductsSearchException(
+        hint.isEmpty
+            ? 'Поиск продаж недоступен. Примените миграцию 033 в Supabase.'
+            : 'Поиск продаж: $hint${detail != null && detail.isNotEmpty ? ' ($detail)' : ''}',
+      );
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.searchSoldProducts failed: $error');
       debugPrint('$stackTrace');
-      return const [];
+      throw SoldProductsSearchException('Поиск продаж: $error');
     }
   }
 

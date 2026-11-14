@@ -6,6 +6,8 @@ class SellerItem {
     this.isActive = true,
     this.buyerBonusKrw = 0,
     this.buyerBonusPercent = 0,
+    this.goldCommissionPercent = 0,
+    this.silverCommissionPercent = 0,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -14,6 +16,8 @@ class SellerItem {
   final bool isActive;
   final int buyerBonusKrw;
   final int buyerBonusPercent;
+  final double goldCommissionPercent;
+  final double silverCommissionPercent;
   final DateTime createdAt;
 
   SellerItem copyWith({
@@ -22,6 +26,8 @@ class SellerItem {
     bool? isActive,
     int? buyerBonusKrw,
     int? buyerBonusPercent,
+    double? goldCommissionPercent,
+    double? silverCommissionPercent,
     DateTime? createdAt,
   }) {
     return SellerItem(
@@ -30,6 +36,10 @@ class SellerItem {
       isActive: isActive ?? this.isActive,
       buyerBonusKrw: buyerBonusKrw ?? this.buyerBonusKrw,
       buyerBonusPercent: buyerBonusPercent ?? this.buyerBonusPercent,
+      goldCommissionPercent:
+          goldCommissionPercent ?? this.goldCommissionPercent,
+      silverCommissionPercent:
+          silverCommissionPercent ?? this.silverCommissionPercent,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -40,6 +50,8 @@ class SellerItem {
         'isActive': isActive,
         'buyerBonusKrw': buyerBonusKrw,
         'buyerBonusPercent': buyerBonusPercent,
+        'goldCommissionPercent': goldCommissionPercent,
+        'silverCommissionPercent': silverCommissionPercent,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -50,8 +62,18 @@ class SellerItem {
       isActive: json['isActive'] as bool? ?? true,
       buyerBonusKrw: (json['buyerBonusKrw'] as num?)?.toInt() ?? 0,
       buyerBonusPercent: (json['buyerBonusPercent'] as num?)?.toInt() ?? 0,
+      goldCommissionPercent:
+          (json['goldCommissionPercent'] as num?)?.toDouble() ?? 0,
+      silverCommissionPercent:
+          (json['silverCommissionPercent'] as num?)?.toDouble() ?? 0,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
+  }
+
+  static double? parseCommissionPercentInput(String raw) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return 0;
+    return double.tryParse(normalized);
   }
 
   static String normalizePromoCode(String raw) =>

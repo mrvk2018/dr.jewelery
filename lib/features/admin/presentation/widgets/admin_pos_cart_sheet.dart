@@ -101,6 +101,11 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
       return;
     }
     setState(() => _checkoutBusy = true);
+    final checkoutSkus = widget.cart.items
+        .map((line) => line.product.sku)
+        .where((sku) => sku.trim().isNotEmpty)
+        .toList(growable: false);
+    final seller = _selectedSeller!;
     try {
       final result = await widget.database.archiveAdminPosSale(
         lines: widget.cart.toSaleLineInputs(),
@@ -109,6 +114,11 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
       );
       if (!mounted) return;
       if (result.ok) {
+        await widget.database.attachSellerToSales(
+          skus: checkoutSkus,
+          sellerCode: seller.promoCode,
+          sellerName: seller.name,
+        );
         Navigator.of(context).pop();
         await widget.onArchived();
         if (!mounted) return;

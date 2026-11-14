@@ -84,6 +84,20 @@ abstract final class SellerAdminRpc {
   static const promoCodeParam = 'p_promo_code';
   static const nameParam = 'p_name';
   static const isActiveParam = 'p_is_active';
+  static const goldCommissionPercentParam = 'p_gold_commission_percent';
+  static const silverCommissionPercentParam = 'p_silver_commission_percent';
+}
+
+abstract final class SellerPayrollRpc {
+  static const attachSellerToSales = 'attach_seller_to_sales';
+  static const skusParam = 'p_skus';
+  static const sellerCodeParam = 'p_seller_code';
+  static const sellerNameParam = 'p_seller_name';
+  static const getSellerPayrollSummary = 'get_seller_payroll_summary';
+  static const dateFromParam = 'p_date_from';
+  static const dateToParam = 'p_date_to';
+  static const getSellerSalesDetails = 'get_seller_sales_details';
+  static const detailSellerCodeParam = 'p_seller_code';
 }
 
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
@@ -264,6 +278,28 @@ abstract class DatabaseService {
     required String promoCode,
     required String name,
     required bool isActive,
+    double goldCommissionPercent = 0,
+    double silverCommissionPercent = 0,
+  });
+
+  /// POS: привязка продавца к свежим строкам sales_history (окно 15 мин).
+  Future<void> attachSellerToSales({
+    required List<String> skus,
+    required String sellerCode,
+    required String sellerName,
+  });
+
+  /// Сводка зарплаты продавцов за период (KST, sold_date_kst).
+  Future<List<Map<String, dynamic>>> fetchSellerPayrollSummary({
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  });
+
+  /// Детализация продаж продавца за период.
+  Future<List<Map<String, dynamic>>> fetchSellerSalesDetails({
+    required String sellerCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
   });
 
   /// Заказы пользователя. На облаке: `WHERE user_id = :userId`.
@@ -927,6 +963,10 @@ class CloudDatabaseService implements DatabaseService {
       isActive: row['is_active'] as bool? ?? true,
       buyerBonusKrw: (row['buyer_bonus_krw'] as num?)?.toInt() ?? 0,
       buyerBonusPercent: (row['buyer_bonus_percent'] as num?)?.toInt() ?? 0,
+      goldCommissionPercent:
+          (row['gold_commission_percent'] as num?)?.toDouble() ?? 0,
+      silverCommissionPercent:
+          (row['silver_commission_percent'] as num?)?.toDouble() ?? 0,
       createdAt: createdAt,
     );
   }
@@ -975,11 +1015,19 @@ class CloudDatabaseService implements DatabaseService {
     required String promoCode,
     required String name,
     required bool isActive,
+    double goldCommissionPercent = 0,
+    double silverCommissionPercent = 0,
   }) async {
     final code = SellerItem.normalizePromoCode(promoCode);
     final trimmedName = name.trim();
     if (code.isEmpty || trimmedName.isEmpty) {
       throw StateError('Укажите имя и код сотрудника');
+    }
+    if (goldCommissionPercent < 0 ||
+        goldCommissionPercent > 100 ||
+        silverCommissionPercent < 0 ||
+        silverCommissionPercent > 100) {
+      throw StateError('Процент комиссии должен быть от 0 до 100');
     }
     try {
       final result = await _supabaseClient.rpc(
@@ -988,6 +1036,8 @@ class CloudDatabaseService implements DatabaseService {
           SellerAdminRpc.promoCodeParam: code,
           SellerAdminRpc.nameParam: trimmedName,
           SellerAdminRpc.isActiveParam: isActive,
+          SellerAdminRpc.goldCommissionPercentParam: goldCommissionPercent,
+          SellerAdminRpc.silverCommissionPercentParam: silverCommissionPercent,
         },
       );
       final ok = result == true ||
@@ -1005,6 +1055,93 @@ class CloudDatabaseService implements DatabaseService {
       throw StateError(detail.isEmpty ? 'Ошибка сохранения на сервере' : detail);
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.upsertSellerByAdmin failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  static String _payrollDateOnly(DateTime value) {
+    final y = value.year.toString().padLeft(4, '0');
+    final m = value.month.toString().padLeft(2, '0');
+    final d = value.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  @override
+  Future<void> attachSellerToSales({
+    required List<String> skus,
+    required String sellerCode,
+    required String sellerName,
+  }) async {
+    final codes = skus
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    if (codes.isEmpty) return;
+    final code = SellerItem.normalizePromoCode(sellerCode);
+    if (code.isEmpty) return;
+    try {
+      await _supabaseClient.rpc(
+        SellerPayrollRpc.attachSellerToSales,
+        params: {
+          SellerPayrollRpc.skusParam: codes,
+          SellerPayrollRpc.sellerCodeParam: code,
+          SellerPayrollRpc.sellerNameParam: sellerName.trim(),
+        },
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.attachSellerToSales failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchSellerPayrollSummary({
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPayrollRpc.getSellerPayrollSummary,
+        params: {
+          SellerPayrollRpc.dateFromParam: _payrollDateOnly(dateFrom),
+          SellerPayrollRpc.dateToParam: _payrollDateOnly(dateTo),
+        },
+      );
+      if (result is! List) return const [];
+      return result
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchSellerPayrollSummary failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchSellerSalesDetails({
+    required String sellerCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPayrollRpc.getSellerSalesDetails,
+        params: {
+          SellerPayrollRpc.detailSellerCodeParam:
+              SellerItem.normalizePromoCode(sellerCode),
+          SellerPayrollRpc.dateFromParam: _payrollDateOnly(dateFrom),
+          SellerPayrollRpc.dateToParam: _payrollDateOnly(dateTo),
+        },
+      );
+      if (result is! List) return const [];
+      return result
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchSellerSalesDetails failed: $error');
       debugPrint('$stackTrace');
       rethrow;
     }

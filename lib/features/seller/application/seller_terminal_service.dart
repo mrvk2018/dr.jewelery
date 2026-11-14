@@ -100,13 +100,34 @@ class SellerTerminalService {
       basePriceKrw: basePriceKrw,
       discountPercent: discountPercent,
     );
-    return _database.processPosQrSale(
+    final result = await _database.processPosQrSale(
       qrPayload: qrPayload,
       sellerCode: code,
       discountPercent: discountPercent,
       deliveryFeeKrw: quote.deliveryFeeKrw,
       saleTotalKrw: quote.totalKrw,
     );
+    if (result['ok'] == true) {
+      final sku = result['sku']?.toString().trim() ?? '';
+      if (sku.isEmpty) {
+        final product = await _database.fetchProductByQrPayload(qrPayload);
+        final fallbackSku = product?['sku']?.toString().trim() ?? '';
+        if (fallbackSku.isNotEmpty) {
+          await _database.attachSellerToSales(
+            skus: [fallbackSku],
+            sellerCode: code,
+            sellerName: code,
+          );
+        }
+      } else {
+        await _database.attachSellerToSales(
+          skus: [sku],
+          sellerCode: code,
+          sellerName: code,
+        );
+      }
+    }
+    return result;
   }
 
   Future<Map<String, dynamic>> sendTransfer({

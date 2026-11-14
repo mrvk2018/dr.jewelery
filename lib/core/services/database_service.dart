@@ -97,6 +97,8 @@ abstract final class CatalogFacetedRpc {
   static const maxPriceParam = 'max_price';
   static const goldGramPriceParam = 'gold_gram_price';
   static const silverGramPriceParam = 'silver_gram_price';
+  static const exactWeightParam = 'exact_weight';
+  static const skuQueryParam = 'sku_query';
   static const searchQueryParam = 'search_query';
   static const searchSoldProducts = 'search_sold_products';
   static const soldSearchSkuParam = 'p_sku';
@@ -342,6 +344,8 @@ abstract class DatabaseService {
     double? maxPrice,
     double goldGramPrice = 95000.0,
     double silverGramPrice = 3500.0,
+    double? exactWeight,
+    String? skuQuery,
   });
 
   /// Приёмка черновиков: RPC [CatalogFacetedRpc.searchDraftProducts] (admin JWT).
@@ -1495,8 +1499,11 @@ class CloudDatabaseService implements DatabaseService {
     double? maxPrice,
     double goldGramPrice = 95000.0,
     double silverGramPrice = 3500.0,
+    double? exactWeight,
+    String? skuQuery,
   }) async {
     try {
+      final skuTrimmed = skuQuery?.trim();
       final response = await _supabaseClient.rpc(
         CatalogFacetedRpc.getAdvancedFacetedProducts,
         params: {
@@ -1507,6 +1514,9 @@ class CloudDatabaseService implements DatabaseService {
           CatalogFacetedRpc.maxPriceParam: maxPrice,
           CatalogFacetedRpc.goldGramPriceParam: goldGramPrice,
           CatalogFacetedRpc.silverGramPriceParam: silverGramPrice,
+          CatalogFacetedRpc.exactWeightParam: exactWeight,
+          CatalogFacetedRpc.skuQueryParam:
+              (skuTrimmed == null || skuTrimmed.isEmpty) ? null : skuTrimmed,
         },
       );
       return _mapRpcRows(response);

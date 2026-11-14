@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -53,6 +55,8 @@ class SmartFilterWidget extends StatefulWidget {
 class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   final _minPriceController = TextEditingController();
   final _maxPriceController = TextEditingController();
+  final _skuController = TextEditingController();
+  final _weightController = TextEditingController();
 
   final Set<String> _selectedMetalTags = {};
   final Set<String> _selectedCategoryTags = {};
@@ -65,6 +69,8 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   void dispose() {
     _minPriceController.dispose();
     _maxPriceController.dispose();
+    _skuController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
@@ -73,6 +79,20 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
     if (cleaned.isEmpty) return null;
     return double.tryParse(cleaned);
   }
+
+  double? _parseExactWeight(String raw) {
+    final normalized = raw.trim().replaceAll(',', '.');
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+
+  String? _parseSkuQuery() {
+    final q = _skuController.text.trim();
+    if (q.isEmpty) return null;
+    return q;
+  }
+
+  void _submitFilterField(String _) => unawaited(_applyFilter());
 
   Future<void> _applyFilter() async {
     final generation = ++_applyGeneration;
@@ -86,6 +106,8 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
         maxPrice: _parsePrice(_maxPriceController.text),
         goldGramPrice: widget.goldGramPrice,
         silverGramPrice: widget.silverGramPrice,
+        exactWeight: _parseExactWeight(_weightController.text),
+        skuQuery: _parseSkuQuery(),
       );
       if (!mounted || generation != _applyGeneration) return;
       widget.onFilterApplied(products);
@@ -130,6 +152,8 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       _selectedSlangTags.clear();
       _minPriceController.clear();
       _maxPriceController.clear();
+      _skuController.clear();
+      _weightController.clear();
     });
     await _applyFilter();
   }
@@ -255,32 +279,106 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                     final isWide = constraints.maxWidth >= 520;
                     final priceFields = [
                       Expanded(
-                        child: _PriceField(
+                        child: _FilterTextField(
                           controller: _minPriceController,
                           label: 'От (₩)',
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onSubmitted: _submitFilterField,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _PriceField(
+                        child: _FilterTextField(
                           controller: _maxPriceController,
                           label: 'До (₩)',
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onSubmitted: _submitFilterField,
                         ),
                       ),
                     ];
+
+                    final skuWeightFields = [
+                      Expanded(
+                        child: _FilterTextField(
+                          controller: _skuController,
+                          label: 'Артикул (SKU)',
+                          onSubmitted: _submitFilterField,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _FilterTextField(
+                          controller: _weightController,
+                          label: 'Вес, г',
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
+                          ],
+                          onSubmitted: _submitFilterField,
+                        ),
+                      ),
+                    ];
+
                     if (isWide) {
-                      return Row(children: priceFields);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(children: priceFields),
+                          const SizedBox(height: 12),
+                          Row(children: skuWeightFields),
+                        ],
+                      );
                     }
                     return Column(
                       children: [
-                        _PriceField(
+                        _FilterTextField(
                           controller: _minPriceController,
                           label: 'От (₩)',
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onSubmitted: _submitFilterField,
                         ),
                         const SizedBox(height: 12),
-                        _PriceField(
+                        _FilterTextField(
                           controller: _maxPriceController,
                           label: 'До (₩)',
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          onSubmitted: _submitFilterField,
+                        ),
+                        const SizedBox(height: 12),
+                        _FilterTextField(
+                          controller: _skuController,
+                          label: 'Артикул (SKU)',
+                          onSubmitted: _submitFilterField,
+                        ),
+                        const SizedBox(height: 12),
+                        _FilterTextField(
+                          controller: _weightController,
+                          label: 'Вес, г',
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9.,]'),
+                            ),
+                          ],
+                          onSubmitted: _submitFilterField,
                         ),
                       ],
                     );
@@ -417,21 +515,29 @@ class _FacetChipSection extends StatelessWidget {
   }
 }
 
-class _PriceField extends StatelessWidget {
-  const _PriceField({
+class _FilterTextField extends StatelessWidget {
+  const _FilterTextField({
     required this.controller,
     required this.label,
+    this.keyboardType,
+    this.inputFormatters,
+    this.onSubmitted,
   });
 
   final TextEditingController controller;
   final String label;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      onSubmitted: onSubmitted,
+      textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         labelText: label,
         filled: true,

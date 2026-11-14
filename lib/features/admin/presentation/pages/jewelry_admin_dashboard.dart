@@ -71,6 +71,29 @@ String adminProductInsertLabel(Map<String, dynamic> row) {
   return '—';
 }
 
+/// Цена продажи для таблицы витрины (как бирка / POS / редактирование).
+int? adminShowroomSalePriceKrw(Map<String, dynamic> row) {
+  final raw = row['sale_price'] ?? row['price'];
+  if (raw is num) {
+    final value = raw.round();
+    return value > 0 ? value : null;
+  }
+  if (raw == null) return null;
+  final parsed = int.tryParse(raw.toString().replaceAll(RegExp(r'[^\d]'), ''));
+  if (parsed == null || parsed <= 0) return null;
+  return parsed;
+}
+
+String adminShowroomSalePriceLabel(Map<String, dynamic> row) {
+  final krw = adminShowroomSalePriceKrw(row);
+  if (krw == null) return '—';
+  final spaced = krw.toString().replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (m) => '${m[1]} ',
+  );
+  return '$spaced ₩';
+}
+
 /// Наименование витрины из `products.name` (jsonb или строка).
 String extractStoredProductName(Map<String, dynamic> row) {
   final raw = row['name'];
@@ -559,6 +582,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                             cell: _cell,
                             insertLabel: adminProductInsertLabel,
                             productName: extractStoredProductName,
+                            salePriceLabel: adminShowroomSalePriceLabel,
                             weight: _weight,
                             size: _size,
                           ),
@@ -681,6 +705,7 @@ class _ProductTablePanel extends StatefulWidget {
     required this.cell,
     required this.insertLabel,
     required this.productName,
+    required this.salePriceLabel,
     required this.weight,
     required this.size,
   });
@@ -693,6 +718,7 @@ class _ProductTablePanel extends StatefulWidget {
   final String Function(Map<String, dynamic>, String) cell;
   final String Function(Map<String, dynamic>) insertLabel;
   final String Function(Map<String, dynamic>) productName;
+  final String Function(Map<String, dynamic>) salePriceLabel;
   final double Function(Map<String, dynamic>) weight;
   final double Function(Map<String, dynamic>) size;
 
@@ -754,6 +780,7 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                           DataColumn(label: Text('Вес, г')),
                           DataColumn(label: Text('Размер')),
                           DataColumn(label: Text('Вставки')),
+                          DataColumn(label: Text('Цена')),
                           DataColumn(label: Text('Описание')),
                           DataColumn(label: Text('')),
                         ],
@@ -779,6 +806,7 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                                 Text(widget.size(row).toStringAsFixed(2)),
                               ),
                               DataCell(Text(widget.insertLabel(row))),
+                              DataCell(Text(widget.salePriceLabel(row))),
                               DataCell(
                                 SizedBox(
                                   width: 220,

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/admin/admin_access.dart';
+import '../../../../core/constants/jewelry_category_subtypes.dart';
 import '../../../../core/constants/jewelry_gem_inserts.dart';
 import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/services/database_service.dart';
@@ -1144,14 +1145,6 @@ class _ManualProductDialog extends StatefulWidget {
 }
 
 class _ManualProductDialogState extends State<_ManualProductDialog> {
-  static const _nameCategories = [
-    'Кольцо',
-    'Серьги',
-    'Цепь',
-    'Браслет',
-    'Другое',
-  ];
-
   static const _manufacturerOptions = [
     'Sokolov',
     'Диамант',
@@ -1175,6 +1168,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
   final _skuController = TextEditingController();
   final _customNameController = TextEditingController();
+  final _customSubtypeController = TextEditingController();
   final _customManufacturerController = TextEditingController();
   final _weightController = TextEditingController();
   final _sizeController = TextEditingController();
@@ -1185,7 +1179,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   Set<String> _selectedCatalogGems = {};
   List<String> _legacyGemValues = [];
 
-  String _productTypeCategory = _nameCategories.first;
+  String _productTypeCategory = kJewelryMainCategories.first;
+  String _subtypeDropdown = kJewelrySubtypeUnspecified;
   String _manufacturerCategory = _manufacturerOptions.first;
   String _metalCategory = 'gold';
   String _goldType = '585 красное';
@@ -1217,11 +1212,48 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String get _resolvedMetalType =>
       _metalCategory == 'gold' ? _goldType : _silverType;
 
-  String get _resolvedProductName {
-    if (_productTypeCategory == 'Другое') {
+  String? get _resolvedSubtypeForSave {
+    if (_productTypeCategory == kJewelryCategoryOther) return null;
+    if (_subtypeDropdown == kJewelrySubtypeUnspecified) return null;
+    if (_subtypeDropdown == kJewelrySubtypeCustom) {
+      final custom = _customSubtypeController.text.trim();
+      return custom.isEmpty ? null : custom;
+    }
+    return _subtypeDropdown;
+  }
+
+  String get _resolvedProductCategory {
+    if (_productTypeCategory == kJewelryCategoryOther) {
       return _customNameController.text.trim();
     }
     return _productTypeCategory;
+  }
+
+  String get _resolvedProductDisplayName {
+    if (_productTypeCategory == kJewelryCategoryOther) {
+      return _customNameController.text.trim();
+    }
+    return formatJewelryProductDisplayName(
+      mainCategory: _productTypeCategory,
+      subtype: _resolvedSubtypeForSave,
+    );
+  }
+
+  bool get _showSubtypePicker =>
+      _productTypeCategory != kJewelryCategoryOther &&
+      kJewelryCategorySubtypes.containsKey(_productTypeCategory);
+
+  bool get _showCustomSubtypeField =>
+      _showSubtypePicker && _subtypeDropdown == kJewelrySubtypeCustom;
+
+  String get _customSubtypeHint {
+    if (_productTypeCategory == 'Гайтан') {
+      return 'Например: кожаный, капроновый';
+    }
+    if (_productTypeCategory == 'Пирсинг') {
+      return 'Например: в нос, в бровь';
+    }
+    return 'Введите вид изделия';
   }
 
   String get _resolvedManufacturer {
@@ -1263,8 +1295,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       (edit['metal_type'] ?? edit['metal'])?.toString() ?? '',
     );
     _imageUrls = List<String>.from(productGalleryImageUrls(edit));
-    final storedName = extractStoredProductName(edit);
-    _initNameFields(storedName == '—' ? '' : storedName);
+    _initCategoryFields(edit);
     _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateGalleryFromServer());
@@ -1315,14 +1346,34 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
   }
 
-  void _initNameFields(String storedName) {
-    if (storedName.isEmpty) return;
-    if (_nameCategories.contains(storedName)) {
-      _productTypeCategory = storedName;
+  void _initCategoryFields(Map<String, dynamic> edit) {
+    final nameText = extractStoredProductName(edit);
+    final parsed = parseJewelryProductCategoryFromRow(
+      nameText: nameText == '—' ? null : nameText,
+      categoryColumn: edit['category']?.toString(),
+    );
+
+    if (parsed.isOther) {
+      _productTypeCategory = kJewelryCategoryOther;
+      _customNameController.text = parsed.displayName;
+      _subtypeDropdown = kJewelrySubtypeUnspecified;
+      _customSubtypeController.clear();
       return;
     }
-    _productTypeCategory = 'Другое';
-    _customNameController.text = storedName;
+
+    _productTypeCategory = parsed.mainCategory;
+    _customNameController.clear();
+    if (parsed.catalogSubtype != null) {
+      _subtypeDropdown = parsed.catalogSubtype!;
+      _customSubtypeController.clear();
+    } else if (parsed.customSubtype != null &&
+        parsed.customSubtype!.isNotEmpty) {
+      _subtypeDropdown = kJewelrySubtypeCustom;
+      _customSubtypeController.text = parsed.customSubtype!;
+    } else {
+      _subtypeDropdown = kJewelrySubtypeUnspecified;
+      _customSubtypeController.clear();
+    }
   }
 
   void _syncGemControllerFromSelection() {
@@ -1401,6 +1452,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _skuController.dispose();
     _customNameController.dispose();
     _customManufacturerController.dispose();
+    _customSubtypeController.dispose();
     _weightController.dispose();
     _sizeController.dispose();
     _priceController.dispose();
@@ -1509,10 +1561,16 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   Future<void> _submit({required bool asDraft}) async {
     final sku = _skuController.text.trim();
     final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
-    final productName = _resolvedProductName;
+    final productName = _resolvedProductDisplayName;
+    final productCategory = _resolvedProductCategory;
 
     if (productName.isEmpty) {
       _snack('Укажите наименование изделия', error: true);
+      return;
+    }
+    if (_showCustomSubtypeField &&
+        _customSubtypeController.text.trim().isEmpty) {
+      _snack('Укажите свой вид изделия', error: true);
       return;
     }
     if (sku.isEmpty || weight == null || weight <= 0) {
@@ -1536,6 +1594,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               productId: widget.editProduct!['id']?.toString() ?? '',
               sku: sku,
               name: productName,
+              productCategory: productCategory,
               metalType: _resolvedMetalType,
               weightGrams: weight,
               price: price,
@@ -1551,6 +1610,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           : await widget.database.insertManualProduct(
               sku: sku,
               name: productName,
+              productCategory: productCategory,
               metalType: _resolvedMetalType,
               weightGrams: weight,
               price: price,
@@ -1769,17 +1829,69 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   labelText: 'Категория изделия',
                   border: OutlineInputBorder(),
                 ),
-                items: _nameCategories
+                items: kJewelryMainCategories
                     .map(
                       (item) => DropdownMenuItem(value: item, child: Text(item)),
                     )
                     .toList(),
                 onChanged: (value) {
                   if (value == null) return;
-                  setState(() => _productTypeCategory = value);
+                  setState(() {
+                    _productTypeCategory = value;
+                    _subtypeDropdown = kJewelrySubtypeUnspecified;
+                    _customSubtypeController.clear();
+                  });
                 },
               ),
-              if (_productTypeCategory == 'Другое') ...[
+              if (_showSubtypePicker) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _subtypeDropdown,
+                  decoration: const InputDecoration(
+                    labelText: 'Вид изделия',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: kJewelrySubtypeUnspecified,
+                      child: Text('Не указан'),
+                    ),
+                    ...?kJewelryCategorySubtypes[_productTypeCategory]
+                        ?.map(
+                          (subtype) => DropdownMenuItem(
+                            value: subtype,
+                            child: Text(subtype),
+                          ),
+                        ),
+                    const DropdownMenuItem(
+                      value: kJewelrySubtypeCustom,
+                      child: Text('Свой вариант...'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _subtypeDropdown = value;
+                      if (value != kJewelrySubtypeCustom) {
+                        _customSubtypeController.clear();
+                      }
+                    });
+                  },
+                ),
+              ],
+              if (_showCustomSubtypeField) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _customSubtypeController,
+                  decoration: InputDecoration(
+                    labelText: 'Свой вид изделия',
+                    hintText: _customSubtypeHint,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
+              if (_productTypeCategory == kJewelryCategoryOther) ...[
                 const SizedBox(height: 8),
                 TextField(
                   controller: _customNameController,

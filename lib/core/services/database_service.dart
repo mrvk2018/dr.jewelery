@@ -373,6 +373,7 @@ abstract class DatabaseService {
     double? sizeValue,
     String gemInserts,
     String notes,
+    String? productCategory,
     String? qrCodePayload,
     List<String> additionalImages,
     bool isDraft = false,
@@ -390,6 +391,7 @@ abstract class DatabaseService {
     double? sizeValue,
     String gemInserts,
     String notes,
+    String? productCategory,
     String? manufacturer,
     int? stockQuantity,
   });
@@ -1649,6 +1651,7 @@ class CloudDatabaseService implements DatabaseService {
     double? sizeValue,
     String gemInserts = '',
     String notes = '',
+    String? productCategory,
     String? qrCodePayload,
     List<String> additionalImages = const [],
     bool isDraft = false,
@@ -1658,6 +1661,7 @@ class CloudDatabaseService implements DatabaseService {
     if (normalizedSku.isEmpty) return false;
     final priceKrw = price.clamp(0, 999999999);
     final displayName = name.trim();
+    final categoryValue = (productCategory ?? displayName).trim();
     final metalLabel = metalType.trim();
     final gem = gemInserts.trim();
     try {
@@ -1669,7 +1673,7 @@ class CloudDatabaseService implements DatabaseService {
         'description': <String, dynamic>{},
         'metal': metalLabel,
         'metal_type': metalLabel,
-        'category': displayName.isEmpty ? 'manual' : displayName,
+        'category': categoryValue.isEmpty ? 'manual' : categoryValue,
         'insert': gem,
         'weight_grams': weightGrams,
         'gem_inserts': gem,
@@ -1708,6 +1712,7 @@ class CloudDatabaseService implements DatabaseService {
     double? sizeValue,
     String gemInserts = '',
     String notes = '',
+    String? productCategory,
     String? manufacturer,
     int? stockQuantity,
   }) async {
@@ -1716,13 +1721,14 @@ class CloudDatabaseService implements DatabaseService {
     final priceKrw = price.clamp(0, 999999999);
 
     final displayName = name.trim();
+    final categoryValue = (productCategory ?? displayName).trim();
     final metalLabel = metalType.trim();
     final gem = gemInserts.trim();
     final patch = <String, dynamic>{
       'name': _manualProductNameJson(displayName),
       'metal': metalLabel,
       'metal_type': metalLabel,
-      'category': displayName.isEmpty ? 'manual' : displayName,
+      'category': categoryValue.isEmpty ? 'manual' : categoryValue,
       'insert': gem,
       'weight_grams': weightGrams,
       'gem_inserts': gem,

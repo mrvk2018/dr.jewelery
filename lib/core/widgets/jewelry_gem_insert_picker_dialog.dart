@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../constants/jewelry_category_subtypes.dart';
 import '../constants/jewelry_gem_inserts.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
@@ -198,6 +199,16 @@ class _AdditionalFilterDialogBodyState extends State<_AdditionalFilterDialogBody
     });
   }
 
+  void _toggleSubtypeTag(String tag) {
+    setState(() {
+      if (_selected.contains(tag)) {
+        _selected.remove(tag);
+      } else {
+        _selected.add(tag);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final extras = widget.extraThesaurusTags;
@@ -223,6 +234,20 @@ class _AdditionalFilterDialogBodyState extends State<_AdditionalFilterDialogBody
               GemInsertCheckboxGrid(
                 selected: _selected,
                 onToggle: _toggleGem,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Вид изделия',
+                style: AppTypography.productMeta().copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              JewelrySubtypeCheckboxGrid(
+                options: kJewelrySubtypeFilterOptions,
+                selectedTags: _selected,
+                onToggleTag: _toggleSubtypeTag,
               ),
               if (extras.isNotEmpty) ...[
                 const SizedBox(height: 20),
@@ -273,6 +298,55 @@ class _AdditionalFilterDialogBodyState extends State<_AdditionalFilterDialogBody
           child: const Text('Применить'),
         ),
       ],
+    );
+  }
+}
+
+class JewelrySubtypeCheckboxGrid extends StatelessWidget {
+  const JewelrySubtypeCheckboxGrid({
+    super.key,
+    required this.options,
+    required this.selectedTags,
+    required this.onToggleTag,
+  });
+
+  final List<JewelrySubtypeFilterOption> options;
+  final Set<String> selectedTags;
+  final ValueChanged<String> onToggleTag;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final columns = width >= 720 ? 3 : (width >= 420 ? 2 : 1);
+        final rowCount = (options.length / columns).ceil();
+
+        return Column(
+          children: List.generate(rowCount, (rowIndex) {
+            return IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: List.generate(columns, (colIndex) {
+                  final itemIndex = rowIndex * columns + colIndex;
+                  if (itemIndex >= options.length) {
+                    return const Expanded(child: SizedBox());
+                  }
+                  final option = options[itemIndex];
+                  final checked = selectedTags.contains(option.filterTag);
+                  return Expanded(
+                    child: _GemInsertCheckRow(
+                      label: option.label,
+                      checked: checked,
+                      onChanged: () => onToggleTag(option.filterTag),
+                    ),
+                  );
+                }),
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }

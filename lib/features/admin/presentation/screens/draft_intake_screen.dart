@@ -213,14 +213,30 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     );
     if (confirmed != true || !mounted) return;
 
+    final productId = row['id']?.toString().trim();
     setState(() => _rowBusySkus.add(sku));
     try {
-      final ok = await widget.database.deleteDraftProductBySku(sku);
+      final res = await widget.database.deleteDraftProduct(
+        id: productId != null && productId.isNotEmpty ? productId : null,
+        sku: sku,
+      );
       if (!mounted) return;
-      if (!ok) {
-        _showSnack('Не удалось удалить $sku', isError: true);
+      if (!res.ok) {
+        _showSnack(
+          'Не удалось удалить $sku: ${res.error ?? 'неизвестная ошибка'}',
+          isError: true,
+        );
         return;
       }
+      setState(() {
+        _drafts = _drafts.where((draft) {
+          final draftId = draft['id']?.toString().trim();
+          if (productId != null && productId.isNotEmpty && draftId != null) {
+            return draftId != productId;
+          }
+          return _field(draft, 'sku') != sku;
+        }).toList(growable: false);
+      });
       _showSnack('Черновик $sku удалён');
       await _runSearch(_searchController.text);
     } catch (error) {

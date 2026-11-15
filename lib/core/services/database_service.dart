@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/catalog/domain/models/catalog_constants.dart';
 import '../../features/admin/domain/admin_pos_archive_result.dart';
+import '../../features/admin/domain/draft_delete_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
@@ -74,6 +75,8 @@ abstract final class AdminCatalogRpc {
   static const adminSetProductAdditionalImages =
       'admin_set_product_additional_images';
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
+  static const deleteDraftProduct = 'delete_draft_product';
+  static const draftProductIdParam = 'p_id';
   static const processProductReturnManual = 'process_product_return_manual';
   static const skuParam = 'p_sku';
   static const additionalImagesParam = 'p_additional_images';
@@ -408,8 +411,11 @@ abstract class DatabaseService {
   /// Массовая активация всех черновиков (`stock_quantity = 0` → `1`).
   Future<int> activateAllDraftProducts();
 
-  /// Удаление черновика приёмки (RPC `delete_draft_product_by_sku`).
-  Future<bool> deleteDraftProductBySku(String sku);
+  /// Удаление черновика приёмки (`delete_draft_product`, приоритет `id`).
+  Future<DraftDeleteResult> deleteDraftProduct({
+    String? id,
+    required String sku,
+  });
 
   /// Поштучное добавление: витрина (`stock_quantity = 1`) или черновик (`0`).
   Future<bool> insertManualProduct({
@@ -1752,23 +1758,89 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
-  @override
-  Future<bool> deleteDraftProductBySku(String sku) async {
-    final normalized = sku.trim();
-    if (normalized.isEmpty) return false;
-    try {
-      final result = await _supabaseClient.rpc(
-        AdminCatalogRpc.deleteDraftBySku,
-        params: {
-          AdminCatalogRpc.skuParam: normalized,
-          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
-        },
+  static DraftDeleteResult _parseDraftDeleteRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      final ok = map['ok'] == true;
+      if (ok) return (ok: true, error: null);
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        error: message == null || message.isEmpty
+            ? 'Неизвестная ошибка сервера'
+            : message,
       );
-      return result == true;
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.deleteDraftProductBySku failed: $error');
+    }
+    if (result == true) return (ok: true, error: null);
+    return (ok: false, error: 'Неизвестный ответ сервера');
+  }
+
+  static bool _isMissingDeleteDraftProductRpc(PostgrestException error) {
+    final message = error.message.toLowerCase();
+    final code = error.code?.toLowerCase() ?? '';
+    if (code == '42883' || message.contains('42883')) return true;
+    if (message.contains('delete_draft_product') &&
+        (message.contains('does not exist') || message.contains('could not find'))) {
+      return true;
+    }
+    return message.contains('pgrst202');
+  }
+
+  @override
+  Future<DraftDeleteResult> deleteDraftProduct({
+    String? id,
+    required String sku,
+  }) async {
+    final normalizedSku = sku.trim();
+    final productId = id?.trim() ?? '';
+    if (normalizedSku.isEmpty && productId.isEmpty) {
+      return (ok: false, error: 'Укажите sku');
+    }
+    try {
+      final params = <String, dynamic>{
+        AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        AdminCatalogRpc.skuParam: normalizedSku,
+      };
+      if (productId.isNotEmpty) {
+        params[AdminCatalogRpc.draftProductIdParam] = productId;
+      }
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.deleteDraftProduct,
+        params: params,
+      );
+      return _parseDraftDeleteRpc(result);
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteDraftProduct: $error');
       debugPrint('$stackTrace');
-      return false;
+      if (_isMissingDeleteDraftProductRpc(error)) {
+        try {
+          final legacy = await _supabaseClient.rpc(
+            AdminCatalogRpc.deleteDraftBySku,
+            params: {
+              AdminCatalogRpc.skuParam: normalizedSku,
+              AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+            },
+          );
+          if (legacy == true) return (ok: true, error: null);
+          return (
+            ok: false,
+            error:
+                'Примените миграцию 035 в Supabase (delete_draft_product). '
+                'Legacy-удаление по sku не удалось.',
+          );
+        } catch (fallbackError) {
+          return (ok: false, error: fallbackError.toString());
+        }
+      }
+      final detail = error.message.trim();
+      return (
+        ok: false,
+        error: detail.isEmpty ? error.toString() : detail,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteDraftProduct failed: $error');
+      debugPrint('$stackTrace');
+      return (ok: false, error: error.toString());
     }
   }
 

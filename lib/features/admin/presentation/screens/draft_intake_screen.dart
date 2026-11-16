@@ -110,16 +110,26 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   static Widget _priceCell(Map<String, dynamic> row) {
     final krw = _salePriceKrw(row);
     if (krw == null) {
-      return Text(
-        '—',
-        style: AppTypography.productMeta().copyWith(
-          color: AppColors.textSecondary,
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text(
+          '—',
+          maxLines: 1,
+          style: AppTypography.productMeta().copyWith(
+            color: AppColors.textSecondary,
+          ),
         ),
       );
     }
-    return Text(
-      formatWon(krw),
-      style: AppTypography.price(fontSize: 13),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Text(
+        formatWon(krw),
+        maxLines: 1,
+        style: AppTypography.price(fontSize: 13),
+      ),
     );
   }
 
@@ -448,6 +458,14 @@ class _Toolbar extends StatelessWidget {
   }
 }
 
+abstract final class _DraftTableLayout {
+  static const narrowBreakpoint = 680.0;
+  static const photoSize = 40.0;
+  static const actionsWidth = 132.0;
+  static const horizontalPadding = 12.0;
+  static const rowVerticalPadding = 10.0;
+}
+
 class _DraftTable extends StatelessWidget {
   const _DraftTable({
     required this.drafts,
@@ -489,105 +507,42 @@ class _DraftTable extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          return Scrollbar(
-            thumbVisibility: true,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(
-                      AppColors.cardBackground,
-                    ),
-                    columns: [
-                      const DataColumn(label: Text('Фото')),
-                      const DataColumn(label: Text('SKU')),
-                      const DataColumn(label: Text('Металл')),
-                      const DataColumn(label: Text('Вес, г')),
-                      const DataColumn(label: Text('Размер')),
-                      const DataColumn(label: Text('Вставки')),
-                      DataColumn(
-                        label: Text(
-                          'Цена',
-                          style: AppTypography.caption(fontWeight: FontWeight.w700),
-                        ),
-                        numeric: true,
-                      ),
-                      const DataColumn(label: Text('Действие')),
-                    ],
-                    rows: drafts.map((row) {
-                      final sku = _DraftIntakeScreenState._field(row, 'sku');
-                      final busy = busySkus.contains(sku);
-                      return DataRow(
-                        cells: [
-                          DataCell(
-                            _DraftThumbnail(url: _DraftIntakeScreenState._thumbnailUrl(row)),
-                          ),
-                          DataCell(Text(sku)),
-                          DataCell(
-                            Text(_DraftIntakeScreenState._field(row, 'metal_type')),
-                          ),
-                          DataCell(
-                            Text(
-                              _DraftIntakeScreenState._weight(row).toStringAsFixed(2),
-                            ),
-                          ),
-                          DataCell(
-                            Text(
-                              _DraftIntakeScreenState._size(row).toStringAsFixed(2),
-                            ),
-                          ),
-                          DataCell(
-                            Text(_DraftIntakeScreenState._field(row, 'gem_inserts')),
-                          ),
-                          DataCell(
-                            _DraftIntakeScreenState._priceCell(row),
-                          ),
-                          DataCell(
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                FilledButton.tonal(
-                                  onPressed: busy ? null : () => onAcceptRow(row),
-                                  child: busy
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : const Text('Принять'),
-                                ),
-                                IconButton(
-                                  tooltip: 'Печать ценника',
-                                  onPressed: busy ? null : () => onPrintRow(row),
-                                  icon: Icon(
-                                    Icons.print_outlined,
-                                    color: busy
-                                        ? AppColors.textSecondary
-                                        : AppColors.accent,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Удалить черновик',
-                                  onPressed: busy ? null : () => onDeleteRow(row),
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    color: busy
-                                        ? AppColors.textSecondary
-                                        : AppColors.saleRed,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
-                  ),
+          final narrow = constraints.maxWidth < _DraftTableLayout.narrowBreakpoint;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _DraftTableHeader(narrow: narrow),
+              const Divider(height: 1, color: AppColors.border),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: drafts.length,
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, color: AppColors.border),
+                  itemBuilder: (context, index) {
+                    final row = drafts[index];
+                    final sku = _DraftIntakeScreenState._field(row, 'sku');
+                    final busy = busySkus.contains(sku);
+                    return narrow
+                        ? _DraftTableNarrowRow(
+                            row: row,
+                            sku: sku,
+                            busy: busy,
+                            onAccept: () => onAcceptRow(row),
+                            onPrint: () => onPrintRow(row),
+                            onDelete: () => onDeleteRow(row),
+                          )
+                        : _DraftTableWideRow(
+                            row: row,
+                            sku: sku,
+                            busy: busy,
+                            onAccept: () => onAcceptRow(row),
+                            onPrint: () => onPrintRow(row),
+                            onDelete: () => onDeleteRow(row),
+                          );
+                  },
                 ),
               ),
-            ),
+            ],
           );
         },
       ),
@@ -595,12 +550,343 @@ class _DraftTable extends StatelessWidget {
   }
 }
 
+class _DraftTableHeader extends StatelessWidget {
+  const _DraftTableHeader({required this.narrow});
+
+  final bool narrow;
+
+  static TextStyle get _labelStyle =>
+      AppTypography.caption(fontWeight: FontWeight.w700);
+
+  @override
+  Widget build(BuildContext context) {
+    final pad = const EdgeInsets.symmetric(
+      horizontal: _DraftTableLayout.horizontalPadding,
+      vertical: _DraftTableLayout.rowVerticalPadding,
+    );
+    if (narrow) {
+      return Container(
+        color: AppColors.cardBackground,
+        padding: pad,
+        child: Text('Черновики', style: _labelStyle),
+      );
+    }
+    return Container(
+      color: AppColors.cardBackground,
+      padding: pad,
+      child: Row(
+        children: [
+          const SizedBox(width: _DraftTableLayout.photoSize),
+          const SizedBox(width: 8),
+          const Expanded(flex: 3, child: _DraftHeaderCell('SKU')),
+          const Expanded(flex: 2, child: _DraftHeaderCell('Металл')),
+          const Expanded(flex: 1, child: _DraftHeaderCell('Вес, г')),
+          const Expanded(flex: 1, child: _DraftHeaderCell('Размер')),
+          const Expanded(flex: 2, child: _DraftHeaderCell('Вставки')),
+          const Expanded(flex: 2, child: _DraftHeaderCell('Цена', alignEnd: true)),
+          SizedBox(
+            width: _DraftTableLayout.actionsWidth,
+            child: Text('Действие', style: _labelStyle, textAlign: TextAlign.end),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftHeaderCell extends StatelessWidget {
+  const _DraftHeaderCell(this.label, {this.alignEnd = false});
+
+  final String label;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+      style: _DraftTableHeader._labelStyle,
+    );
+  }
+}
+
+class _DraftTableWideRow extends StatelessWidget {
+  const _DraftTableWideRow({
+    required this.row,
+    required this.sku,
+    required this.busy,
+    required this.onAccept,
+    required this.onPrint,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> row;
+  final String sku;
+  final bool busy;
+  final VoidCallback onAccept;
+  final VoidCallback onPrint;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _DraftTableLayout.horizontalPadding,
+        vertical: _DraftTableLayout.rowVerticalPadding,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _DraftThumbnail(
+            url: _DraftIntakeScreenState._thumbnailUrl(row),
+            size: _DraftTableLayout.photoSize,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: _DraftEllipsisText(
+              _DraftIntakeScreenState._field(row, 'sku'),
+              style: AppTypography.caption(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _DraftEllipsisText(
+              _DraftIntakeScreenState._field(row, 'metal_type'),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: _DraftFittedText(
+              _DraftIntakeScreenState._weight(row).toStringAsFixed(2),
+            ),
+          ),
+          Expanded(
+            flex: 1,
+            child: _DraftFittedText(
+              _DraftIntakeScreenState._size(row).toStringAsFixed(2),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: _DraftEllipsisText(
+              _DraftIntakeScreenState._field(row, 'gem_inserts'),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _DraftIntakeScreenState._priceCell(row),
+            ),
+          ),
+          SizedBox(
+            width: _DraftTableLayout.actionsWidth,
+            child: _DraftRowActions(
+              busy: busy,
+              onAccept: onAccept,
+              onPrint: onPrint,
+              onDelete: onDelete,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftTableNarrowRow extends StatelessWidget {
+  const _DraftTableNarrowRow({
+    required this.row,
+    required this.sku,
+    required this.busy,
+    required this.onAccept,
+    required this.onPrint,
+    required this.onDelete,
+  });
+
+  final Map<String, dynamic> row;
+  final String sku;
+  final bool busy;
+  final VoidCallback onAccept;
+  final VoidCallback onPrint;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final metaStyle = AppTypography.productMeta();
+    final weight = _DraftIntakeScreenState._weight(row).toStringAsFixed(2);
+    final size = _DraftIntakeScreenState._size(row).toStringAsFixed(2);
+    final metal = _DraftIntakeScreenState._field(row, 'metal_type');
+    final inserts = _DraftIntakeScreenState._field(row, 'gem_inserts');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _DraftTableLayout.horizontalPadding,
+        vertical: _DraftTableLayout.rowVerticalPadding,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _DraftThumbnail(
+                url: _DraftIntakeScreenState._thumbnailUrl(row),
+                size: _DraftTableLayout.photoSize,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _DraftEllipsisText(
+                  sku,
+                  style: AppTypography.caption(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(child: _DraftIntakeScreenState._priceCell(row)),
+              const SizedBox(width: 4),
+              _DraftRowActions(
+                busy: busy,
+                onAccept: onAccept,
+                onPrint: onPrint,
+                onDelete: onDelete,
+                compact: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _DraftEllipsisText(
+                  '$metal · $weight г · р. $size · $inserts',
+                  style: metaStyle,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DraftEllipsisText extends StatelessWidget {
+  const _DraftEllipsisText(this.text, {this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: style ?? AppTypography.productMeta(),
+    );
+  }
+}
+
+class _DraftFittedText extends StatelessWidget {
+  const _DraftFittedText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        maxLines: 1,
+        style: AppTypography.productMeta(),
+      ),
+    );
+  }
+}
+
+class _DraftRowActions extends StatelessWidget {
+  const _DraftRowActions({
+    required this.busy,
+    required this.onAccept,
+    required this.onPrint,
+    required this.onDelete,
+    this.compact = false,
+  });
+
+  final bool busy;
+  final VoidCallback onAccept;
+  final VoidCallback onPrint;
+  final VoidCallback onDelete;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final acceptStyle = FilledButton.styleFrom(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 8,
+        vertical: 4,
+      ),
+      minimumSize: Size(compact ? 0 : 0, 30),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+    );
+    final iconConstraints = BoxConstraints(
+      minWidth: compact ? 28 : 32,
+      minHeight: compact ? 28 : 32,
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        FilledButton.tonal(
+          onPressed: busy ? null : onAccept,
+          style: acceptStyle,
+          child: busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(compact ? 'Прин.' : 'Принять'),
+        ),
+        IconButton(
+          tooltip: 'Печать ценника',
+          onPressed: busy ? null : onPrint,
+          padding: EdgeInsets.zero,
+          constraints: iconConstraints,
+          iconSize: compact ? 18 : 20,
+          icon: Icon(
+            Icons.print_outlined,
+            color: busy ? AppColors.textSecondary : AppColors.accent,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Удалить черновик',
+          onPressed: busy ? null : onDelete,
+          padding: EdgeInsets.zero,
+          constraints: iconConstraints,
+          iconSize: compact ? 18 : 20,
+          icon: Icon(
+            Icons.delete_outline,
+            color: busy ? AppColors.textSecondary : AppColors.saleRed,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DraftThumbnail extends StatelessWidget {
-  const _DraftThumbnail({this.url});
+  const _DraftThumbnail({this.url, this.size = 48});
 
   final String? url;
-
-  static const _size = 48.0;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -613,15 +899,15 @@ class _DraftThumbnail extends StatelessWidget {
       borderRadius: BorderRadius.circular(8),
       child: Image.network(
         resolved,
-        width: _size,
-        height: _size,
+        width: size,
+        height: size,
         fit: BoxFit.cover,
         errorBuilder: (_, _, _) => _placeholder(),
         loadingBuilder: (context, child, progress) {
           if (progress == null) return child;
           return SizedBox(
-            width: _size,
-            height: _size,
+            width: size,
+            height: size,
             child: const Center(
               child: SizedBox(
                 width: 18,
@@ -637,8 +923,8 @@ class _DraftThumbnail extends StatelessWidget {
 
   Widget _placeholder() {
     return Container(
-      width: _size,
-      height: _size,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(8),

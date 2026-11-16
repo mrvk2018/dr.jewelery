@@ -8,6 +8,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/store_location_utils.dart';
 
 /// Фасетная фильтрация витрины (RPC `get_advanced_faceted_products`).
 class SmartFilterWidget extends StatefulWidget {
@@ -70,6 +71,9 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   final Set<String> _selectedCategoryTags = {};
   final Set<String> _selectedSlangTags = {};
 
+  /// `null` — все магазины.
+  String? _selectedStoreLocation;
+
   bool _isApplying = false;
   int _applyGeneration = 0;
 
@@ -116,6 +120,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
         silverGramPrice: widget.silverGramPrice,
         exactWeight: _parseExactWeight(_weightController.text),
         skuQuery: _parseSkuQuery(),
+        storeLocation: _selectedStoreLocation,
       );
       if (!mounted || generation != _applyGeneration) return;
       widget.onFilterApplied(products);
@@ -162,8 +167,14 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       _maxPriceController.clear();
       _skuController.clear();
       _weightController.clear();
+      _selectedStoreLocation = null;
     });
     await _applyFilter();
+  }
+
+  void _selectStoreFilter(String? code) {
+    setState(() => _selectedStoreLocation = code);
+    unawaited(_applyFilter());
   }
 
   Future<void> _openAdditionalFilterDialog() async {
@@ -323,6 +334,38 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                       ],
                     );
                   },
+                ),
+                const SizedBox(height: 16),
+                Text('Магазин', style: AppTypography.heading(fontSize: 15)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _StoreFilterChip(
+                      label: 'Все',
+                      selected: _selectedStoreLocation == null,
+                      onTap: _isApplying
+                          ? null
+                          : () => _selectStoreFilter(null),
+                    ),
+                    _StoreFilterChip(
+                      label: 'Инчхон',
+                      selected:
+                          _selectedStoreLocation == StoreLocationCode.icn,
+                      onTap: _isApplying
+                          ? null
+                          : () => _selectStoreFilter(StoreLocationCode.icn),
+                    ),
+                    _StoreFilterChip(
+                      label: 'Ансан',
+                      selected:
+                          _selectedStoreLocation == StoreLocationCode.ans,
+                      onTap: _isApplying
+                          ? null
+                          : () => _selectStoreFilter(StoreLocationCode.ans),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 _FacetChipSection(
@@ -499,6 +542,30 @@ class _FilterTextField extends StatelessWidget {
           borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
         ),
       ),
+    );
+  }
+}
+
+class _StoreFilterChip extends StatelessWidget {
+  const _StoreFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: onTap == null ? null : (_) => onTap!(),
+      selectedColor: AppColors.accent.withValues(alpha: 0.25),
+      checkmarkColor: AppColors.accent,
+      side: const BorderSide(color: AppColors.border),
     );
   }
 }

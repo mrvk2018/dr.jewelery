@@ -24,6 +24,7 @@ import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../../../../core/utils/product_gallery_urls.dart';
+import '../../../../core/utils/store_location_utils.dart';
 import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
 
@@ -520,6 +521,13 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         (sum, row) => sum + (adminShowroomSalePriceKrw(row) ?? 0),
       );
 
+  Map<String, ShowroomStoreSelectionStats> get _storeSelectionStats =>
+      computeShowroomStatsByStore(
+        products: _products,
+        priceKrwForRow: (row) => adminShowroomSalePriceKrw(row) ?? 0,
+        weightGramsForRow: _weight,
+      );
+
   @override
   Widget build(BuildContext context) {
     final profile = ProfileScope.of(context);
@@ -578,6 +586,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                             totalCount: _products.length,
                             totalWeightGrams: _totalWeightGrams,
                             totalPriceKrw: _totalPriceKrw,
+                            storeStats: _storeSelectionStats,
                             cell: _cell,
                             weight: _weight,
                             photoUploadBusy: _photoUploadBusy,
@@ -757,6 +766,7 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                         ),
                         columns: const [
                           DataColumn(label: Text('Артикул (SKU)')),
+                          DataColumn(label: Text('Магазин')),
                           DataColumn(label: Text('Металл')),
                           DataColumn(label: Text('Вес, г')),
                           DataColumn(label: Text('Размер')),
@@ -779,6 +789,9 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                             }),
                             cells: [
                               DataCell(Text(sku)),
+                              DataCell(
+                                _StoreLocationBadge(row: row),
+                              ),
                               DataCell(Text(widget.cell(row, 'metal'))),
                               DataCell(
                                 Text(widget.weight(row).toStringAsFixed(2)),
@@ -830,6 +843,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
     required this.totalCount,
     required this.totalWeightGrams,
     required this.totalPriceKrw,
+    required this.storeStats,
     required this.cell,
     required this.weight,
     required this.photoUploadBusy,
@@ -841,6 +855,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
   final int totalCount;
   final double totalWeightGrams;
   final int totalPriceKrw;
+  final Map<String, ShowroomStoreSelectionStats> storeStats;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
   final bool photoUploadBusy;
@@ -885,6 +900,8 @@ class _MediaAndKpiPanel extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _KpiStoreBreakdown(storeStats: storeStats),
             const SizedBox(height: 20),
             Text(
               selected == null
@@ -920,8 +937,87 @@ class _MediaAndKpiPanel extends StatelessWidget {
                 'Масса выбранного: ${weight(selected!).toStringAsFixed(2)} г',
                 style: AppTypography.productMeta(),
               ),
+              Text(
+                'Магазин: ${storeLocationDisplayLabelForRow(selected!)}',
+                style: AppTypography.productMeta(),
+              ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KpiStoreBreakdown extends StatelessWidget {
+  const _KpiStoreBreakdown({required this.storeStats});
+
+  final Map<String, ShowroomStoreSelectionStats> storeStats;
+
+  String _line(String code, String title) {
+    final stats = storeStats[code] ?? const ShowroomStoreSelectionStats();
+    return '$title: ${stats.count} шт · '
+        '${stats.weightGrams.toStringAsFixed(2)} г · '
+        '${adminShowroomKrwLabel(stats.priceKrw)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'По магазинам',
+            style: AppTypography.productMeta().copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _line(StoreLocationCode.icn, 'Инчхон'),
+            style: AppTypography.productMeta(),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _line(StoreLocationCode.ans, 'Ансан'),
+            style: AppTypography.productMeta(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoreLocationBadge extends StatelessWidget {
+  const _StoreLocationBadge({required this.row});
+
+  final Map<String, dynamic> row;
+
+  @override
+  Widget build(BuildContext context) {
+    final code = storeLocationCodeFromProductRow(row);
+    final label = storeLocationDisplayLabelForRow(row);
+    final colors = storeLocationBadgeColors(code);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.fg.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        label,
+        style: AppTypography.productMeta().copyWith(
+          color: colors.fg,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
         ),
       ),
     );
@@ -1414,6 +1510,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _metalCategory = 'gold';
   String _goldType = '585 красное';
   String _silverType = '925 Родированное';
+  String _storeLocationCode = StoreLocationCode.defaultCode;
   bool _saving = false;
   bool _keepFieldsAfterSave = false;
   int _sessionSaveCount = 0;
@@ -1518,8 +1615,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     final edit = widget.editProduct;
     if (edit == null) {
       unawaited(_restoreLastSelectedMetalForAddMode());
+      unawaited(_restoreLastSelectedStoreForAddMode());
       return;
     }
+
+    _storeLocationCode = storeLocationCodeFromProductRow(edit);
 
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
@@ -1565,6 +1665,32 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     } catch (error, stackTrace) {
       debugPrint(
         '_ManualProductDialog._persistLastSelectedMetalCategory: $error',
+      );
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _restoreLastSelectedStoreForAddMode() async {
+    try {
+      final storage = await AdminManualProductStorage.create();
+      if (!mounted) return;
+      setState(() => _storeLocationCode = storage.lastSelectedStoreLocation);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '_ManualProductDialog._restoreLastSelectedStoreForAddMode: $error',
+      );
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _persistLastSelectedStoreLocation(String code) async {
+    if (_isEditMode) return;
+    try {
+      final storage = await AdminManualProductStorage.create();
+      await storage.saveLastSelectedStoreLocation(code);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '_ManualProductDialog._persistLastSelectedStoreLocation: $error',
       );
       debugPrint('$stackTrace');
     }
@@ -2049,6 +2175,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               notes: notes,
               manufacturer: manufacturer,
               stockQuantity: _restockQuantityIfMissing(widget.editProduct!),
+              storeLocation: _storeLocationCode,
             )
           : await widget.database.insertManualProduct(
               sku: sku,
@@ -2065,6 +2192,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               notes: notes,
               isDraft: asDraft,
               manufacturer: manufacturer,
+              storeLocation: _storeLocationCode,
             );
 
       if (!ok) {
@@ -2264,6 +2392,32 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   onChanged: (_) => setState(() {}),
                 ),
               ],
+              const SizedBox(height: 12),
+              Text(
+                'Магазин',
+                style: AppTypography.productMeta().copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: StoreLocationCode.icn,
+                    label: Text('Инчхон'),
+                  ),
+                  ButtonSegment(
+                    value: StoreLocationCode.ans,
+                    label: Text('Ансан'),
+                  ),
+                ],
+                selected: {_storeLocationCode},
+                onSelectionChanged: (value) {
+                  final next = value.first;
+                  setState(() => _storeLocationCode = next);
+                  unawaited(_persistLastSelectedStoreLocation(next));
+                },
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _productTypeCategory,

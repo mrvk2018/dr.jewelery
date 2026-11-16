@@ -13,6 +13,7 @@ import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
 import '../utils/product_gallery_urls.dart';
+import '../utils/store_location_utils.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 import '../../shared/models/feedback_item.dart';
@@ -125,6 +126,7 @@ abstract final class CatalogFacetedRpc {
   static const silverGramPriceParam = 'silver_gram_price';
   static const exactWeightParam = 'exact_weight';
   static const skuQueryParam = 'sku_query';
+  static const storeLocationParam = 'p_store_location';
   static const searchQueryParam = 'search_query';
   static const searchSoldProducts = 'search_sold_products';
   static const soldSearchSkuParam = 'p_sku';
@@ -410,6 +412,7 @@ abstract class DatabaseService {
     double silverGramPrice = 3500.0,
     double? exactWeight,
     String? skuQuery,
+    String? storeLocation,
   });
 
   /// Приёмка черновиков: RPC [CatalogFacetedRpc.searchDraftProducts] (admin JWT).
@@ -445,6 +448,7 @@ abstract class DatabaseService {
     List<String> additionalImages,
     bool isDraft = false,
     String? manufacturer,
+    String storeLocation = StoreLocationCode.defaultCode,
   });
 
   /// Ручное редактирование карточки на витрине (admin / RLS).
@@ -461,6 +465,7 @@ abstract class DatabaseService {
     String? productCategory,
     String? manufacturer,
     int? stockQuantity,
+    String? storeLocation,
   });
 
   /// Обновление поля `notes` по SKU.
@@ -1676,7 +1681,8 @@ class CloudDatabaseService implements DatabaseService {
   static const _adminCatalogProductColumns =
       'id, sku, stock_quantity, weight_grams, size_value, metal_type, '
       'gem_inserts, notes, additional_images, image_url, name, price, '
-      'sale_price, manufacturer, status, metal, insert';
+      'sale_price, manufacturer, status, metal, insert, store_location, '
+      'warehouse_attributes';
 
   @override
   Future<List<Map<String, dynamic>>> fetchAllProductRowsForAdminCatalog() async {
@@ -1718,9 +1724,11 @@ class CloudDatabaseService implements DatabaseService {
     double silverGramPrice = 3500.0,
     double? exactWeight,
     String? skuQuery,
+    String? storeLocation,
   }) async {
     try {
       final skuTrimmed = skuQuery?.trim();
+      final store = storeLocation?.trim().toUpperCase();
       final response = await _supabaseClient.rpc(
         CatalogFacetedRpc.getAdvancedFacetedProducts,
         params: {
@@ -1734,6 +1742,11 @@ class CloudDatabaseService implements DatabaseService {
           CatalogFacetedRpc.exactWeightParam: exactWeight,
           CatalogFacetedRpc.skuQueryParam:
               (skuTrimmed == null || skuTrimmed.isEmpty) ? null : skuTrimmed,
+          CatalogFacetedRpc.storeLocationParam:
+              (store == StoreLocationCode.icn ||
+                      store == StoreLocationCode.ans)
+                  ? store
+                  : null,
         },
       );
       return _mapRpcRows(response);
@@ -1937,6 +1950,7 @@ class CloudDatabaseService implements DatabaseService {
     List<String> additionalImages = const [],
     bool isDraft = false,
     String? manufacturer,
+    String storeLocation = StoreLocationCode.defaultCode,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1965,6 +1979,7 @@ class CloudDatabaseService implements DatabaseService {
         'old_price': priceKrw,
         'status': isDraft ? 'hidden' : 'active',
         'additional_images': additionalImages,
+        'store_location': normalizeStoreLocationCode(storeLocation: storeLocation),
       };
       payload['stock_quantity'] = isDraft ? 0 : 1;
       if (sizeValue != null) {
@@ -1996,6 +2011,7 @@ class CloudDatabaseService implements DatabaseService {
     String? productCategory,
     String? manufacturer,
     int? stockQuantity,
+    String? storeLocation,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -2024,6 +2040,10 @@ class CloudDatabaseService implements DatabaseService {
     }
     if (stockQuantity != null) {
       patch['stock_quantity'] = stockQuantity.clamp(0, 999999);
+    }
+    if (storeLocation != null) {
+      patch['store_location'] =
+          normalizeStoreLocationCode(storeLocation: storeLocation);
     }
 
     try {

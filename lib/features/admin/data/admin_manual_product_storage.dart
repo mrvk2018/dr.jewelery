@@ -1,8 +1,11 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/utils/store_location_utils.dart';
+
 /// Последний выбор «Золото» / «Серебро» в модалке ручного добавления товара.
 abstract final class AdminManualProductStorageKeys {
   static const lastSelectedMetal = 'admin_last_selected_metal';
+  static const lastSelectedStoreLocation = 'admin_last_selected_store_location';
 }
 
 abstract final class AdminManualProductMetalCategory {
@@ -37,6 +40,19 @@ class AdminManualProductStorage {
     await _prefs.setString(
       AdminManualProductStorageKeys.lastSelectedMetal,
       normalized,
+    );
+  }
+
+  String get lastSelectedStoreLocation => normalizeStoreLocationCode(
+        storeLocation: _prefs.getString(
+          AdminManualProductStorageKeys.lastSelectedStoreLocation,
+        ),
+      );
+
+  Future<void> saveLastSelectedStoreLocation(String code) async {
+    await _prefs.setString(
+      AdminManualProductStorageKeys.lastSelectedStoreLocation,
+      normalizeStoreLocationCode(storeLocation: code),
     );
   }
 }

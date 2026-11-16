@@ -134,7 +134,7 @@ const DELETE_CHUNK_SIZE = 500;
 const MIRROR_PRODUCT_COLUMNS =
   'id, sku, stock_quantity, status, name, description, metal, metal_type, sale_price, old_price, ' +
   'discount_percent, category, insert, icon_index, available_sizes, warehouse_attributes, ' +
-  'weight_grams, image_url, images';
+  'weight_grams, image_url, images, store_location';
 
 const MIRROR_SCALAR_KEYS = [
   'sku',
@@ -153,7 +153,29 @@ const MIRROR_SCALAR_KEYS = [
   'available_sizes',
   'warehouse_attributes',
   'weight_grams',
+  'store_location',
 ];
+
+/**
+ * DrJaw Items.Mart → products.store_location (ICN / ANS).
+ * @param {unknown} mart
+ * @returns {'ICN'|'ANS'}
+ */
+function resolveStoreLocationFromMart(mart) {
+  const raw = String(mart ?? '').trim();
+  if (!raw) return 'ICN';
+  const lower = raw.toLowerCase();
+  if (
+    raw === 'D.Y №2' ||
+    lower.includes('№2') ||
+    lower.includes('d.y') ||
+    lower === 'ans' ||
+    lower.includes('ансан')
+  ) {
+    return 'ANS';
+  }
+  return 'ICN';
+}
 
 const SYNC_TASK_ID = 'catalog_sync';
 
@@ -833,6 +855,7 @@ async function buildDesiredScalarsForRow(row) {
     available_sizes: parseSizeArray(row.Size),
     warehouse_attributes: buildWarehouseAttributes(row),
     weight_grams: parseWeight(row.Weight),
+    store_location: resolveStoreLocationFromMart(row.Mart),
   };
 
   return { scalars, fromCache };

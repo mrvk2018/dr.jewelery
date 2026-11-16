@@ -146,8 +146,8 @@ class _StaffListTab extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Код сотрудника (6 символов) — promo_code; ставки комиссии '
-                'золото/серебро учитываются в расчёте зарплаты.',
+                'Код сотрудника (6 символов). Ставки «Магазин» — POS; '
+                '«Приложение» — заказы по промокоду и скидка покупателю.',
                 style: AppTypography.productMeta(),
               ),
             ),
@@ -204,10 +204,19 @@ class _StaffListTab extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Золото: ${seller.goldCommissionPercent}% · '
-                                      'Серебро: ${seller.silverCommissionPercent}%',
+                                      'Магазин: золото ${seller.goldCommissionPercent}% · '
+                                      'серебро ${seller.silverCommissionPercent}%',
                                       style: AppTypography.productMeta()
                                           .copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                    Text(
+                                      'Приложение: бонус '
+                                      '${seller.appGoldCommissionPercent}%/'
+                                      '${seller.appSilverCommissionPercent}% · '
+                                      'скидка покупателю '
+                                      '${seller.appGoldBuyerDiscountPercent}%/'
+                                      '${seller.appSilverBuyerDiscountPercent}%',
+                                      style: AppTypography.productMeta(),
                                     ),
                                   ],
                                 ),
@@ -781,6 +790,10 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
   late final TextEditingController _codeController;
   late final TextEditingController _goldPercentController;
   late final TextEditingController _silverPercentController;
+  late final TextEditingController _appGoldCommissionController;
+  late final TextEditingController _appSilverCommissionController;
+  late final TextEditingController _appGoldDiscountController;
+  late final TextEditingController _appSilverDiscountController;
   late bool _isActive;
   bool _saving = false;
   String? _error;
@@ -799,6 +812,20 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
     _silverPercentController = TextEditingController(
       text: existing != null ? '${existing.silverCommissionPercent}' : '0',
     );
+    _appGoldCommissionController = TextEditingController(
+      text: existing != null ? '${existing.appGoldCommissionPercent}' : '0',
+    );
+    _appSilverCommissionController = TextEditingController(
+      text: existing != null ? '${existing.appSilverCommissionPercent}' : '0',
+    );
+    _appGoldDiscountController = TextEditingController(
+      text:
+          existing != null ? '${existing.appGoldBuyerDiscountPercent}' : '0',
+    );
+    _appSilverDiscountController = TextEditingController(
+      text:
+          existing != null ? '${existing.appSilverBuyerDiscountPercent}' : '0',
+    );
     _isActive = existing?.isActive ?? true;
   }
 
@@ -808,15 +835,38 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
     _codeController.dispose();
     _goldPercentController.dispose();
     _silverPercentController.dispose();
+    _appGoldCommissionController.dispose();
+    _appSilverCommissionController.dispose();
+    _appGoldDiscountController.dispose();
+    _appSilverDiscountController.dispose();
     super.dispose();
+  }
+
+  String? _validatePercent(String raw, String label) {
+    final value = SellerItem.parseCommissionPercentInput(raw);
+    if (value == null) return 'Некорректное значение: $label';
+    if (value < 0 || value > 100) return '$label: от 0 до 100';
+    return null;
   }
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
     final code = SellerItem.normalizePromoCode(_codeController.text);
-  final gold = SellerItem.parseCommissionPercentInput(_goldPercentController.text);
-  final silver =
-      SellerItem.parseCommissionPercentInput(_silverPercentController.text);
+    final gold = SellerItem.parseCommissionPercentInput(_goldPercentController.text);
+    final silver =
+        SellerItem.parseCommissionPercentInput(_silverPercentController.text);
+    final appGoldComm = SellerItem.parseCommissionPercentInput(
+      _appGoldCommissionController.text,
+    );
+    final appSilverComm = SellerItem.parseCommissionPercentInput(
+      _appSilverCommissionController.text,
+    );
+    final appGoldDisc = SellerItem.parseCommissionPercentInput(
+      _appGoldDiscountController.text,
+    );
+    final appSilverDisc = SellerItem.parseCommissionPercentInput(
+      _appSilverDiscountController.text,
+    );
     if (name.isEmpty) {
       setState(() => _error = 'Укажите имя');
       return;
@@ -827,12 +877,14 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
       );
       return;
     }
-    if (gold == null || silver == null) {
-      setState(() => _error = 'Некорректный процент комиссии');
-      return;
-    }
-    if (gold < 0 || gold > 100 || silver < 0 || silver > 100) {
-      setState(() => _error = 'Процент комиссии: от 0 до 100');
+    final percentError = _validatePercent(_goldPercentController.text, 'Магазин, золото') ??
+        _validatePercent(_silverPercentController.text, 'Магазин, серебро') ??
+        _validatePercent(_appGoldCommissionController.text, 'Приложение, бонус золото') ??
+        _validatePercent(_appSilverCommissionController.text, 'Приложение, бонус серебро') ??
+        _validatePercent(_appGoldDiscountController.text, 'Скидка золото') ??
+        _validatePercent(_appSilverDiscountController.text, 'Скидка серебро');
+    if (percentError != null) {
+      setState(() => _error = percentError);
       return;
     }
     setState(() {
@@ -844,8 +896,12 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
         promoCode: code,
         name: name,
         isActive: _isActive,
-        goldCommissionPercent: gold,
-        silverCommissionPercent: silver,
+        goldCommissionPercent: gold!,
+        silverCommissionPercent: silver!,
+        appGoldCommissionPercent: appGoldComm!,
+        appSilverCommissionPercent: appSilverComm!,
+        appGoldBuyerDiscountPercent: appGoldDisc!,
+        appSilverBuyerDiscountPercent: appSilverDisc!,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -892,7 +948,12 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
               textCapitalization: TextCapitalization.characters,
               maxLength: 6,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
+            Text(
+              'Продажи в магазине (POS)',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
             TextField(
               controller: _goldPercentController,
               decoration: const InputDecoration(
@@ -907,6 +968,51 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
               controller: _silverPercentController,
               decoration: const InputDecoration(
                 labelText: 'Процент за серебро (%)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Заказы из приложения (по промокоду)',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _appGoldCommissionController,
+              decoration: const InputDecoration(
+                labelText: 'Процент продавцу за золото (%)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _appSilverCommissionController,
+              decoration: const InputDecoration(
+                labelText: 'Процент продавцу за серебро (%)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _appGoldDiscountController,
+              decoration: const InputDecoration(
+                labelText: 'Скидка покупателю на золото (%)',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _appSilverDiscountController,
+              decoration: const InputDecoration(
+                labelText: 'Скидка покупателю на серебро (%)',
                 border: OutlineInputBorder(),
               ),
               keyboardType:

@@ -8,6 +8,10 @@ class SellerItem {
     this.buyerBonusPercent = 0,
     this.goldCommissionPercent = 0,
     this.silverCommissionPercent = 0,
+    this.appGoldCommissionPercent = 0,
+    this.appSilverCommissionPercent = 0,
+    this.appGoldBuyerDiscountPercent = 0,
+    this.appSilverBuyerDiscountPercent = 0,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -18,6 +22,10 @@ class SellerItem {
   final int buyerBonusPercent;
   final double goldCommissionPercent;
   final double silverCommissionPercent;
+  final double appGoldCommissionPercent;
+  final double appSilverCommissionPercent;
+  final double appGoldBuyerDiscountPercent;
+  final double appSilverBuyerDiscountPercent;
   final DateTime createdAt;
 
   SellerItem copyWith({
@@ -28,6 +36,10 @@ class SellerItem {
     int? buyerBonusPercent,
     double? goldCommissionPercent,
     double? silverCommissionPercent,
+    double? appGoldCommissionPercent,
+    double? appSilverCommissionPercent,
+    double? appGoldBuyerDiscountPercent,
+    double? appSilverBuyerDiscountPercent,
     DateTime? createdAt,
   }) {
     return SellerItem(
@@ -40,6 +52,14 @@ class SellerItem {
           goldCommissionPercent ?? this.goldCommissionPercent,
       silverCommissionPercent:
           silverCommissionPercent ?? this.silverCommissionPercent,
+      appGoldCommissionPercent:
+          appGoldCommissionPercent ?? this.appGoldCommissionPercent,
+      appSilverCommissionPercent:
+          appSilverCommissionPercent ?? this.appSilverCommissionPercent,
+      appGoldBuyerDiscountPercent:
+          appGoldBuyerDiscountPercent ?? this.appGoldBuyerDiscountPercent,
+      appSilverBuyerDiscountPercent:
+          appSilverBuyerDiscountPercent ?? this.appSilverBuyerDiscountPercent,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -52,6 +72,10 @@ class SellerItem {
         'buyerBonusPercent': buyerBonusPercent,
         'goldCommissionPercent': goldCommissionPercent,
         'silverCommissionPercent': silverCommissionPercent,
+        'appGoldCommissionPercent': appGoldCommissionPercent,
+        'appSilverCommissionPercent': appSilverCommissionPercent,
+        'appGoldBuyerDiscountPercent': appGoldBuyerDiscountPercent,
+        'appSilverBuyerDiscountPercent': appSilverBuyerDiscountPercent,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -66,6 +90,14 @@ class SellerItem {
           (json['goldCommissionPercent'] as num?)?.toDouble() ?? 0,
       silverCommissionPercent:
           (json['silverCommissionPercent'] as num?)?.toDouble() ?? 0,
+      appGoldCommissionPercent:
+          (json['appGoldCommissionPercent'] as num?)?.toDouble() ?? 0,
+      appSilverCommissionPercent:
+          (json['appSilverCommissionPercent'] as num?)?.toDouble() ?? 0,
+      appGoldBuyerDiscountPercent:
+          (json['appGoldBuyerDiscountPercent'] as num?)?.toDouble() ?? 0,
+      appSilverBuyerDiscountPercent:
+          (json['appSilverBuyerDiscountPercent'] as num?)?.toDouble() ?? 0,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }

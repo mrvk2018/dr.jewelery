@@ -13,10 +13,12 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../shared/models/seller_item.dart';
+import '../../../../shared/models/seller_referral_apply_result.dart';
 import '../../../../shared/providers/cart_controller.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../../shared/providers/profile_scope.dart';
+import '../../domain/checkout_seller_referral_discount.dart';
 import '../../domain/models/delivery_method.dart';
 import '../../domain/models/shipping_address.dart';
 import 'daum_postcode_web_view_page.dart';
@@ -52,11 +54,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _isValidatingCheckout = false;
   String? _validationMessage;
   String? _sellerPromoInfoMessage;
-  int _referralDiscountPercent = 0;
+  int _referralGoldDiscountPercent = 0;
+  int _referralSilverDiscountPercent = 0;
   String _appliedSellerCode = '';
   String _appliedSellerName = '';
 
   String tr(String key) => checkoutTr(key, context.langCode);
+
+  static bool _sellerPromoHasDiscount(SellerReferralApplyResult result) =>
+      result.goldDiscountPercent > 0 || result.silverDiscountPercent > 0;
 
   int get _deliveryFee => _deliveryMethod.feeKrw;
 
@@ -127,19 +133,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int get _liveProductsTotal =>
       CartScope.of(context).checkoutTotalFor(_resolvedCheckoutItems());
 
+  bool get _hasReferralDiscount =>
+      _referralGoldDiscountPercent > 0 || _referralSilverDiscountPercent > 0;
+
+  int get _referralDiscountRawKrw => sellerReferralDiscountKrw(
+        items: _resolvedCheckoutItems(),
+        saleSubtotal: _checkoutSaleSubtotal,
+        promoDiscount: _checkoutPromoDiscount,
+        bonusDeduction: _checkoutBonusDeduction,
+        goldDiscountPercent: _referralGoldDiscountPercent,
+        silverDiscountPercent: _referralSilverDiscountPercent,
+      );
+
   int get _payableProductsTotal {
-    if (_referralDiscountPercent <= 0) return _liveProductsTotal;
-    final discount =
-        _liveProductsTotal * (_referralDiscountPercent / 100.0);
-    final intermediateTotal = _liveProductsTotal - discount.floor();
-    final finalPayable = ((intermediateTotal + 99) ~/ 100) * 100;
-    return finalPayable > _liveProductsTotal
-        ? _liveProductsTotal
-        : finalPayable;
+    if (!_hasReferralDiscount) return _liveProductsTotal;
+    return sellerReferralPayableProductsTotal(
+      liveProductsTotal: _liveProductsTotal,
+      referralDiscountKrw: _referralDiscountRawKrw,
+    );
   }
 
   int get _referralDiscountAmountKrw {
-    if (_referralDiscountPercent <= 0) return 0;
+    if (!_hasReferralDiscount) return 0;
     final payable = _payableProductsTotal;
     return _liveProductsTotal > payable ? _liveProductsTotal - payable : 0;
   }
@@ -150,7 +165,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _sellerPromoInfoMessage =
             'Войдите в профиль, чтобы применить промокод продавца.';
-        _referralDiscountPercent = 0;
+        _referralGoldDiscountPercent = 0;
+        _referralSilverDiscountPercent = 0;
         _appliedSellerCode = '';
         _appliedSellerName = '';
       });
@@ -161,7 +177,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (code.isEmpty) {
       setState(() {
         _sellerPromoInfoMessage = 'Введите промокод продавца.';
-        _referralDiscountPercent = 0;
+        _referralGoldDiscountPercent = 0;
+        _referralSilverDiscountPercent = 0;
         _appliedSellerCode = '';
         _appliedSellerName = '';
       });
@@ -180,7 +197,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
       if (!result.ok) {
         setState(() {
-          _referralDiscountPercent = 0;
+          _referralGoldDiscountPercent = 0;
+          _referralSilverDiscountPercent = 0;
           _appliedSellerCode = '';
           _appliedSellerName = '';
           _sellerPromoInfoMessage = switch (result.errorCode) {
@@ -192,9 +210,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return;
       }
 
-      if (result.alreadyReferred && result.discountPercent <= 0) {
+      if (result.alreadyReferred &&
+          result.goldDiscountPercent <= 0 &&
+          result.silverDiscountPercent <= 0) {
         setState(() {
-          _referralDiscountPercent = 0;
+          _referralGoldDiscountPercent = 0;
+          _referralSilverDiscountPercent = 0;
           _appliedSellerCode = '';
           _appliedSellerName = '';
           _sellerPromoInfoMessage = result.message ??
@@ -207,12 +228,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
 
       setState(() {
-        _referralDiscountPercent = result.discountPercent;
+        _referralGoldDiscountPercent = result.goldDiscountPercent;
+        _referralSilverDiscountPercent = result.silverDiscountPercent;
         _appliedSellerCode =
             result.sellerCode ?? SellerItem.normalizePromoCode(code);
         _appliedSellerName = result.sellerName?.trim() ?? '';
-        _sellerPromoInfoMessage = result.discountPercent > 0
-            ? 'Промокод продавца применён (−${result.discountPercent}%).'
+        _sellerPromoInfoMessage = _sellerPromoHasDiscount(result)
+            ? 'Промокод продавца применён. '
+                'Скидка: золото ${result.goldDiscountPercent}%, '
+                'серебро ${result.silverDiscountPercent}%.'
             : 'Промокод продавца привязан к профилю.';
       });
       await profile.refreshWalletFromCloud();
@@ -681,11 +705,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       valueColor: AppColors.accent,
                     ),
                   ],
-                  if (_referralDiscountPercent > 0) ...[
+                  if (_hasReferralDiscount) ...[
                     const SizedBox(height: 8),
                     _SummaryRow(
                       label:
-                          'Скидка продавца (−$_referralDiscountPercent%)',
+                          'Скидка по промокоду: золото $_referralGoldDiscountPercent%, '
+                          'серебро $_referralSilverDiscountPercent%',
                       value: '- ${formatWon(_referralDiscountAmountKrw)}',
                       valueColor: AppColors.accent,
                     ),

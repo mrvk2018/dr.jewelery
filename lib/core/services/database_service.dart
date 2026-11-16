@@ -91,6 +91,13 @@ abstract final class SellerAdminRpc {
   static const isActiveParam = 'p_is_active';
   static const goldCommissionPercentParam = 'p_gold_commission_percent';
   static const silverCommissionPercentParam = 'p_silver_commission_percent';
+  static const appGoldCommissionPercentParam = 'p_app_gold_commission_percent';
+  static const appSilverCommissionPercentParam =
+      'p_app_silver_commission_percent';
+  static const appGoldBuyerDiscountPercentParam =
+      'p_app_gold_buyer_discount_percent';
+  static const appSilverBuyerDiscountPercentParam =
+      'p_app_silver_buyer_discount_percent';
 }
 
 abstract final class SellerPayrollRpc {
@@ -285,6 +292,10 @@ abstract class DatabaseService {
     required bool isActive,
     double goldCommissionPercent = 0,
     double silverCommissionPercent = 0,
+    double appGoldCommissionPercent = 0,
+    double appSilverCommissionPercent = 0,
+    double appGoldBuyerDiscountPercent = 0,
+    double appSilverBuyerDiscountPercent = 0,
   });
 
   /// POS: привязка продавца к свежим строкам sales_history (окно 15 мин).
@@ -998,6 +1009,14 @@ class CloudDatabaseService implements DatabaseService {
           (row['gold_commission_percent'] as num?)?.toDouble() ?? 0,
       silverCommissionPercent:
           (row['silver_commission_percent'] as num?)?.toDouble() ?? 0,
+      appGoldCommissionPercent:
+          (row['app_gold_commission_percent'] as num?)?.toDouble() ?? 0,
+      appSilverCommissionPercent:
+          (row['app_silver_commission_percent'] as num?)?.toDouble() ?? 0,
+      appGoldBuyerDiscountPercent:
+          (row['app_gold_buyer_discount_percent'] as num?)?.toDouble() ?? 0,
+      appSilverBuyerDiscountPercent:
+          (row['app_silver_buyer_discount_percent'] as num?)?.toDouble() ?? 0,
       createdAt: createdAt,
     );
   }
@@ -1048,17 +1067,24 @@ class CloudDatabaseService implements DatabaseService {
     required bool isActive,
     double goldCommissionPercent = 0,
     double silverCommissionPercent = 0,
+    double appGoldCommissionPercent = 0,
+    double appSilverCommissionPercent = 0,
+    double appGoldBuyerDiscountPercent = 0,
+    double appSilverBuyerDiscountPercent = 0,
   }) async {
     final code = SellerItem.normalizePromoCode(promoCode);
     final trimmedName = name.trim();
     if (code.isEmpty || trimmedName.isEmpty) {
       throw StateError('Укажите имя и код сотрудника');
     }
-    if (goldCommissionPercent < 0 ||
-        goldCommissionPercent > 100 ||
-        silverCommissionPercent < 0 ||
-        silverCommissionPercent > 100) {
-      throw StateError('Процент комиссии должен быть от 0 до 100');
+    bool rateOk(double v) => v >= 0 && v <= 100;
+    if (!rateOk(goldCommissionPercent) ||
+        !rateOk(silverCommissionPercent) ||
+        !rateOk(appGoldCommissionPercent) ||
+        !rateOk(appSilverCommissionPercent) ||
+        !rateOk(appGoldBuyerDiscountPercent) ||
+        !rateOk(appSilverBuyerDiscountPercent)) {
+      throw StateError('Проценты должны быть от 0 до 100');
     }
     try {
       final result = await _supabaseClient.rpc(
@@ -1069,6 +1095,13 @@ class CloudDatabaseService implements DatabaseService {
           SellerAdminRpc.isActiveParam: isActive,
           SellerAdminRpc.goldCommissionPercentParam: goldCommissionPercent,
           SellerAdminRpc.silverCommissionPercentParam: silverCommissionPercent,
+          SellerAdminRpc.appGoldCommissionPercentParam: appGoldCommissionPercent,
+          SellerAdminRpc.appSilverCommissionPercentParam:
+              appSilverCommissionPercent,
+          SellerAdminRpc.appGoldBuyerDiscountPercentParam:
+              appGoldBuyerDiscountPercent,
+          SellerAdminRpc.appSilverBuyerDiscountPercentParam:
+              appSilverBuyerDiscountPercent,
         },
       );
       final ok = result == true ||

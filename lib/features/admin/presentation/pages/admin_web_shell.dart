@@ -5,7 +5,9 @@ import '../../../../core/admin/admin_access.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/services/database_service.dart';
 import '../../../../screens/sales_history_screen.dart';
+import '../screens/scrap_metal_intake_screen.dart';
 import '../screens/staff_management_screen.dart';
 import 'jewelry_admin_dashboard.dart';
 
@@ -22,24 +24,46 @@ class _AdminWebShellState extends State<AdminWebShell> {
 
   int _selectedIndex = 0;
   final _salesHistoryKey = GlobalKey<SalesHistoryScreenState>();
+  late final DatabaseService _database = DatabaseService.create();
 
-  List<({IconData icon, String label})> _destinations(bool isSuperAdmin) => [
-        (icon: Icons.dashboard_outlined, label: 'Рабочий стол'),
-        (icon: Icons.history_edu_outlined, label: 'История продаж'),
+  List<({IconData icon, IconData selectedIcon, String label})> _destinations(
+    bool isSuperAdmin,
+  ) =>
+      [
+        (
+          icon: Icons.dashboard_outlined,
+          selectedIcon: Icons.dashboard,
+          label: 'Рабочий стол',
+        ),
+        (
+          icon: Icons.history_edu_outlined,
+          selectedIcon: Icons.history_edu,
+          label: 'История продаж',
+        ),
         if (isSuperAdmin)
           (
             icon: Icons.badge_outlined,
+            selectedIcon: Icons.badge,
             label: 'Управление персоналом',
+          ),
+        if (isSuperAdmin)
+          (
+            icon: Icons.scale_outlined,
+            selectedIcon: Icons.scale,
+            label: 'Приёмка лома',
           ),
       ];
 
-  String _title(bool isSuperAdmin) {
-    if (_selectedIndex == 0) return 'Доктор Ювелир · Рабочий стол';
-    if (_selectedIndex == 1) return 'История продаж · KST / KRW';
-    if (isSuperAdmin && _selectedIndex == 2) {
-      return 'Управление персоналом';
-    }
-    return 'Доктор Ювелир';
+  String _title(bool isSuperAdmin, int index) {
+    final destinations = _destinations(isSuperAdmin);
+    final safe = index.clamp(0, destinations.length - 1);
+    return switch (safe) {
+      0 => 'Доктор Ювелир · Рабочий стол',
+      1 => 'История продаж · KST / KRW',
+      2 when isSuperAdmin => 'Управление персоналом',
+      3 when isSuperAdmin => 'Приёмка лома',
+      _ => 'Доктор Ювелир',
+    };
   }
 
   void _scheduleSalesHistoryReload() {
@@ -52,7 +76,9 @@ class _AdminWebShellState extends State<AdminWebShell> {
   List<Widget> _pages(bool isSuperAdmin) => [
         JewelryAdminDashboard(onPosSaleArchived: _scheduleSalesHistoryReload),
         SalesHistoryScreen(key: _salesHistoryKey),
-        if (isSuperAdmin) StaffManagementScreen(),
+        if (isSuperAdmin) StaffManagementScreen(database: _database),
+        if (isSuperAdmin)
+          ScrapMetalIntakeScreen(database: _database),
       ];
 
   @override
@@ -73,7 +99,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(_title(isSuperAdmin), style: AppTypography.heading(fontSize: 20)),
+        title: Text(
+          _title(isSuperAdmin, safeIndex),
+          style: AppTypography.heading(fontSize: 20),
+        ),
       ),
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,6 +128,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
               for (final dest in destinations)
                 NavigationRailDestination(
                   icon: Icon(dest.icon),
+                  selectedIcon: Icon(dest.selectedIcon),
                   label: Text(dest.label),
                 ),
             ],

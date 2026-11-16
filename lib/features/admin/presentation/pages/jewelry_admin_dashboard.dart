@@ -24,6 +24,7 @@ import '../../../printing/domain/jewelry_label_layout.dart';
 import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
+import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
 
 List<String> parseAdditionalImagesField(Object? raw) {
@@ -1454,7 +1455,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   void initState() {
     super.initState();
     final edit = widget.editProduct;
-    if (edit == null) return;
+    if (edit == null) {
+      unawaited(_restoreLastSelectedMetalForAddMode());
+      return;
+    }
 
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
@@ -1476,6 +1480,33 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_hydrateGalleryFromServer());
     });
+  }
+
+  Future<void> _restoreLastSelectedMetalForAddMode() async {
+    try {
+      final storage = await AdminManualProductStorage.create();
+      final category = storage.lastSelectedMetalCategory;
+      if (category == null || !mounted) return;
+      setState(() => _metalCategory = category);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '_ManualProductDialog._restoreLastSelectedMetalForAddMode: $error',
+      );
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _persistLastSelectedMetalCategory(String category) async {
+    if (_isEditMode) return;
+    try {
+      final storage = await AdminManualProductStorage.create();
+      await storage.saveLastSelectedMetalCategory(category);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '_ManualProductDialog._persistLastSelectedMetalCategory: $error',
+      );
+      debugPrint('$stackTrace');
+    }
   }
 
   Future<void> _hydrateGalleryFromServer() async {
@@ -2041,7 +2072,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 ],
                 selected: {_metalCategory},
                 onSelectionChanged: (value) {
-                  setState(() => _metalCategory = value.first);
+                  final next = value.first;
+                  setState(() => _metalCategory = next);
+                  unawaited(_persistLastSelectedMetalCategory(next));
                 },
               ),
               const SizedBox(height: 12),

@@ -1706,7 +1706,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     setState(() => _deferredPhotos.add(picked));
   }
 
-  Future<void> _uploadDeferredPhotos(String sku) async {
+  Future<List<String>> _uploadDeferredPhotos(String sku) async {
+    final uploaded = <String>[];
     for (final file in _deferredPhotos) {
       final bytes = await file.readAsBytes();
       final url = await widget.database.uploadProductAdditionalImage(
@@ -1717,6 +1718,56 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       if (url == null) {
         throw StateError('Не удалось загрузить ${file.name}');
       }
+      uploaded.add(url);
+    }
+    return uploaded;
+  }
+
+  List<String> _mergeManualGalleryUrls({
+    required List<String> retained,
+    required List<String> uploaded,
+  }) {
+    final seen = <String>{};
+    final merged = <String>[];
+    for (final raw in [...retained, ...uploaded]) {
+      final url = raw.trim();
+      if (url.isEmpty || seen.contains(url)) continue;
+      seen.add(url);
+      merged.add(url);
+      if (merged.length >= ProductItem.maxGalleryImages) break;
+    }
+    return merged;
+  }
+
+  /// После insert: локальные файлы → Storage; удерживаемые URL из предыдущего
+  /// сохранения пишем в новую строку через ту же галерею, что и при редактировании.
+  Future<void> _attachGalleryForNewManualProduct(String sku) async {
+    final retained = List<String>.from(_imageUrls);
+    var uploaded = <String>[];
+    if (_deferredPhotos.isNotEmpty) {
+      uploaded = await _uploadDeferredPhotos(sku);
+      if (mounted) setState(() => _deferredPhotos.clear());
+    }
+
+    final merged = _mergeManualGalleryUrls(
+      retained: retained,
+      uploaded: uploaded,
+    );
+    if (merged.isEmpty) return;
+
+    final row = await widget.database.fetchProductRowForLabelBySku(sku);
+    final productId = row?['id']?.toString().trim() ?? '';
+    if (productId.isEmpty) return;
+
+    final galleryOk = await widget.database.updateProductGalleryByProductId(
+      productId: productId,
+      additionalImages: merged,
+    );
+    if (!galleryOk && mounted) {
+      _snack('Товар сохранён, но галерея фото не обновилась', error: true);
+    }
+    if (mounted) {
+      setState(() => _imageUrls = merged);
     }
   }
 
@@ -1876,7 +1927,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         }
       }
 
-      if (_deferredPhotos.isNotEmpty) {
+      if (!_isEditMode) {
+        await _attachGalleryForNewManualProduct(sku);
+      } else if (_deferredPhotos.isNotEmpty) {
         await _uploadDeferredPhotos(sku);
         setState(() => _deferredPhotos.clear());
         await _refreshGalleryAfterSave(sku);

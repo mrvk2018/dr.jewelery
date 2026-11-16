@@ -49,14 +49,18 @@ int? adminShowroomSalePriceKrw(Map<String, dynamic> row) {
   return parsed;
 }
 
-String adminShowroomSalePriceLabel(Map<String, dynamic> row) {
-  final krw = adminShowroomSalePriceKrw(row);
-  if (krw == null) return '—';
+String adminShowroomKrwLabel(int krw) {
   final spaced = krw.toString().replaceAllMapped(
     RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
     (m) => '${m[1]} ',
   );
   return '$spaced ₩';
+}
+
+String adminShowroomSalePriceLabel(Map<String, dynamic> row) {
+  final krw = adminShowroomSalePriceKrw(row);
+  if (krw == null) return '—';
+  return adminShowroomKrwLabel(krw);
 }
 
 /// Наименование витрины из `products.name` (jsonb или строка).
@@ -511,6 +515,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   double get _totalWeightGrams =>
       _products.fold(0.0, (sum, row) => sum + _weight(row));
 
+  int get _totalPriceKrw => _products.fold(
+        0,
+        (sum, row) => sum + (adminShowroomSalePriceKrw(row) ?? 0),
+      );
+
   @override
   Widget build(BuildContext context) {
     final profile = ProfileScope.of(context);
@@ -568,6 +577,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                                 : _imageUrls(_selected!),
                             totalCount: _products.length,
                             totalWeightGrams: _totalWeightGrams,
+                            totalPriceKrw: _totalPriceKrw,
                             cell: _cell,
                             weight: _weight,
                             photoUploadBusy: _photoUploadBusy,
@@ -819,6 +829,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
     required this.imageUrls,
     required this.totalCount,
     required this.totalWeightGrams,
+    required this.totalPriceKrw,
     required this.cell,
     required this.weight,
     required this.photoUploadBusy,
@@ -829,6 +840,7 @@ class _MediaAndKpiPanel extends StatelessWidget {
   final List<String> imageUrls;
   final int totalCount;
   final double totalWeightGrams;
+  final int totalPriceKrw;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
   final bool photoUploadBusy;
@@ -857,11 +869,18 @@ class _MediaAndKpiPanel extends StatelessWidget {
                     value: '$totalCount',
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: _KpiTile(
                     label: 'Суммарная масса',
                     value: '${totalWeightGrams.toStringAsFixed(2)} г',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _KpiTile(
+                    label: 'Общая сумма',
+                    value: adminShowroomKrwLabel(totalPriceKrw),
                   ),
                 ),
               ],
@@ -918,7 +937,7 @@ class _KpiTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(10),
@@ -927,9 +946,22 @@ class _KpiTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: AppTypography.productMeta()),
+          Text(
+            label,
+            style: AppTypography.productMeta(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 4),
-          Text(value, style: AppTypography.heading(fontSize: 18)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: AppTypography.heading(fontSize: 18),
+              maxLines: 1,
+            ),
+          ),
         ],
       ),
     );

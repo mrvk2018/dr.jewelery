@@ -1510,7 +1510,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _metalCategory = 'gold';
   String _goldType = '585 красное';
   String _silverType = '925 Родированное';
-  String _storeLocationCode = StoreLocationCode.defaultCode;
+  String _storeLocationCode = StoreLocationCode.unselected;
   bool _saving = false;
   bool _keepFieldsAfterSave = false;
   int _sessionSaveCount = 0;
@@ -1619,7 +1619,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       return;
     }
 
-    _storeLocationCode = storeLocationCodeFromProductRow(edit);
+    _storeLocationCode = storeLocationPickerCodeFromRow(edit);
 
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
@@ -2105,6 +2105,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         if (confirmed != true || !mounted) return;
       }
     }
+    if (!asDraft && _storeLocationCode == StoreLocationCode.unselected) {
+      _snack(
+        'Выберите магазин (Инчхон или Ансан) для размещения на витрине',
+        error: true,
+      );
+      return;
+    }
     await _submit(asDraft: asDraft);
   }
 
@@ -2176,6 +2183,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               manufacturer: manufacturer,
               stockQuantity: _restockQuantityIfMissing(widget.editProduct!),
               storeLocation: _storeLocationCode,
+              writeStoreLocation: true,
             )
           : await widget.database.insertManualProduct(
               sku: sku,
@@ -2342,6 +2350,14 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 },
               ),
               const SizedBox(height: 12),
+              StoreLocationTriStateSelector(
+                selectedCode: _storeLocationCode,
+                onChanged: (code) {
+                  setState(() => _storeLocationCode = code);
+                  unawaited(_persistLastSelectedStoreLocation(code));
+                },
+              ),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _metalCategory == 'gold' ? _goldType : _silverType,
                 decoration: const InputDecoration(
@@ -2392,32 +2408,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   onChanged: (_) => setState(() {}),
                 ),
               ],
-              const SizedBox(height: 12),
-              Text(
-                'Магазин',
-                style: AppTypography.productMeta().copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: StoreLocationCode.icn,
-                    label: Text('Инчхон'),
-                  ),
-                  ButtonSegment(
-                    value: StoreLocationCode.ans,
-                    label: Text('Ансан'),
-                  ),
-                ],
-                selected: {_storeLocationCode},
-                onSelectionChanged: (value) {
-                  final next = value.first;
-                  setState(() => _storeLocationCode = next);
-                  unawaited(_persistLastSelectedStoreLocation(next));
-                },
-              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: _productTypeCategory,

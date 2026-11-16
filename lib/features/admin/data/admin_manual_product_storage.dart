@@ -43,13 +43,18 @@ class AdminManualProductStorage {
     );
   }
 
-  String get lastSelectedStoreLocation => normalizeStoreLocationCode(
-        storeLocation: _prefs.getString(
-          AdminManualProductStorageKeys.lastSelectedStoreLocation,
-        ),
+  String get lastSelectedStoreLocation => storeLocationPickerCodeFromPrefs(
+        _prefs.getString(AdminManualProductStorageKeys.lastSelectedStoreLocation),
       );
 
   Future<void> saveLastSelectedStoreLocation(String code) async {
+    if (code == StoreLocationCode.unselected) {
+      await _prefs.setString(
+        AdminManualProductStorageKeys.lastSelectedStoreLocation,
+        '',
+      );
+      return;
+    }
     await _prefs.setString(
       AdminManualProductStorageKeys.lastSelectedStoreLocation,
       normalizeStoreLocationCode(storeLocation: code),

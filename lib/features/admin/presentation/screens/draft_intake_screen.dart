@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/store_location_utils.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
@@ -153,6 +154,108 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     );
   }
 
+  Future<String?> _promptStoreLocationForAccept() {
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          'Укажите магазин для приёмки этого товара',
+          style: AppTypography.heading(fontSize: 17),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, StoreLocationCode.icn),
+            style: FilledButton.styleFrom(
+              backgroundColor: storeLocationBadgeColors(StoreLocationCode.icn).fg,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Инчхон'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, StoreLocationCode.ans),
+            style: FilledButton.styleFrom(
+              backgroundColor: storeLocationBadgeColors(StoreLocationCode.ans).fg,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Ансан'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _ensureDraftStoreBeforeAccept(Map<String, dynamic> row) async {
+    if (!isStoreLocationUnsetInDatabase(row)) return true;
+
+    final picked = await _promptStoreLocationForAccept();
+    if (picked == null || !mounted) return false;
+
+    final productId = row['id']?.toString().trim() ?? '';
+    if (productId.isEmpty) {
+      _showSnack('Нет id черновика', isError: true);
+      return false;
+    }
+
+    final res = await widget.database.setDraftProductStoreLocation(
+      id: productId,
+      storeLocation: picked,
+    );
+    if (!mounted) return false;
+    if (!res.ok) {
+      _showSnack(res.error ?? 'Не удалось сохранить магазин', isError: true);
+      return false;
+    }
+    row['store_location'] = picked;
+    return true;
+  }
+
+  Future<void> _cycleDraftStoreLocation(Map<String, dynamic> row) async {
+    final productId = row['id']?.toString().trim() ?? '';
+    final sku = _field(row, 'sku');
+    if (productId.isEmpty) {
+      _showSnack('Нет id черновика', isError: true);
+      return;
+    }
+
+    final currentRaw = isStoreLocationUnsetInDatabase(row)
+        ? null
+        : row['store_location']?.toString();
+    final nextDb = cycleDraftStoreLocationPicker(currentRaw);
+    final previousSnapshot = Map<String, dynamic>.from(row);
+
+    setState(() {
+      _drafts = _drafts.map((draft) {
+        final id = draft['id']?.toString().trim();
+        if (id == productId) {
+          return Map<String, dynamic>.from(draft)
+            ..['store_location'] = nextDb;
+        }
+        return draft;
+      }).toList(growable: false);
+    });
+
+    final res = await widget.database.setDraftProductStoreLocation(
+      id: productId,
+      storeLocation: nextDb,
+    );
+    if (!mounted) return;
+    if (res.ok) return;
+
+    setState(() {
+      _drafts = _drafts.map((draft) {
+        final id = draft['id']?.toString().trim();
+        if (id == productId) return previousSnapshot;
+        return draft;
+      }).toList(growable: false);
+    });
+    _showSnack(
+      '${res.error ?? 'Ошибка сохранения магазина'} ($sku)',
+      isError: true,
+    );
+  }
+
   void _safeFireAndForgetPrint(Map<String, dynamic> productRow) {
     Future.microtask(() async {
       try {
@@ -193,6 +296,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
 
     final productName = await _confirmAcceptWithPreview(row);
     if (productName == null || !mounted) return;
+
+    final storeReady = await _ensureDraftStoreBeforeAccept(row);
+    if (!storeReady || !mounted) return;
 
     setState(() => _rowBusySkus.add(sku));
     try {
@@ -370,6 +476,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     onAcceptRow: _acceptSingle,
                     onPrintRow: _printLabelForProduct,
                     onDeleteRow: _deleteSingle,
+                    onCycleStoreLocation: _cycleDraftStoreLocation,
                   ),
                 ),
               ],
@@ -474,6 +581,7 @@ class _DraftTable extends StatelessWidget {
     required this.onAcceptRow,
     required this.onPrintRow,
     required this.onDeleteRow,
+    required this.onCycleStoreLocation,
   });
 
   final List<Map<String, dynamic>> drafts;
@@ -482,6 +590,7 @@ class _DraftTable extends StatelessWidget {
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
   final Future<void> Function(Map<String, dynamic> row) onPrintRow;
   final Future<void> Function(Map<String, dynamic> row) onDeleteRow;
+  final Future<void> Function(Map<String, dynamic> row) onCycleStoreLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -530,6 +639,7 @@ class _DraftTable extends StatelessWidget {
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
                             onDelete: () => onDeleteRow(row),
+                            onCycleStore: () => onCycleStoreLocation(row),
                           )
                         : _DraftTableWideRow(
                             row: row,
@@ -538,6 +648,7 @@ class _DraftTable extends StatelessWidget {
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
                             onDelete: () => onDeleteRow(row),
+                            onCycleStore: () => onCycleStoreLocation(row),
                           );
                   },
                 ),
@@ -579,6 +690,7 @@ class _DraftTableHeader extends StatelessWidget {
           const SizedBox(width: _DraftTableLayout.photoSize),
           const SizedBox(width: 8),
           const Expanded(flex: 3, child: _DraftHeaderCell('SKU')),
+          const Expanded(flex: 2, child: _DraftHeaderCell('Магазин')),
           const Expanded(flex: 2, child: _DraftHeaderCell('Металл')),
           const Expanded(flex: 1, child: _DraftHeaderCell('Вес, г')),
           const Expanded(flex: 1, child: _DraftHeaderCell('Размер')),
@@ -620,6 +732,7 @@ class _DraftTableWideRow extends StatelessWidget {
     required this.onAccept,
     required this.onPrint,
     required this.onDelete,
+    required this.onCycleStore,
   });
 
   final Map<String, dynamic> row;
@@ -628,6 +741,7 @@ class _DraftTableWideRow extends StatelessWidget {
   final VoidCallback onAccept;
   final VoidCallback onPrint;
   final VoidCallback onDelete;
+  final VoidCallback onCycleStore;
 
   @override
   Widget build(BuildContext context) {
@@ -649,6 +763,17 @@ class _DraftTableWideRow extends StatelessWidget {
             child: _DraftEllipsisText(
               _DraftIntakeScreenState._field(row, 'sku'),
               style: AppTypography.caption(fontWeight: FontWeight.w600),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: StoreLocationClickableBadge(
+                code: storeLocationCodeFromProductRow(row),
+                showCycleIcon: true,
+                onTap: busy ? null : onCycleStore,
+              ),
             ),
           ),
           Expanded(
@@ -705,6 +830,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
     required this.onAccept,
     required this.onPrint,
     required this.onDelete,
+    required this.onCycleStore,
   });
 
   final Map<String, dynamic> row;
@@ -713,6 +839,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
   final VoidCallback onAccept;
   final VoidCallback onPrint;
   final VoidCallback onDelete;
+  final VoidCallback onCycleStore;
 
   @override
   Widget build(BuildContext context) {
@@ -739,9 +866,22 @@ class _DraftTableNarrowRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: _DraftEllipsisText(
-                  sku,
-                  style: AppTypography.caption(fontWeight: FontWeight.w700),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: _DraftEllipsisText(
+                        sku,
+                        style: AppTypography.caption(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    StoreLocationClickableBadge(
+                      code: storeLocationCodeFromProductRow(row),
+                      showCycleIcon: true,
+                      compact: true,
+                      onTap: busy ? null : onCycleStore,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 6),

@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/catalog/domain/models/catalog_constants.dart';
 import '../../features/admin/domain/admin_pos_archive_result.dart';
 import '../../features/admin/domain/draft_delete_result.dart';
+import '../../features/admin/domain/draft_store_location_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
@@ -79,6 +80,8 @@ abstract final class AdminCatalogRpc {
   static const findProductImagesBySku = 'find_product_images_by_sku';
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
   static const deleteDraftProduct = 'delete_draft_product';
+  static const setDraftStoreLocation = 'set_draft_product_store_location';
+  static const draftStoreLocationParam = 'p_store_location';
   static const draftProductIdParam = 'p_id';
   static const processProductReturnManual = 'process_product_return_manual';
   static const skuParam = 'p_sku';
@@ -433,6 +436,12 @@ abstract class DatabaseService {
     required String sku,
   });
 
+  /// Смена `store_location` у черновика (`NULL` = не выбран).
+  Future<DraftStoreLocationResult> setDraftProductStoreLocation({
+    required String id,
+    String? storeLocation,
+  });
+
   /// Поштучное добавление: витрина (`stock_quantity = 1`) или черновик (`0`).
   Future<bool> insertManualProduct({
     required String sku,
@@ -448,7 +457,7 @@ abstract class DatabaseService {
     List<String> additionalImages,
     bool isDraft = false,
     String? manufacturer,
-    String storeLocation = StoreLocationCode.defaultCode,
+    String? storeLocation,
   });
 
   /// Ручное редактирование карточки на витрине (admin / RLS).
@@ -466,6 +475,7 @@ abstract class DatabaseService {
     String? manufacturer,
     int? stockQuantity,
     String? storeLocation,
+    bool writeStoreLocation = false,
   });
 
   /// Обновление поля `notes` по SKU.
@@ -1829,6 +1839,65 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static DraftStoreLocationResult _parseDraftStoreLocationRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      final ok = map['ok'] == true;
+      if (ok) {
+        final loc = map['store_location'];
+        final locText = loc == null ? null : loc.toString().trim();
+        return (
+          ok: true,
+          storeLocation: locText == null || locText.isEmpty ? null : locText,
+          error: null,
+        );
+      }
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        storeLocation: null,
+        error: message == null || message.isEmpty
+            ? 'Неизвестная ошибка сервера'
+            : message,
+      );
+    }
+    return (ok: false, storeLocation: null, error: 'Неизвестный ответ сервера');
+  }
+
+  @override
+  Future<DraftStoreLocationResult> setDraftProductStoreLocation({
+    required String id,
+    String? storeLocation,
+  }) async {
+    final productId = id.trim();
+    if (productId.isEmpty) {
+      return (ok: false, storeLocation: null, error: 'Укажите id черновика');
+    }
+    try {
+      final params = <String, dynamic>{
+        AdminCatalogRpc.draftProductIdParam: productId,
+        AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+      };
+      if (storeLocation == null || storeLocation == StoreLocationCode.unselected) {
+        params[AdminCatalogRpc.draftStoreLocationParam] = null;
+      } else {
+        params[AdminCatalogRpc.draftStoreLocationParam] =
+            normalizeStoreLocationCode(storeLocation: storeLocation);
+      }
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.setDraftStoreLocation,
+        params: params,
+      );
+      return _parseDraftStoreLocationRpc(result);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.setDraftProductStoreLocation failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return (ok: false, storeLocation: null, error: error.toString());
+    }
+  }
+
   static DraftDeleteResult _parseDraftDeleteRpc(dynamic result) {
     if (result is Map) {
       final map = Map<String, dynamic>.from(result);
@@ -1950,7 +2019,7 @@ class CloudDatabaseService implements DatabaseService {
     List<String> additionalImages = const [],
     bool isDraft = false,
     String? manufacturer,
-    String storeLocation = StoreLocationCode.defaultCode,
+    String? storeLocation,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -1979,8 +2048,15 @@ class CloudDatabaseService implements DatabaseService {
         'old_price': priceKrw,
         'status': isDraft ? 'hidden' : 'active',
         'additional_images': additionalImages,
-        'store_location': normalizeStoreLocationCode(storeLocation: storeLocation),
       };
+      final locValue = storeLocationToDatabaseValue(
+        storeLocation ?? StoreLocationCode.unselected,
+      );
+      if (!isDraft && locValue == null) {
+        payload['store_location'] = StoreLocationCode.icn;
+      } else {
+        payload['store_location'] = locValue;
+      }
       payload['stock_quantity'] = isDraft ? 0 : 1;
       if (sizeValue != null) {
         payload['size_value'] = sizeValue;
@@ -2012,6 +2088,7 @@ class CloudDatabaseService implements DatabaseService {
     String? manufacturer,
     int? stockQuantity,
     String? storeLocation,
+    bool writeStoreLocation = false,
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
@@ -2041,9 +2118,10 @@ class CloudDatabaseService implements DatabaseService {
     if (stockQuantity != null) {
       patch['stock_quantity'] = stockQuantity.clamp(0, 999999);
     }
-    if (storeLocation != null) {
-      patch['store_location'] =
-          normalizeStoreLocationCode(storeLocation: storeLocation);
+    if (writeStoreLocation) {
+      patch['store_location'] = storeLocationToDatabaseValue(
+        storeLocation ?? StoreLocationCode.unselected,
+      );
     }
 
     try {

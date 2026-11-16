@@ -1127,6 +1127,177 @@ class _BottomActionBar extends StatelessWidget {
   }
 }
 
+/// Слепок формы «Добавить товар» для детекции повторного сохранения без изменений.
+class _ManualFormSnapshot {
+  const _ManualFormSnapshot({
+    required this.sku,
+    required this.weightText,
+    required this.sizeText,
+    required this.priceDigits,
+    required this.productTypeCategory,
+    required this.subtypeDropdown,
+    required this.customSubtype,
+    required this.customName,
+    required this.manufacturerCategory,
+    required this.customManufacturer,
+    required this.metalCategory,
+    required this.goldType,
+    required this.silverType,
+    required this.catalogGems,
+    required this.legacyGems,
+    required this.notes,
+    required this.imageUrls,
+    required this.deferredPhotoKeys,
+  });
+
+  final String sku;
+  final String weightText;
+  final String sizeText;
+  final String priceDigits;
+  final String productTypeCategory;
+  final String subtypeDropdown;
+  final String customSubtype;
+  final String customName;
+  final String manufacturerCategory;
+  final String customManufacturer;
+  final String metalCategory;
+  final String goldType;
+  final String silverType;
+  final List<String> catalogGems;
+  final List<String> legacyGems;
+  final String notes;
+  final List<String> imageUrls;
+  final List<String> deferredPhotoKeys;
+
+  factory _ManualFormSnapshot.fromState(_ManualProductDialogState state) {
+    final priceDigits = state._priceController.text
+        .replaceAll(RegExp(r'[^\d]'), '')
+        .trim();
+    final deferredKeys = state._deferredPhotos
+        .map((f) => '${f.name}|${f.path}|${f.hashCode}')
+        .toList()
+      ..sort();
+    return _ManualFormSnapshot(
+      sku: state._skuController.text.trim(),
+      weightText: state._weightController.text.trim().replaceAll(',', '.'),
+      sizeText: state._sizeController.text.trim().replaceAll(',', '.'),
+      priceDigits: priceDigits,
+      productTypeCategory: state._productTypeCategory,
+      subtypeDropdown: state._subtypeDropdown,
+      customSubtype: state._customSubtypeController.text.trim(),
+      customName: state._customNameController.text.trim(),
+      manufacturerCategory: state._manufacturerCategory,
+      customManufacturer: state._customManufacturerController.text.trim(),
+      metalCategory: state._metalCategory,
+      goldType: state._goldType,
+      silverType: state._silverType,
+      catalogGems: state._selectedCatalogGems.toList()..sort(),
+      legacyGems: List<String>.from(state._legacyGemValues)..sort(),
+      notes: state._notesController.text.trim(),
+      imageUrls: List<String>.from(state._imageUrls)..sort(),
+      deferredPhotoKeys: deferredKeys,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ManualFormSnapshot &&
+        sku == other.sku &&
+        weightText == other.weightText &&
+        sizeText == other.sizeText &&
+        priceDigits == other.priceDigits &&
+        productTypeCategory == other.productTypeCategory &&
+        subtypeDropdown == other.subtypeDropdown &&
+        customSubtype == other.customSubtype &&
+        customName == other.customName &&
+        manufacturerCategory == other.manufacturerCategory &&
+        customManufacturer == other.customManufacturer &&
+        metalCategory == other.metalCategory &&
+        goldType == other.goldType &&
+        silverType == other.silverType &&
+        _listEquals(catalogGems, other.catalogGems) &&
+        _listEquals(legacyGems, other.legacyGems) &&
+        notes == other.notes &&
+        _listEquals(imageUrls, other.imageUrls) &&
+        _listEquals(deferredPhotoKeys, other.deferredPhotoKeys);
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+        sku,
+        weightText,
+        sizeText,
+        priceDigits,
+        productTypeCategory,
+        subtypeDropdown,
+        customSubtype,
+        customName,
+        manufacturerCategory,
+        customManufacturer,
+        metalCategory,
+        goldType,
+        silverType,
+        Object.hashAll(catalogGems),
+        Object.hashAll(legacyGems),
+        notes,
+        Object.hashAll(imageUrls),
+        Object.hashAll(deferredPhotoKeys),
+      ]);
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
+
+class _ManualSaveBanner extends StatelessWidget {
+  const _ManualSaveBanner({
+    required this.message,
+    required this.pulse,
+  });
+
+  final String message;
+  final int pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<int>(pulse),
+      tween: Tween(begin: 0.94, end: 1),
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOut,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2E7D32).withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFF1B5E20), width: 1.2),
+        ),
+        child: Text(
+          message,
+          style: AppTypography.productMeta().copyWith(
+            color: const Color(0xFF1B5E20),
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ManualProductDialog extends StatefulWidget {
   const _ManualProductDialog({
     required this.database,
@@ -1186,6 +1357,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   String _goldType = '585 красное';
   String _silverType = '925 Родированное';
   bool _saving = false;
+  bool _keepFieldsAfterSave = false;
+  int _sessionSaveCount = 0;
+  int _saveBannerPulse = 0;
+  String? _saveBannerMessage;
+  _ManualFormSnapshot? _lastSavedSnapshot;
 
   List<String> _imageUrls = [];
   final List<XFile> _deferredPhotos = [];
@@ -1558,6 +1734,55 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     return parsed <= 0 ? 1 : null;
   }
 
+  Future<void> _requestSubmit({required bool asDraft}) async {
+    if (_saving) return;
+    if (!_isEditMode && _lastSavedSnapshot != null) {
+      final current = _ManualFormSnapshot.fromState(this);
+      if (current == _lastSavedSnapshot) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Повторное сохранение'),
+            content: const Text(
+              'Вы уже сохраняли данный товар, сохранить ещё раз?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Нет'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Да'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+      }
+    }
+    await _submit(asDraft: asDraft);
+  }
+
+  Future<void> _refreshGalleryAfterSave(String sku) async {
+    try {
+      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      if (!mounted || media == null) return;
+      final urls = productGalleryImageUrls(media);
+      if (urls.isEmpty) return;
+      setState(() => _imageUrls = List<String>.from(urls));
+    } catch (_) {}
+  }
+
+  void _onSaveSucceeded({required bool asDraft, required String sku}) {
+    _sessionSaveCount++;
+    _lastSavedSnapshot = _ManualFormSnapshot.fromState(this);
+    _saveBannerPulse++;
+    _saveBannerMessage = asDraft
+        ? '✓ Товар сохранён в черновики (добавлено за сессию: $_sessionSaveCount)'
+        : '✓ Товар добавлен на витрину (добавлено за сессию: $_sessionSaveCount)';
+  }
+
   Future<void> _submit({required bool asDraft}) async {
     final sku = _skuController.text.trim();
     final weight = double.tryParse(_weightController.text.replaceAll(',', '.'));
@@ -1653,10 +1878,18 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
       if (_deferredPhotos.isNotEmpty) {
         await _uploadDeferredPhotos(sku);
+        setState(() => _deferredPhotos.clear());
+        await _refreshGalleryAfterSave(sku);
       }
 
       await widget.onSaved(asDraft: asDraft);
       if (!mounted) return;
+
+      if (!_isEditMode) {
+        setState(() => _onSaveSucceeded(asDraft: asDraft, sku: sku));
+        if (_keepFieldsAfterSave) return;
+      }
+
       Navigator.pop(context);
     } catch (error) {
       _snack('Ошибка: $error', error: true);
@@ -1729,24 +1962,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(
-        _isEditMode ? 'Редактировать карточку' : 'Добавить товар',
-        style: AppTypography.heading(fontSize: 18),
-      ),
-      content: SizedBox(
-        width: 520,
-        child: Scrollbar(
-          thumbVisibility: true,
-          child: SingleChildScrollView(
-            primary: false,
-            padding: const EdgeInsets.only(top: 4, right: 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+  Widget _buildFormFields() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
                 Wrap(
                 spacing: 8,
                 children: [
@@ -1981,30 +2201,101 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                   helperText: 'Заметки администратора; наименование — в категории выше',
                 ),
               ),
-              ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dialogHeight =
+        (MediaQuery.sizeOf(context).height * 0.86).clamp(420.0, 720.0);
+
+    return AlertDialog(
+      title: Text(
+        _isEditMode ? 'Редактировать карточку' : 'Добавить товар',
+        style: AppTypography.heading(fontSize: 18),
+      ),
+      content: SizedBox(
+        width: 520,
+        height: dialogHeight,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!_isEditMode && _saveBannerMessage != null)
+              _ManualSaveBanner(
+                message: _saveBannerMessage!,
+                pulse: _saveBannerPulse,
+              ),
+            Expanded(
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  primary: false,
+                  padding: const EdgeInsets.only(top: 4, right: 14),
+                  child: _buildFormFields(),
+                ),
+              ),
             ),
-          ),
+            const Divider(height: 1, color: AppColors.border),
+            if (!_isEditMode)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: Text(
+                  'Не очищать поля после сохранения',
+                  style: AppTypography.productMeta(),
+                ),
+                value: _keepFieldsAfterSave,
+                onChanged: _saving
+                    ? null
+                    : (value) =>
+                        setState(() => _keepFieldsAfterSave = value ?? false),
+              ),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    child: const Text('Закрыть'),
+                  ),
+                  if (!_isEditMode) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed:
+                          _saving ? null : () => _requestSubmit(asDraft: true),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Сохранить в черновики'),
+                    ),
+                  ],
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed:
+                        _saving ? null : () => _requestSubmit(asDraft: false),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            _isEditMode ? 'Сохранить' : 'Добавить на витрину',
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Закрыть'),
-        ),
-        if (!_isEditMode)
-          OutlinedButton(
-            onPressed: _saving ? null : () => _submit(asDraft: true),
-            child: Text(_saving ? 'Сохранение…' : 'Сохранить в черновики'),
-          ),
-        FilledButton(
-          onPressed: _saving ? null : () => _submit(asDraft: false),
-          child: Text(
-            _saving
-                ? 'Сохранение…'
-                : (_isEditMode ? 'Сохранить' : 'Добавить на витрину'),
-          ),
-        ),
-      ],
     );
   }
 }

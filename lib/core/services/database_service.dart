@@ -12,6 +12,7 @@ import '../../features/admin/domain/draft_delete_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
+import '../utils/product_gallery_urls.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
 import '../../shared/models/feedback_item.dart';
@@ -465,8 +466,11 @@ abstract class DatabaseService {
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
 
-  /// Поиск URL галереи по артикулу (RPC `find_product_images_by_sku`, любой status).
-  Future<List<String>> findProductImagesBySku(String sku);
+  /// Поиск URL галереи по артикулу (RPC, медиа по SKU, direct select; опц. кэш каталога).
+  Future<List<String>> findProductImagesBySku(
+    String sku, {
+    Iterable<Map<String, dynamic>>? catalogRows,
+  });
 
   /// Строка `products` для печати бирки после ручного сохранения (в т.ч. `id`).
   Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku);
@@ -2253,58 +2257,62 @@ class CloudDatabaseService implements DatabaseService {
 
   static List<String> _stringListFromDynamicJson(Object? raw) {
     if (raw is! List) return const [];
-    return raw
-        .map((e) => e.toString().trim())
-        .where((url) => url.isNotEmpty)
-        .toList();
+    return mergeUniqueGalleryUrls(
+      raw.map((e) => e.toString()),
+    );
   }
 
-  static List<String> _galleryUrlsFromProductRow(Map<String, dynamic> row) {
-    final additional = row['additional_images'];
-    if (additional is List) {
-      final fromAdditional = additional
-          .map((e) => e.toString().trim())
-          .where((url) => url.isNotEmpty)
-          .take(ProductItem.maxGalleryImages)
-          .toList();
-      if (fromAdditional.isNotEmpty) return fromAdditional;
-    }
-    final legacyUrl = row['image_url']?.toString().trim() ?? '';
-    if (legacyUrl.isNotEmpty) return [legacyUrl];
-    return const [];
-  }
+  Future<List<String>> _findProductImagesBySkuRpc(String sku) async {
+    final trimmed = sku.trim();
+    if (trimmed.isEmpty) return const [];
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.findProductImagesBySku,
+        params: {AdminCatalogRpc.skuParam: trimmed},
+      );
+      if (result is! Map) return const [];
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] != true) return const [];
+      final fromRpc = _stringListFromDynamicJson(map['images']);
+      if (fromRpc.isNotEmpty) return fromRpc;
 
-  List<String> _mergeUniqueGalleryUrlsFromProductRows(
-    List<Map<String, dynamic>> rows,
-  ) {
-    final seen = <String>{};
-    final merged = <String>[];
-    for (final row in rows) {
-      for (final url in _galleryUrlsFromProductRow(row)) {
-        if (seen.contains(url)) continue;
-        seen.add(url);
-        merged.add(url);
-        if (merged.length >= ProductItem.maxGalleryImages) {
-          return merged;
-        }
+      final imagesRaw = map['images'];
+      if (imagesRaw is String && imagesRaw.trim().isNotEmpty) {
+        return mergeUniqueGalleryUrls(
+          productGalleryImageUrls({'additional_images': imagesRaw}),
+        );
       }
+      return const [];
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._findProductImagesBySkuRpc failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return const [];
     }
-    return merged;
   }
 
   Future<List<String>> _findProductImagesBySkuDirectSelect(String sku) async {
-    final normalized = sku.trim();
-    if (normalized.isEmpty) return const [];
+    final needle = normalizeProductSku(sku);
+    if (needle.isEmpty) return const [];
     try {
-      final escaped = normalized.replaceAll('%', r'\%').replaceAll('_', r'\_');
+      final trimmed = sku.trim();
+      final escaped = trimmed.replaceAll('%', r'\%').replaceAll('_', r'\_');
       final rows = await _supabaseClient
           .from('products')
-          .select('image_url, additional_images, updated_at, created_at')
-          .ilike('sku', escaped)
+          .select('sku, image_url, additional_images, updated_at, created_at')
+          .ilike('sku', '%$escaped%')
           .order('updated_at', ascending: false);
       if (rows.isEmpty) return const [];
-      final maps = rows.map((e) => Map<String, dynamic>.from(e)).toList();
-      return _mergeUniqueGalleryUrlsFromProductRows(maps);
+      final matching = <Map<String, dynamic>>[];
+      for (final row in rows) {
+        final map = Map<String, dynamic>.from(row);
+        if (normalizeProductSku(map['sku']?.toString() ?? '') != needle) {
+          continue;
+        }
+        matching.add(map);
+      }
+      return mergeGalleryUrlsFromProductRows(matching);
     } catch (error, stackTrace) {
       debugPrint(
         'CloudDatabaseService._findProductImagesBySkuDirectSelect failed: $error',
@@ -2315,29 +2323,28 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<List<String>> findProductImagesBySku(String sku) async {
-    final normalizedSku = sku.trim();
-    if (normalizedSku.isEmpty) return const [];
-    try {
-      final result = await _supabaseClient.rpc(
-        AdminCatalogRpc.findProductImagesBySku,
-        params: {AdminCatalogRpc.skuParam: normalizedSku},
-      );
-      if (result is Map) {
-        final map = Map<String, dynamic>.from(result);
-        if (map['ok'] == true) {
-          return _stringListFromDynamicJson(map['images'])
-              .take(ProductItem.maxGalleryImages)
-              .toList();
-        }
-      }
-    } catch (error, stackTrace) {
-      debugPrint(
-        'CloudDatabaseService.findProductImagesBySku RPC failed, fallback: $error',
-      );
-      debugPrint('$stackTrace');
+  Future<List<String>> findProductImagesBySku(
+    String sku, {
+    Iterable<Map<String, dynamic>>? catalogRows,
+  }) async {
+    final trimmed = sku.trim();
+    if (trimmed.isEmpty) return const [];
+
+    if (catalogRows != null) {
+      final fromCatalog = findGalleryUrlsInCatalogRows(trimmed, catalogRows);
+      if (fromCatalog.isNotEmpty) return fromCatalog;
     }
-    return _findProductImagesBySkuDirectSelect(normalizedSku);
+
+    final fromRpc = await _findProductImagesBySkuRpc(trimmed);
+    if (fromRpc.isNotEmpty) return fromRpc;
+
+    final media = await fetchProductMediaFieldsBySku(trimmed);
+    if (media != null) {
+      final fromMedia = productGalleryImageUrls(media);
+      if (fromMedia.isNotEmpty) return fromMedia;
+    }
+
+    return _findProductImagesBySkuDirectSelect(trimmed);
   }
 
   @override

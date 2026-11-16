@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -24,47 +23,9 @@ import '../../../printing/domain/jewelry_label_layout.dart';
 import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
+import '../../../../core/utils/product_gallery_urls.dart';
 import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
-
-List<String> parseAdditionalImagesField(Object? raw) {
-  if (raw == null) return const [];
-  if (raw is List) {
-    return raw
-        .map((e) => e.toString().trim())
-        .where((url) => url.isNotEmpty)
-        .toList();
-  }
-  if (raw is String) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return const [];
-    try {
-      final decoded = jsonDecode(trimmed);
-      if (decoded is List) {
-        return decoded
-            .map((e) => e.toString().trim())
-            .where((url) => url.isNotEmpty)
-            .toList();
-      }
-    } catch (_) {
-      return const [];
-    }
-  }
-  return const [];
-}
-
-List<String> productGalleryImageUrls(Map<String, dynamic> row) {
-  final fromAdditional =
-      parseAdditionalImagesField(row['additional_images']);
-  if (fromAdditional.isNotEmpty) {
-    return fromAdditional.take(ProductItem.maxGalleryImages).toList();
-  }
-  final legacyUrl = row['image_url']?.toString().trim() ?? '';
-  if (legacyUrl.isNotEmpty) {
-    return [legacyUrl];
-  }
-  return const [];
-}
 
 /// Склад/sync: камни в `insert`, legacy Pro — в `gem_inserts`.
 String adminProductInsertLabel(Map<String, dynamic> row) {
@@ -344,6 +305,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       builder: (context) => _ManualProductDialog(
         database: widget.database,
         editProduct: editProduct,
+        catalogRows: _products,
         onSaved: ({required bool asDraft}) async {
           if (isEdit) {
             _snack('Карточка обновлена');
@@ -1360,11 +1322,13 @@ class _ManualProductDialog extends StatefulWidget {
     required this.database,
     required this.onSaved,
     this.editProduct,
+    this.catalogRows = const [],
   });
 
   final DatabaseService database;
   final Future<void> Function({required bool asDraft}) onSaved;
   final Map<String, dynamic>? editProduct;
+  final List<Map<String, dynamic>> catalogRows;
 
   bool get isEditMode => editProduct != null;
 
@@ -1822,7 +1786,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
     setState(() => _skuPhotoLookupInProgress = true);
     try {
-      final found = await widget.database.findProductImagesBySku(sku);
+      final found = await widget.database.findProductImagesBySku(
+        sku,
+        catalogRows: widget.catalogRows,
+      );
       if (!mounted) return;
       if (found.isEmpty) {
         _showPhotoLookupNotice(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../shared/models/product_item.dart';
 import '../../../../shared/models/seller_item.dart';
 import '../../../profile/domain/models/user_profile.dart';
 import '../../application/pos_cart_controller.dart';
@@ -218,6 +219,10 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                                 '${line.product.id}_${line.discountPercent}',
                               ),
                               line: line,
+                              onPhotoTap: () => _openPosCartPhotoPreview(
+                                context,
+                                line,
+                              ),
                               onDiscountChanged: (value) => cart.setLineDiscount(
                                 line.product.id,
                                 value,
@@ -382,6 +387,21 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     );
   }
 
+  Future<void> _openPosCartPhotoPreview(
+    BuildContext context,
+    PosCartItem line,
+  ) async {
+    final urls = posCartProductImageUrls(line.product);
+    if (urls.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => _PosCartPhotoPreviewDialog(
+        line: line,
+        imageUrls: urls,
+      ),
+    );
+  }
+
   String _formatKrw(int value) {
     final s = value.toString();
     final buf = StringBuffer();
@@ -393,37 +413,67 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
   }
 }
 
+List<String> posCartProductImageUrls(ProductItem product) {
+  if (product.images.isNotEmpty) {
+    return product.images;
+  }
+  final url = product.imageUrl?.trim();
+  if (url != null && url.isNotEmpty) return [url];
+  return const [];
+}
+
 class _PosCartLineTile extends StatelessWidget {
   const _PosCartLineTile({
     super.key,
     required this.line,
+    required this.onPhotoTap,
     required this.onDiscountChanged,
     required this.onRemove,
   });
 
   final PosCartItem line;
+  final VoidCallback onPhotoTap;
   final ValueChanged<int> onDiscountChanged;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final product = line.product;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(
-        product.sku,
-        style: AppTypography.productTitle.copyWith(fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        '${_formatKrw(line.finalPriceKrw)} ₩'
-        '${line.discountPercent > 0 ? ' (−${line.discountPercent}%)' : ''}',
-        style: AppTypography.productMeta(),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
+    final photoUrls = posCartProductImageUrls(product);
+    final hasPhoto = photoUrls.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          _PosCartLineThumbnail(
+            imageUrl: hasPhoto ? photoUrls.first : null,
+            onTap: hasPhoto ? onPhotoTap : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.sku,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.productTitle.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _PosCartLinePrice(line: line),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
           DropdownButtonHideUnderline(
             child: DropdownButton<int>(
+              isDense: true,
               value: line.discountPercent,
               items: [
                 for (final pct in PosCartDiscountOptions.values)
@@ -438,10 +488,46 @@ class _PosCartLineTile extends StatelessWidget {
           IconButton(
             tooltip: 'Удалить из корзины',
             onPressed: onRemove,
+            visualDensity: VisualDensity.compact,
             icon: Icon(Icons.delete_outline, color: AppColors.saleRed),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PosCartLinePrice extends StatelessWidget {
+  const _PosCartLinePrice({required this.line});
+
+  final PosCartItem line;
+
+  @override
+  Widget build(BuildContext context) {
+    final finalText = '${_formatKrw(line.finalPriceKrw)} ₩';
+    if (line.discountPercent <= 0) {
+      return Text(finalText, style: AppTypography.productMeta());
+    }
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 6,
+      children: [
+        Text(finalText, style: AppTypography.productMeta()),
+        Text(
+          '${_formatKrw(line.originalPriceKrw)} ₩',
+          style: AppTypography.productMeta().copyWith(
+            decoration: TextDecoration.lineThrough,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        Text(
+          '−${line.discountPercent}%',
+          style: AppTypography.productMeta().copyWith(
+            color: AppColors.saleRed,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
@@ -449,4 +535,233 @@ class _PosCartLineTile extends StatelessWidget {
         RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
         (m) => '${m[1]} ',
       );
+}
+
+class _PosCartLineThumbnail extends StatelessWidget {
+  const _PosCartLineThumbnail({
+    required this.imageUrl,
+    this.onTap,
+  });
+
+  final String? imageUrl;
+  final VoidCallback? onTap;
+
+  static const _size = 56.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: _size,
+          height: _size,
+          child: imageUrl == null
+              ? _placeholder(Icons.diamond_outlined)
+              : Image.network(
+                  imageUrl!,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (_, _, _) =>
+                      _placeholder(Icons.image_not_supported_outlined),
+                ),
+        ),
+      ),
+    );
+
+    if (onTap == null) return child;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Tooltip(
+          message: 'Открыть фото крупно',
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(IconData icon) {
+    return Center(
+      child: Icon(
+        icon,
+        size: 26,
+        color: AppColors.textSecondary.withValues(alpha: 0.55),
+      ),
+    );
+  }
+}
+
+class _PosCartPhotoPreviewDialog extends StatefulWidget {
+  const _PosCartPhotoPreviewDialog({
+    required this.line,
+    required this.imageUrls,
+  });
+
+  final PosCartItem line;
+  final List<String> imageUrls;
+
+  @override
+  State<_PosCartPhotoPreviewDialog> createState() =>
+      _PosCartPhotoPreviewDialogState();
+}
+
+class _PosCartPhotoPreviewDialogState extends State<_PosCartPhotoPreviewDialog> {
+  late final PageController _pageController;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final line = widget.line;
+    final urls = widget.imageUrls;
+    final size = MediaQuery.sizeOf(context);
+    final maxWidth = size.width.clamp(280.0, 520.0);
+    final imageHeight = (size.height * 0.45).clamp(240.0, 480.0);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      line.product.sku,
+                      style: AppTypography.heading(fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Закрыть',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              _PosCartLinePrice(line: line),
+              if (urls.length > 1) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Фото ${_index + 1} из ${urls.length}',
+                  style: AppTypography.productMeta(),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                height: imageHeight,
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: urls.length,
+                  onPageChanged: (i) => setState(() => _index = i),
+                  itemBuilder: (context, index) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        urls[index],
+                        fit: BoxFit.contain,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        },
+                        errorBuilder: (_, _, _) => const Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            size: 48,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (urls.length > 1) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Предыдущее',
+                      onPressed: _index > 0
+                          ? () => _pageController.previousPage(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                              )
+                          : null,
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    ...List.generate(urls.length, (i) {
+                      final active = i == _index;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Icon(
+                          Icons.circle,
+                          size: active ? 9 : 7,
+                          color: active
+                              ? AppColors.primary
+                              : AppColors.textSecondary.withValues(alpha: 0.4),
+                        ),
+                      );
+                    }),
+                    IconButton(
+                      tooltip: 'Следующее',
+                      onPressed: _index < urls.length - 1
+                          ? () => _pageController.nextPage(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                              )
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

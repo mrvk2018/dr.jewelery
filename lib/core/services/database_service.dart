@@ -606,6 +606,24 @@ class CloudDatabaseService implements DatabaseService {
   static Map<String, dynamic> productRowToClientJson(Map<String, dynamic> row) =>
       _productRowToClientJson(row);
 
+  static Map<String, dynamic> _productRowGalleryJsonFields(
+    Map<String, dynamic> row,
+  ) {
+    final galleryUrls = productGalleryImageUrls(row);
+    if (galleryUrls.isNotEmpty) {
+      return {
+        'imageUrl': galleryUrls.first,
+        'images': galleryUrls,
+      };
+    }
+    final legacyImages = row['images'] as List<dynamic>?;
+    final legacyUrl = row['image_url']?.toString().trim();
+    return {
+      'imageUrl': legacyUrl?.isNotEmpty == true ? legacyUrl : null,
+      if (legacyImages != null && legacyImages.isNotEmpty) 'images': legacyImages,
+    };
+  }
+
   static Map<String, dynamic> _productRowToClientJson(
     Map<String, dynamic> row,
   ) {
@@ -626,8 +644,7 @@ class CloudDatabaseService implements DatabaseService {
       'insert': (row['insert'] as String?)?.trim() ?? '',
       'iconIndex': (row['icon_index'] as num?)?.toInt() ?? 0,
       'availableSizes': _parseAvailableSizesField(row['available_sizes']),
-      'imageUrl': row['image_url'] as String?,
-      'images': row['images'] as List<dynamic>?,
+      ..._productRowGalleryJsonFields(row),
       'weightGrams': (row['weight_grams'] as num?)?.toDouble(),
       'catalogStatus': (row['status'] as String?)?.trim() ?? 'active',
     };

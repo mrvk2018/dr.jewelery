@@ -369,15 +369,20 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     }
   }
 
-  void _addSelectedToPosCart() {
+  Future<void> _addSelectedToPosCart() async {
     final row = _selected;
     if (row == null) {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
+    final sku = row['sku']?.toString().trim() ?? '';
+    if (sku.isNotEmpty) {
+      await _fetchAndMergeProductMedia(sku);
+    }
+    final currentRow = _selected ?? row;
     try {
       final product = ProductItem.fromJson(
-        CloudDatabaseService.productRowToClientJson(row),
+        CloudDatabaseService.productRowToClientJson(currentRow),
       );
       if (!_posCart.containsProduct(product.id)) {
         _posCart.addToCart(product);

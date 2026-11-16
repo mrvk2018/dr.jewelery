@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/won_format.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
@@ -91,6 +92,35 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
 
   static double _size(Map<String, dynamic> row) {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
+  }
+
+  /// Как витрина админки: `sale_price`, затем legacy `price` (KRW).
+  static int? _salePriceKrw(Map<String, dynamic> row) {
+    final raw = row['sale_price'] ?? row['price'];
+    if (raw is num) {
+      final value = raw.round();
+      return value > 0 ? value : null;
+    }
+    if (raw == null) return null;
+    final parsed = int.tryParse(raw.toString().replaceAll(RegExp(r'[^\d]'), ''));
+    if (parsed == null || parsed <= 0) return null;
+    return parsed;
+  }
+
+  static Widget _priceCell(Map<String, dynamic> row) {
+    final krw = _salePriceKrw(row);
+    if (krw == null) {
+      return Text(
+        '—',
+        style: AppTypography.productMeta().copyWith(
+          color: AppColors.textSecondary,
+        ),
+      );
+    }
+    return Text(
+      formatWon(krw),
+      style: AppTypography.price(fontSize: 13),
+    );
   }
 
   static String? _thumbnailUrl(Map<String, dynamic> row) {
@@ -470,14 +500,21 @@ class _DraftTable extends StatelessWidget {
                     headingRowColor: WidgetStateProperty.all(
                       AppColors.cardBackground,
                     ),
-                    columns: const [
-                      DataColumn(label: Text('Фото')),
-                      DataColumn(label: Text('SKU')),
-                      DataColumn(label: Text('Металл')),
-                      DataColumn(label: Text('Вес, г')),
-                      DataColumn(label: Text('Размер')),
-                      DataColumn(label: Text('Вставки')),
-                      DataColumn(label: Text('Действие')),
+                    columns: [
+                      const DataColumn(label: Text('Фото')),
+                      const DataColumn(label: Text('SKU')),
+                      const DataColumn(label: Text('Металл')),
+                      const DataColumn(label: Text('Вес, г')),
+                      const DataColumn(label: Text('Размер')),
+                      const DataColumn(label: Text('Вставки')),
+                      DataColumn(
+                        label: Text(
+                          'Цена',
+                          style: AppTypography.caption(fontWeight: FontWeight.w700),
+                        ),
+                        numeric: true,
+                      ),
+                      const DataColumn(label: Text('Действие')),
                     ],
                     rows: drafts.map((row) {
                       final sku = _DraftIntakeScreenState._field(row, 'sku');
@@ -503,6 +540,9 @@ class _DraftTable extends StatelessWidget {
                           ),
                           DataCell(
                             Text(_DraftIntakeScreenState._field(row, 'gem_inserts')),
+                          ),
+                          DataCell(
+                            _DraftIntakeScreenState._priceCell(row),
                           ),
                           DataCell(
                             Row(

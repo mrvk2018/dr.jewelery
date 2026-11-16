@@ -27,6 +27,7 @@ import '../../../../core/utils/product_gallery_urls.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
+import '../screens/scrap_metal_intake_screen.dart';
 
 /// Склад/sync: камни в `insert`, legacy Pro — в `gem_inserts`.
 String adminProductInsertLabel(Map<String, dynamic> row) {
@@ -282,6 +283,14 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     );
     if (!mounted) return;
     await _refreshCatalog();
+  }
+
+  Future<void> _openScrapIntake() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScrapMetalIntakeScreen(database: widget.database),
+      ),
+    );
   }
 
   Future<void> _openAddProductDialog() async {
@@ -551,6 +560,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     isSuperAdmin: isSuperAdmin,
                     onFilterApplied: _applyRows,
                     onOpenDraft: _openDraftIntake,
+                    onOpenScrap: _openScrapIntake,
                     onAddProduct: _openAddProductDialog,
                     onProductReturn: _openProductReturnDialog,
                   ),
@@ -621,6 +631,7 @@ class _TopControlBar extends StatelessWidget {
     required this.isSuperAdmin,
     required this.onFilterApplied,
     required this.onOpenDraft,
+    required this.onOpenScrap,
     required this.onAddProduct,
     required this.onProductReturn,
   });
@@ -629,6 +640,7 @@ class _TopControlBar extends StatelessWidget {
   final bool isSuperAdmin;
   final void Function(List<Map<String, dynamic>> products) onFilterApplied;
   final VoidCallback onOpenDraft;
+  final VoidCallback onOpenScrap;
   final VoidCallback onAddProduct;
   final VoidCallback onProductReturn;
 
@@ -655,6 +667,11 @@ class _TopControlBar extends StatelessWidget {
                     onPressed: onOpenDraft,
                     icon: const Icon(Icons.move_to_inbox_outlined),
                     label: const Text('Перейти в режим Приёмки (Черновики)'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: onOpenScrap,
+                    icon: const Icon(Icons.scale_outlined),
+                    label: const Text('Приёмка лома'),
                   ),
                   FilledButton.icon(
                     onPressed: onAddProduct,

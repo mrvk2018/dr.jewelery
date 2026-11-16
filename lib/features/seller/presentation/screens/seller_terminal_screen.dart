@@ -4,6 +4,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/won_format.dart';
+import '../../../admin/presentation/screens/scrap_metal_intake_screen.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../../application/seller_terminal_service.dart';
 import '../../data/seller_token_store.dart';
@@ -461,6 +462,21 @@ class _SellerTerminalScreenState extends State<SellerTerminalScreen> {
               busy: _busy,
               onStartShift: _startShift,
               onEndShift: _confirmEndShift,
+              onOpenScrapIntake: shiftOpen
+                  ? () {
+                      final code = service.sellerCode;
+                      if (code == null) return;
+                      Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => ScrapMetalIntakeScreen(
+                            database: service.database,
+                            initialSellerCode: code,
+                            initialSellerName: code,
+                          ),
+                        ),
+                      );
+                    }
+                  : null,
               onOpenPos: shiftOpen
                   ? () => setState(() => _mode = SellerSubMode.pos)
                   : null,
@@ -624,6 +640,7 @@ class _HubScreen extends StatelessWidget {
     required this.onOpenPos,
     required this.onOpenTransferOut,
     required this.onOpenTransferIn,
+    this.onOpenScrapIntake,
   });
 
   final String sellerCode;
@@ -634,6 +651,7 @@ class _HubScreen extends StatelessWidget {
   final VoidCallback? onOpenPos;
   final VoidCallback? onOpenTransferOut;
   final VoidCallback? onOpenTransferIn;
+  final VoidCallback? onOpenScrapIntake;
 
   @override
   Widget build(BuildContext context) {
@@ -720,6 +738,13 @@ class _HubScreen extends StatelessWidget {
                 title: '3. ПРИНЯТЬ ТРАНСФЕР (МАРИЯ)',
                 enabled: true,
                 onTap: onOpenTransferIn!,
+              ),
+              const SizedBox(height: 12),
+              _HubTile(
+                emoji: '⚖️',
+                title: '4. ПРИЁМКА ЛОМА',
+                enabled: onOpenScrapIntake != null,
+                onTap: onOpenScrapIntake ?? () {},
               ),
             ],
             const Spacer(),

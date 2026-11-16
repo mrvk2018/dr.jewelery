@@ -64,6 +64,27 @@ abstract final class AdminOrdersRpc {
 }
 
 /// RPC ручной продажи в админ-PWA (обход GRANT/RLS на products).
+/// RPC приёмки лома (`scrap_metal_intakes`).
+abstract final class ScrapMetalRpc {
+  static const upsert = 'upsert_scrap_metal_intake';
+  static const list = 'list_scrap_metal_intakes';
+  static const writeOff = 'write_off_scrap_metal_intakes';
+  static const delete = 'delete_scrap_metal_intake';
+  static const payloadParam = 'p_payload';
+  static const storeLocationParam = 'p_store_location';
+  static const metalParam = 'p_metal';
+  static const statusParam = 'p_status';
+  static const dateFromParam = 'p_date_from';
+  static const dateToParam = 'p_date_to';
+  static const idsParam = 'p_ids';
+  static const noteParam = 'p_note';
+  static const idParam = 'p_id';
+}
+
+typedef ScrapMetalUpsertResult = ({bool ok, String? id, String? error});
+typedef ScrapMetalWriteOffResult = ({bool ok, int writtenOff, String? error});
+typedef ScrapMetalDeleteResult = ({bool ok, String? error});
+
 abstract final class AdminCatalogRpc {
   static const markProductSoldManual = 'mark_product_sold_manual';
   static const archiveAdminPosSale = 'archive_admin_pos_sale';
@@ -440,6 +461,31 @@ abstract class DatabaseService {
   Future<DraftStoreLocationResult> setDraftProductStoreLocation({
     required String id,
     String? storeLocation,
+  });
+
+  Future<ScrapMetalUpsertResult> upsertScrapMetalIntake(
+    Map<String, dynamic> payload,
+  );
+
+  Future<List<Map<String, dynamic>>> listScrapMetalIntakes({
+    String? storeLocation,
+    String? metal,
+    String? status,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  });
+
+  Future<ScrapMetalWriteOffResult> writeOffScrapMetalIntakes({
+    required List<String> ids,
+    String? note,
+  });
+
+  Future<ScrapMetalDeleteResult> deleteScrapMetalIntake(String id);
+
+  /// Фото лома / квитанции → bucket `product-images`, папка `scrap-intake/`.
+  Future<String?> uploadScrapMetalIntakePhoto({
+    required Uint8List bytes,
+    required String contentType,
   });
 
   /// Поштучное добавление: витрина (`stock_quantity = 1`) или черновик (`0`).
@@ -1898,6 +1944,135 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static ScrapMetalUpsertResult _parseScrapUpsertRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] == true) {
+        return (ok: true, id: map['id']?.toString(), error: null);
+      }
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        id: null,
+        error: message == null || message.isEmpty ? 'Ошибка сервера' : message,
+      );
+    }
+    return (ok: false, id: null, error: 'Неизвестный ответ сервера');
+  }
+
+  static String? _formatScrapFilterDate(DateTime? value) {
+    if (value == null) return null;
+    final local = DateTime(value.year, value.month, value.day);
+    return '${local.year.toString().padLeft(4, '0')}-'
+        '${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Future<ScrapMetalUpsertResult> upsertScrapMetalIntake(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.upsert,
+        params: {ScrapMetalRpc.payloadParam: payload},
+      );
+      return _parseScrapUpsertRpc(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.upsertScrapMetalIntake failed: $error');
+      debugPrint('$stackTrace');
+      return (ok: false, id: null, error: error.toString());
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listScrapMetalIntakes({
+    String? storeLocation,
+    String? metal,
+    String? status,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    try {
+      final params = <String, dynamic>{
+        ScrapMetalRpc.storeLocationParam: storeLocation?.trim(),
+        ScrapMetalRpc.metalParam: metal?.trim(),
+        ScrapMetalRpc.statusParam: status?.trim(),
+        ScrapMetalRpc.dateFromParam: _formatScrapFilterDate(dateFrom),
+        ScrapMetalRpc.dateToParam: _formatScrapFilterDate(dateTo),
+      };
+      final result = await _supabaseClient.rpc(ScrapMetalRpc.list, params: params);
+      if (result is! List) return const [];
+      return result
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.listScrapMetalIntakes failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<ScrapMetalWriteOffResult> writeOffScrapMetalIntakes({
+    required List<String> ids,
+    String? note,
+  }) async {
+    final uuids = ids.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (uuids.isEmpty) {
+      return (ok: false, writtenOff: 0, error: 'Выберите акты');
+    }
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.writeOff,
+        params: {
+          ScrapMetalRpc.idsParam: uuids,
+          ScrapMetalRpc.noteParam: note?.trim(),
+        },
+      );
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        if (map['ok'] == true) {
+          final count = (map['written_off'] as num?)?.toInt() ?? uuids.length;
+          return (ok: true, writtenOff: count, error: null);
+        }
+        return (
+          ok: false,
+          writtenOff: 0,
+          error: map['error']?.toString() ?? 'Ошибка списания',
+        );
+      }
+      return (ok: false, writtenOff: 0, error: 'Неизвестный ответ');
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.writeOffScrapMetalIntakes failed: $error');
+      debugPrint('$stackTrace');
+      return (ok: false, writtenOff: 0, error: error.toString());
+    }
+  }
+
+  @override
+  Future<ScrapMetalDeleteResult> deleteScrapMetalIntake(String id) async {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty) {
+      return (ok: false, error: 'Укажите id');
+    }
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.delete,
+        params: {ScrapMetalRpc.idParam: trimmed},
+      );
+      if (result is Map && result['ok'] == true) {
+        return (ok: true, error: null);
+      }
+      final err = result is Map ? result['error']?.toString() : null;
+      return (ok: false, error: err ?? 'Удаление не выполнено');
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteScrapMetalIntake failed: $error');
+      debugPrint('$stackTrace');
+      return (ok: false, error: error.toString());
+    }
+  }
+
   static DraftDeleteResult _parseDraftDeleteRpc(dynamic result) {
     if (result is Map) {
       final map = Map<String, dynamic>.from(result);
@@ -2251,6 +2426,42 @@ class CloudDatabaseService implements DatabaseService {
       return Uint8List.fromList(img.encodeWebP(toEncode));
     } catch (e) {
       print('!!! WEB CONVERTER FAILED, FALLBACK TO ORIGINAL !!!: $e');
+      return null;
+    }
+  }
+
+  static const _scrapIntakeImagesPrefix = 'scrap-intake';
+
+  @override
+  Future<String?> uploadScrapMetalIntakePhoto({
+    required Uint8List bytes,
+    required String contentType,
+  }) async {
+    if (bytes.isEmpty) return null;
+    try {
+      var uploadBytes = bytes;
+      var uploadMime = contentType.trim().isNotEmpty ? contentType.trim() : 'image/jpeg';
+      var fileExt = _extensionForContentType(uploadMime);
+      final webpBytes = _productImageBytesAsWebp(bytes);
+      if (webpBytes != null && webpBytes.isNotEmpty) {
+        uploadBytes = webpBytes;
+        uploadMime = _productImageWebpContentType;
+        fileExt = 'webp';
+      }
+      final stamp = DateTime.now().microsecondsSinceEpoch;
+      final objectPath =
+          '$_scrapIntakeImagesPrefix/scrap_$stamp.${fileExt.toLowerCase()}';
+      await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
+            objectPath,
+            uploadBytes,
+            fileOptions: FileOptions(contentType: uploadMime, upsert: false),
+          );
+      return _supabaseClient.storage
+          .from(_productImagesBucket)
+          .getPublicUrl(objectPath);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.uploadScrapMetalIntakePhoto failed: $error');
+      debugPrint('$stackTrace');
       return null;
     }
   }

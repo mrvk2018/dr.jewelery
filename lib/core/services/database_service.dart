@@ -74,6 +74,7 @@ abstract final class AdminCatalogRpc {
       'admin_get_product_gallery_context_by_sku';
   static const adminSetProductAdditionalImages =
       'admin_set_product_additional_images';
+  static const findProductImagesBySku = 'find_product_images_by_sku';
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
   static const deleteDraftProduct = 'delete_draft_product';
   static const draftProductIdParam = 'p_id';
@@ -463,6 +464,9 @@ abstract class DatabaseService {
 
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
+
+  /// Поиск URL галереи по артикулу (RPC `find_product_images_by_sku`, любой status).
+  Future<List<String>> findProductImagesBySku(String sku);
 
   /// Строка `products` для печати бирки после ручного сохранения (в т.ч. `id`).
   Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku);
@@ -2245,6 +2249,95 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('$stackTrace');
       return null;
     }
+  }
+
+  static List<String> _stringListFromDynamicJson(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((e) => e.toString().trim())
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  static List<String> _galleryUrlsFromProductRow(Map<String, dynamic> row) {
+    final additional = row['additional_images'];
+    if (additional is List) {
+      final fromAdditional = additional
+          .map((e) => e.toString().trim())
+          .where((url) => url.isNotEmpty)
+          .take(ProductItem.maxGalleryImages)
+          .toList();
+      if (fromAdditional.isNotEmpty) return fromAdditional;
+    }
+    final legacyUrl = row['image_url']?.toString().trim() ?? '';
+    if (legacyUrl.isNotEmpty) return [legacyUrl];
+    return const [];
+  }
+
+  List<String> _mergeUniqueGalleryUrlsFromProductRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final seen = <String>{};
+    final merged = <String>[];
+    for (final row in rows) {
+      for (final url in _galleryUrlsFromProductRow(row)) {
+        if (seen.contains(url)) continue;
+        seen.add(url);
+        merged.add(url);
+        if (merged.length >= ProductItem.maxGalleryImages) {
+          return merged;
+        }
+      }
+    }
+    return merged;
+  }
+
+  Future<List<String>> _findProductImagesBySkuDirectSelect(String sku) async {
+    final normalized = sku.trim();
+    if (normalized.isEmpty) return const [];
+    try {
+      final escaped = normalized.replaceAll('%', r'\%').replaceAll('_', r'\_');
+      final rows = await _supabaseClient
+          .from('products')
+          .select('image_url, additional_images, updated_at, created_at')
+          .ilike('sku', escaped)
+          .order('updated_at', ascending: false);
+      if (rows.isEmpty) return const [];
+      final maps = rows.map((e) => Map<String, dynamic>.from(e)).toList();
+      return _mergeUniqueGalleryUrlsFromProductRows(maps);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._findProductImagesBySkuDirectSelect failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<String>> findProductImagesBySku(String sku) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty) return const [];
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.findProductImagesBySku,
+        params: {AdminCatalogRpc.skuParam: normalizedSku},
+      );
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        if (map['ok'] == true) {
+          return _stringListFromDynamicJson(map['images'])
+              .take(ProductItem.maxGalleryImages)
+              .toList();
+        }
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.findProductImagesBySku RPC failed, fallback: $error',
+      );
+      debugPrint('$stackTrace');
+    }
+    return _findProductImagesBySkuDirectSelect(normalizedSku);
   }
 
   @override

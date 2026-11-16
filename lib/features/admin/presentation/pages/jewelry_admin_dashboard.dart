@@ -1254,6 +1254,62 @@ class _ManualFormSnapshot {
   }
 }
 
+class _ManualInlineNotice extends StatelessWidget {
+  const _ManualInlineNotice({
+    required this.message,
+    required this.pulse,
+    required this.success,
+  });
+
+  final String message;
+  final int pulse;
+  final bool? success;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = success == true
+        ? const Color(0xFF1B5E20)
+        : const Color(0xFFE65100);
+    final fillColor = success == true
+        ? const Color(0xFF2E7D32).withValues(alpha: 0.16)
+        : const Color(0xFFF57C00).withValues(alpha: 0.14);
+    final textColor =
+        success == true ? const Color(0xFF1B5E20) : const Color(0xFFBF360C);
+
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<int>(pulse),
+      tween: Tween(begin: 0.94, end: 1),
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOut,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          alignment: Alignment.center,
+          child: child,
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: fillColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor, width: 1.2),
+        ),
+        child: Text(
+          message,
+          style: AppTypography.productMeta().copyWith(
+            color: textColor,
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ManualSaveBanner extends StatelessWidget {
   const _ManualSaveBanner({
     required this.message,
@@ -1363,6 +1419,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   int _saveBannerPulse = 0;
   String? _saveBannerMessage;
   _ManualFormSnapshot? _lastSavedSnapshot;
+  bool _skuPhotoLookupInProgress = false;
+  String? _photoLookupMessage;
+  int _photoLookupPulse = 0;
+  bool? _photoLookupSuccess;
 
   List<String> _imageUrls = [];
   final List<XFile> _deferredPhotos = [];
@@ -1720,6 +1780,78 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       _metalCategory = 'silver';
       _silverType = '925 Родированное';
     });
+  }
+
+  void _showPhotoLookupNotice({
+    required String message,
+    required bool? success,
+  }) {
+    setState(() {
+      _photoLookupMessage = message;
+      _photoLookupSuccess = success;
+      _photoLookupPulse++;
+    });
+  }
+
+  int _mergeDiscoveredImageUrls(List<String> found) {
+    final seen = {..._imageUrls};
+    final merged = List<String>.from(_imageUrls);
+    var added = 0;
+    for (final raw in found) {
+      final url = raw.trim();
+      if (url.isEmpty || seen.contains(url)) continue;
+      if (merged.length >= ProductItem.maxGalleryImages) break;
+      seen.add(url);
+      merged.add(url);
+      added++;
+    }
+    setState(() => _imageUrls = merged);
+    return added;
+  }
+
+  Future<void> _lookupPhotosBySku() async {
+    if (_skuPhotoLookupInProgress || _saving) return;
+    final sku = _skuController.text.trim();
+    if (sku.isEmpty) {
+      _showPhotoLookupNotice(
+        message: 'Введите артикул для поиска фото',
+        success: false,
+      );
+      return;
+    }
+
+    setState(() => _skuPhotoLookupInProgress = true);
+    try {
+      final found = await widget.database.findProductImagesBySku(sku);
+      if (!mounted) return;
+      if (found.isEmpty) {
+        _showPhotoLookupNotice(
+          message: 'Фото по артикулу «$sku» в базе не найдены',
+          success: false,
+        );
+        return;
+      }
+      final added = _mergeDiscoveredImageUrls(found);
+      if (added == 0) {
+        _showPhotoLookupNotice(
+          message: 'Все найденные фото уже добавлены в карточку',
+          success: false,
+        );
+        return;
+      }
+      _showPhotoLookupNotice(
+        message: '✓ Подтянуто фото по артикулу: $added шт.',
+        success: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showPhotoLookupNotice(
+        message: 'Не удалось найти фото: $error',
+        success: false,
+      );
+    } finally {
+      if (mounted) setState(() => _skuPhotoLookupInProgress = false);
+    }
   }
 
   Future<void> _pickPhoto() async {
@@ -2209,15 +2341,46 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                 ),
               ],
               const SizedBox(height: 12),
-              TextField(
-                controller: _skuController,
-                readOnly: _isEditMode,
-                decoration: InputDecoration(
-                  labelText: 'SKU / артикул',
-                  border: const OutlineInputBorder(),
-                  filled: _isEditMode,
-                  helperText: _isEditMode ? 'SKU нельзя менять (ключ карточки)' : null,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _skuController,
+                      readOnly: _isEditMode,
+                      decoration: InputDecoration(
+                        labelText: 'SKU / артикул',
+                        border: const OutlineInputBorder(),
+                        filled: _isEditMode,
+                        helperText: _isEditMode
+                            ? 'SKU нельзя менять (ключ карточки)'
+                            : null,
+                      ),
+                    ),
+                  ),
+                  if (!_isEditMode) ...[
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: OutlinedButton.icon(
+                        onPressed: (_saving || _skuPhotoLookupInProgress)
+                            ? null
+                            : _lookupPhotosBySku,
+                        icon: _skuPhotoLookupInProgress
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(
+                                Icons.image_search_outlined,
+                                size: 20,
+                              ),
+                        label: const Text('Найти фото'),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 8),
               TextField(
@@ -2307,6 +2470,12 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_photoLookupMessage != null)
+              _ManualInlineNotice(
+                message: _photoLookupMessage!,
+                pulse: _photoLookupPulse,
+                success: _photoLookupSuccess,
+              ),
             if (!_isEditMode && _saveBannerMessage != null)
               _ManualSaveBanner(
                 message: _saveBannerMessage!,

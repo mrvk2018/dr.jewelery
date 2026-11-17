@@ -146,6 +146,13 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return text.isEmpty ? '—' : text;
   }
 
+  static String? _productId(Map<String, dynamic>? row) {
+    if (row == null) return null;
+    final id = row['id']?.toString().trim();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
   double _weight(Map<String, dynamic> row) {
     return (row['weight_grams'] as num?)?.toDouble() ?? 0;
   }
@@ -162,7 +169,10 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return urls.isEmpty ? null : urls.first;
   }
 
-  Future<void> _fetchAndMergeProductMedia(String sku) async {
+  Future<void> _fetchAndMergeProductMedia({
+    required String sku,
+    required String? expectedProductId,
+  }) async {
     if (sku.isEmpty) return;
 
     try {
@@ -170,7 +180,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       if (!mounted || media == null) return;
 
       final selected = _selected;
-      if (selected == null || _cell(selected, 'sku') != sku) return;
+      if (selected == null) return;
+      if (expectedProductId != null &&
+          _productId(selected) != expectedProductId) {
+        return;
+      }
 
       setState(() {
         _selected = Map<String, dynamic>.from(selected)
@@ -185,8 +199,12 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
   Future<void> _selectProductRow(Map<String, dynamic> row) async {
     final sku = row['sku']?.toString().trim() ?? '';
+    final productId = _productId(row);
     setState(() => _selected = row);
-    await _fetchAndMergeProductMedia(sku);
+    await _fetchAndMergeProductMedia(
+      sku: sku,
+      expectedProductId: productId,
+    );
   }
 
   Future<void> _addPhotoToSelected() async {
@@ -233,11 +251,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   void _applyRows(List<Map<String, dynamic>> rows) {
     final active = rows.where(_isShowroomRow).toList();
     Map<String, dynamic>? selected = _selected;
-    if (selected != null) {
-      final sku = _cell(selected, 'sku');
+    final previousId = _productId(selected);
+    if (previousId != null) {
       selected = null;
       for (final row in active) {
-        if (_cell(row, 'sku') == sku) {
+        if (_productId(row) == previousId) {
           selected = row;
           break;
         }
@@ -250,7 +268,12 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     if (selected != null) {
       final sku = _cell(selected, 'sku');
       if (sku != '—') {
-        unawaited(_fetchAndMergeProductMedia(sku));
+        unawaited(
+          _fetchAndMergeProductMedia(
+            sku: sku,
+            expectedProductId: _productId(selected),
+          ),
+        );
       }
     }
   }
@@ -394,11 +417,14 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
+    final currentRow = _selected ?? row;
     final sku = row['sku']?.toString().trim() ?? '';
     if (sku.isNotEmpty) {
-      await _fetchAndMergeProductMedia(sku);
+      await _fetchAndMergeProductMedia(
+        sku: sku,
+        expectedProductId: _productId(currentRow),
+      );
     }
-    final currentRow = _selected ?? row;
     try {
       final product = ProductItem.fromJson(
         CloudDatabaseService.productRowToClientJson(currentRow),
@@ -549,7 +575,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       supabaseUser: Supabase.instance.client.auth.currentUser,
       localPanelAdmin: profile.isLocalAdminAuthenticated,
     );
-    final selectedSku = _selected == null ? null : _cell(_selected!, 'sku');
+    final selectedProductId = _productId(_selected);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -588,7 +614,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                         constraints: BoxConstraints(minHeight: tableMinHeight),
                         child: _ProductTablePanel(
                           products: _products,
-                          selectedSku: selectedSku,
+                          selectedProductId: selectedProductId,
                           isSuperAdmin: isSuperAdmin,
                           onSelect: _selectProductRow,
                           onEdit: _openEditProductDialog,
@@ -610,7 +636,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                       ),
                       child: _ProductTablePanel(
                         products: _products,
-                        selectedSku: selectedSku,
+                        selectedProductId: selectedProductId,
                         isSuperAdmin: isSuperAdmin,
                         onSelect: _selectProductRow,
                         onEdit: _openEditProductDialog,
@@ -760,7 +786,7 @@ class _TopControlBar extends StatelessWidget {
 class _ProductTablePanel extends StatefulWidget {
   const _ProductTablePanel({
     required this.products,
-    required this.selectedSku,
+    required this.selectedProductId,
     required this.isSuperAdmin,
     required this.onSelect,
     required this.onEdit,
@@ -774,7 +800,7 @@ class _ProductTablePanel extends StatefulWidget {
   });
 
   final List<Map<String, dynamic>> products;
-  final String? selectedSku;
+  final String? selectedProductId;
   final bool isSuperAdmin;
   final ValueChanged<Map<String, dynamic>> onSelect;
   final ValueChanged<Map<String, dynamic>> onEdit;
@@ -920,7 +946,9 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                           itemBuilder: (context, index) {
                             final row = products[index];
                             final sku = widget.cell(row, 'sku');
-                            final selected = sku == widget.selectedSku;
+                            final rowId = row['id']?.toString().trim() ?? '';
+                            final selected = rowId.isNotEmpty &&
+                                rowId == widget.selectedProductId;
                             final thumb = widget.thumbnailUrl(row);
 
                             return Material(

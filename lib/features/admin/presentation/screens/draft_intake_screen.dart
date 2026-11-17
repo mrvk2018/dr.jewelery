@@ -32,7 +32,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   bool _searchLoading = false;
   bool _bulkBusy = false;
-  final Set<String> _rowBusySkus = {};
+  final Set<String> _rowBusyIds = {};
 
   @override
   void initState() {
@@ -291,9 +291,27 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }
   }
 
+  static String? _productId(Map<String, dynamic> row) {
+    final id = row['id']?.toString().trim();
+    if (id == null || id.isEmpty) return null;
+    return id;
+  }
+
+  static String? _storeCodeForActivate(Map<String, dynamic> row) {
+    if (isStoreLocationUnsetInDatabase(row)) return null;
+    return normalizeStoreLocationCode(
+      storeLocation: row['store_location']?.toString(),
+      productRow: row,
+    );
+  }
+
   Future<void> _acceptSingle(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
-    if (sku == '—') return;
+    final productId = _productId(row);
+    if (sku == '—' || productId == null) {
+      _showSnack('Нет id черновика', isError: true);
+      return;
+    }
 
     final productName = await _confirmAcceptWithPreview(row);
     if (productName == null || !mounted) return;
@@ -301,43 +319,42 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     final storeReady = await _ensureDraftStoreBeforeAccept(row);
     if (!storeReady || !mounted) return;
 
-    setState(() => _rowBusySkus.add(sku));
+    final storeCode = _storeCodeForActivate(row);
+
+    setState(() => _rowBusyIds.add(productId));
     try {
-      final notesSaved = await widget.database.updateProductNotesBySku(
-        sku,
-        productName,
+      final result = await widget.database.activateDraftProductById(
+        id: productId,
+        notes: productName,
+        storeLocation: storeCode,
       );
       if (!mounted) return;
-      if (!notesSaved) {
-        _showSnack('Не удалось сохранить наименование', isError: true);
-        return;
-      }
-
-      final ok = await widget.database.activateDraftProductBySku(sku);
-      if (!mounted) return;
-      if (!ok) {
-        _showSnack('Не удалось активировать $sku (RLS или уже принят)', isError: true);
+      if (!result.ok) {
+        _showSnack(
+          result.error ?? 'Не удалось активировать (уже принят?)',
+          isError: true,
+        );
         return;
       }
 
       final printRow = Map<String, dynamic>.from(row)..['notes'] = productName;
-      _showSnack('Принят $sku — на витрине (stock=1)');
-      if (mounted) setState(() => _rowBusySkus.remove(sku));
+      _showSnack('Принят 1 экз. $sku — на витрине (stock=1)');
       _safeFireAndForgetPrint(printRow);
       await _runSearch(_searchController.text);
     } catch (error) {
       if (!mounted) return;
       _showSnack('Ошибка приёмки: $error', isError: true);
     } finally {
-      if (mounted) setState(() => _rowBusySkus.remove(sku));
+      if (mounted) setState(() => _rowBusyIds.remove(productId));
     }
   }
 
   Future<void> _editSingle(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
-    if (sku == '—') return;
+    final productId = _productId(row);
+    if (sku == '—' || productId == null) return;
 
-    setState(() => _rowBusySkus.add(sku));
+    setState(() => _rowBusyIds.add(productId));
     try {
       final editRow = Map<String, dynamic>.from(row);
       final media = await widget.database.fetchProductMediaFieldsBySku(sku);
@@ -357,7 +374,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
       if (!mounted) return;
       _showSnack('Ошибка редактирования: $error', isError: true);
     } finally {
-      if (mounted) setState(() => _rowBusySkus.remove(sku));
+      if (mounted) setState(() => _rowBusyIds.remove(productId));
     }
   }
 
@@ -388,11 +405,15 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     );
     if (confirmed != true || !mounted) return;
 
-    final productId = row['id']?.toString().trim();
-    setState(() => _rowBusySkus.add(sku));
+    final productId = _productId(row);
+    if (productId == null) {
+      _showSnack('Нет id черновика', isError: true);
+      return;
+    }
+    setState(() => _rowBusyIds.add(productId));
     try {
       final res = await widget.database.deleteDraftProduct(
-        id: productId != null && productId.isNotEmpty ? productId : null,
+        id: productId,
         sku: sku,
       );
       if (!mounted) return;
@@ -404,13 +425,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         return;
       }
       setState(() {
-        _drafts = _drafts.where((draft) {
-          final draftId = draft['id']?.toString().trim();
-          if (productId != null && productId.isNotEmpty && draftId != null) {
-            return draftId != productId;
-          }
-          return _field(draft, 'sku') != sku;
-        }).toList(growable: false);
+        _drafts = _drafts
+            .where((draft) => _productId(draft) != productId)
+            .toList(growable: false);
       });
       _showSnack('Черновик $sku удалён');
       await _runSearch(_searchController.text);
@@ -418,7 +435,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
       if (!mounted) return;
       _showSnack('Ошибка удаления: $error', isError: true);
     } finally {
-      if (mounted) setState(() => _rowBusySkus.remove(sku));
+      if (mounted) setState(() => _rowBusyIds.remove(productId));
     }
   }
 
@@ -501,7 +518,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                   child: _DraftTable(
                     drafts: _drafts,
                     loading: _searchLoading,
-                    busySkus: _rowBusySkus,
+                    busyIds: _rowBusyIds,
                     onAcceptRow: _acceptSingle,
                     onPrintRow: _printLabelForProduct,
                     onEditRow: _editSingle,
@@ -607,7 +624,7 @@ class _DraftTable extends StatelessWidget {
   const _DraftTable({
     required this.drafts,
     required this.loading,
-    required this.busySkus,
+    required this.busyIds,
     required this.onAcceptRow,
     required this.onPrintRow,
     required this.onEditRow,
@@ -617,7 +634,7 @@ class _DraftTable extends StatelessWidget {
 
   final List<Map<String, dynamic>> drafts;
   final bool loading;
-  final Set<String> busySkus;
+  final Set<String> busyIds;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
   final Future<void> Function(Map<String, dynamic> row) onPrintRow;
   final Future<void> Function(Map<String, dynamic> row) onEditRow;
@@ -662,7 +679,9 @@ class _DraftTable extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final row = drafts[index];
                     final sku = _DraftIntakeScreenState._field(row, 'sku');
-                    final busy = busySkus.contains(sku);
+                    final rowId =
+                        _DraftIntakeScreenState._productId(row) ?? '';
+                    final busy = busyIds.contains(rowId);
                     return narrow
                         ? _DraftTableNarrowRow(
                             row: row,

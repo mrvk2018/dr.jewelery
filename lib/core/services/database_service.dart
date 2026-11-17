@@ -10,6 +10,7 @@ import '../../features/catalog/domain/models/catalog_constants.dart';
 import '../../features/admin/domain/admin_pos_archive_result.dart';
 import '../../features/admin/domain/draft_delete_result.dart';
 import '../../features/admin/domain/draft_store_location_result.dart';
+import '../../features/admin/domain/draft_activate_result.dart';
 import '../../features/admin/domain/draft_update_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
@@ -94,7 +95,11 @@ abstract final class AdminCatalogRpc {
   static const posPaymentMethodParam = 'p_payment_method';
   static const productIdParam = 'p_product_id';
   static const activateDraftBySku = 'activate_draft_product_by_sku';
+  static const activateDraftById = 'activate_draft_product_by_id';
+  static const activateDraftsByIds = 'activate_draft_products_by_ids';
   static const activateAllDrafts = 'activate_all_draft_products';
+  static const draftNotesParam = 'p_notes';
+  static const draftIdsParam = 'p_ids';
   static const adminGetProductGalleryContextBySku =
       'admin_get_product_gallery_context_by_sku';
   static const adminSetProductAdditionalImages =
@@ -448,8 +453,18 @@ abstract class DatabaseService {
   /// Сленг витрины из `public.jewelry_thesaurus.slang_word`.
   Future<List<String>> fetchJewelryThesaurusSlang();
 
-  /// Активация одного черновика: `stock_quantity` 0 → 1 (admin / RLS).
+  /// Legacy: активация одного черновика по sku (RPC ограничен одной строкой).
   Future<bool> activateDraftProductBySku(String sku);
+
+  /// Активация одного черновика строго по `products.id`.
+  Future<DraftActivateResult> activateDraftProductById({
+    required String id,
+    String? notes,
+    String? storeLocation,
+  });
+
+  /// Массовая активация выбранных черновиков по списку id.
+  Future<int> activateDraftProductsByIds(List<String> ids);
 
   /// Массовая активация всех черновиков (`stock_quantity = 0` → `1`).
   Future<int> activateAllDraftProducts();
@@ -530,8 +545,11 @@ abstract class DatabaseService {
     bool writeStoreLocation = false,
   });
 
-  /// Обновление поля `notes` по SKU.
+  /// Обновление поля `notes` по SKU (все строки с этим sku).
   Future<bool> updateProductNotesBySku(String sku, String notes);
+
+  /// Обновление поля `notes` по уникальному `products.id`.
+  Future<bool> updateProductNotesById(String id, String notes);
 
   /// Загрузка фото в Storage `product-images` и append в `additional_images` (макс. 4).
   /// Возвращает public URL или null при ошибке / лимите.
@@ -1875,6 +1893,114 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static DraftActivateResult _parseDraftActivateRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] == true) {
+        return (
+          ok: true,
+          id: map['id']?.toString(),
+          sku: map['sku']?.toString(),
+          storeLocation: map['store_location']?.toString(),
+          error: null,
+        );
+      }
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        storeLocation: null,
+        error: message == null || message.isEmpty ? 'Ошибка сервера' : message,
+      );
+    }
+    return (
+      ok: false,
+      id: null,
+      sku: null,
+      storeLocation: null,
+      error: 'Неизвестный ответ сервера',
+    );
+  }
+
+  @override
+  Future<DraftActivateResult> activateDraftProductById({
+    required String id,
+    String? notes,
+    String? storeLocation,
+  }) async {
+    final productId = id.trim();
+    if (productId.isEmpty) {
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        storeLocation: null,
+        error: 'Пустой id',
+      );
+    }
+    try {
+      final params = <String, dynamic>{
+        AdminCatalogRpc.draftProductIdParam: productId,
+        AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+      };
+      final trimmedNotes = notes?.trim();
+      if (trimmedNotes != null && trimmedNotes.isNotEmpty) {
+        params[AdminCatalogRpc.draftNotesParam] = trimmedNotes;
+      }
+      final trimmedStore = storeLocation?.trim();
+      if (trimmedStore != null && trimmedStore.isNotEmpty) {
+        params[AdminCatalogRpc.draftStoreLocationParam] = trimmedStore;
+      }
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.activateDraftById,
+        params: params,
+      );
+      return _parseDraftActivateRpc(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.activateDraftProductById failed: $error');
+      debugPrint('$stackTrace');
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        storeLocation: null,
+        error: error.toString(),
+      );
+    }
+  }
+
+  @override
+  Future<int> activateDraftProductsByIds(List<String> ids) async {
+    final normalized = ids
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (normalized.isEmpty) return 0;
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.activateDraftsByIds,
+        params: {
+          AdminCatalogRpc.draftIdsParam: normalized,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      if (result is Map) {
+        final map = Map<String, dynamic>.from(result);
+        if (map['ok'] == true) {
+          final activated = map['activated'];
+          if (activated is num) return activated.toInt();
+          return int.tryParse(activated?.toString() ?? '') ?? 0;
+        }
+      }
+      return 0;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.activateDraftProductsByIds failed: $error');
+      debugPrint('$stackTrace');
+      return 0;
+    }
+  }
+
   @override
   Future<int> activateAllDraftProducts() async {
     try {
@@ -2385,6 +2511,24 @@ class CloudDatabaseService implements DatabaseService {
       return rows.isNotEmpty;
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.updateProductNotesBySku failed: $error');
+      debugPrint('$stackTrace');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> updateProductNotesById(String id, String notes) async {
+    final productId = id.trim();
+    if (productId.isEmpty) return false;
+    try {
+      final rows = await _supabaseClient
+          .from('products')
+          .update({'notes': notes.trim()})
+          .eq('id', productId)
+          .select('id');
+      return rows.isNotEmpty;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.updateProductNotesById failed: $error');
       debugPrint('$stackTrace');
       return false;
     }

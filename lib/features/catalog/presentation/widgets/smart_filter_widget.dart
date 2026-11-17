@@ -18,12 +18,16 @@ class SmartFilterWidget extends StatefulWidget {
     DatabaseService? database,
     this.goldGramPrice = 95000.0,
     this.silverGramPrice = 3500.0,
+    this.compactAdminLayout = false,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
   final void Function(List<Map<String, dynamic>> products) onFilterApplied;
   final double goldGramPrice;
   final double silverGramPrice;
+
+  /// Компактная вёрстка для админ-рабочего стола (сворачивание, плотные отступы).
+  final bool compactAdminLayout;
 
   static const String goldUmbrella = 'Золото';
 
@@ -41,7 +45,6 @@ class SmartFilterWidget extends StatefulWidget {
     'Белое золото',
   ];
 
-  /// Значения `products.category` (склад DrJaw / ручной ввод).
   static const List<String> categoryFilterLabels = [
     'Кольцо',
     'Серьги',
@@ -71,11 +74,11 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   final Set<String> _selectedCategoryTags = {};
   final Set<String> _selectedSlangTags = {};
 
-  /// `null` — все магазины.
   String? _selectedStoreLocation;
 
   bool _isApplying = false;
   int _applyGeneration = 0;
+  bool _filterCollapsed = false;
 
   @override
   void dispose() {
@@ -200,354 +203,324 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
     await _applyFilter();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final maxContentWidth = MediaQuery.sizeOf(context).width.clamp(320.0, 1200.0);
+  int get _activeFacetCount =>
+      _selectedMetalTags.length +
+      _selectedCategoryTags.length +
+      _selectedSlangTags.length +
+      (_selectedStoreLocation != null ? 1 : 0);
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxContentWidth),
-        child: Material(
-          color: AppColors.cardBackground,
-          elevation: 0,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Фильтр витрины',
-                  style: AppTypography.heading(fontSize: 18),
-                ),
-                const SizedBox(height: 12),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide = constraints.maxWidth >= 520;
-                    final priceFields = [
-                      Expanded(
-                        child: _FilterTextField(
-                          controller: _minPriceController,
-                          label: 'От (₩)',
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _FilterTextField(
-                          controller: _maxPriceController,
-                          label: 'До (₩)',
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                      ),
-                    ];
+  Widget _buildCompactFilterBody(double maxWidth) {
+    final fourInRow = maxWidth >= 560;
+    final twoInRow = maxWidth >= 360 && !fourInRow;
 
-                    final skuWeightFields = [
-                      Expanded(
-                        child: _FilterTextField(
-                          controller: _skuController,
-                          label: 'Артикул (SKU)',
-                          onSubmitted: _submitFilterField,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _FilterTextField(
-                          controller: _weightController,
-                          label: 'Вес, г',
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                      ),
-                    ];
+    Widget fieldRow(List<Widget> fields) {
+      if (fourInRow) {
+        return Row(children: fields);
+      }
+      if (twoInRow) {
+        return Row(
+          children: [
+            Expanded(child: fields[0]),
+            const SizedBox(width: 8),
+            Expanded(child: fields[1]),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < fields.length; i++) ...[
+            if (i > 0) const SizedBox(height: 6),
+            fields[i],
+          ],
+        ],
+      );
+    }
 
-                    if (isWide) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(children: priceFields),
-                          const SizedBox(height: 12),
-                          Row(children: skuWeightFields),
-                        ],
-                      );
-                    }
-                    return Column(
-                      children: [
-                        _FilterTextField(
-                          controller: _minPriceController,
-                          label: 'От (₩)',
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                        const SizedBox(height: 12),
-                        _FilterTextField(
-                          controller: _maxPriceController,
-                          label: 'До (₩)',
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                        const SizedBox(height: 12),
-                        _FilterTextField(
-                          controller: _skuController,
-                          label: 'Артикул (SKU)',
-                          onSubmitted: _submitFilterField,
-                        ),
-                        const SizedBox(height: 12),
-                        _FilterTextField(
-                          controller: _weightController,
-                          label: 'Вес, г',
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9.,]'),
-                            ),
-                          ],
-                          onSubmitted: _submitFilterField,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 16),
-                Text('Магазин', style: AppTypography.heading(fontSize: 15)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _StoreFilterChip(
-                      label: 'Все',
-                      selected: _selectedStoreLocation == null,
-                      onTap: _isApplying
-                          ? null
-                          : () => _selectStoreFilter(null),
-                    ),
-                    _StoreFilterChip(
-                      label: 'Инчхон',
-                      selected:
-                          _selectedStoreLocation == StoreLocationCode.icn,
-                      onTap: _isApplying
-                          ? null
-                          : () => _selectStoreFilter(StoreLocationCode.icn),
-                    ),
-                    _StoreFilterChip(
-                      label: 'Ансан',
-                      selected:
-                          _selectedStoreLocation == StoreLocationCode.ans,
-                      onTap: _isApplying
-                          ? null
-                          : () => _selectStoreFilter(StoreLocationCode.ans),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _FacetChipSection(
-                  title: 'Металл',
-                  labels: SmartFilterWidget.metalFilterLabels,
-                  selected: _selectedMetalTags,
-                  onToggle: _toggleMetalTag,
-                ),
-                const SizedBox(height: 14),
-                _FacetChipSection(
-                  title: 'Категория',
-                  labels: SmartFilterWidget.categoryFilterLabels,
-                  selected: _selectedCategoryTags,
-                  onToggle: _toggleCategoryTag,
-                ),
-                if (_selectedSlangTags.isNotEmpty) ...[
-                  const SizedBox(height: 12),
+    final minField = _FilterTextField(
+      controller: _minPriceController,
+      label: 'От (₩)',
+      compact: true,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onSubmitted: _submitFilterField,
+    );
+    final maxField = _FilterTextField(
+      controller: _maxPriceController,
+      label: 'До (₩)',
+      compact: true,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      onSubmitted: _submitFilterField,
+    );
+    final skuField = _FilterTextField(
+      controller: _skuController,
+      label: 'Артикул (SKU)',
+      compact: true,
+      onSubmitted: _submitFilterField,
+    );
+    final weightField = _FilterTextField(
+      controller: _weightController,
+      label: 'Вес, г',
+      compact: true,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      ],
+      onSubmitted: _submitFilterField,
+    );
+
+    Widget paddedExpanded(Widget child) => Expanded(child: child);
+
+    final inputs = fourInRow
+        ? Row(
+            children: [
+              paddedExpanded(minField),
+              const SizedBox(width: 8),
+              paddedExpanded(maxField),
+              const SizedBox(width: 8),
+              paddedExpanded(skuField),
+              const SizedBox(width: 8),
+              paddedExpanded(weightField),
+            ],
+          )
+        : Column(
+            children: [
+              fieldRow([minField, maxField]),
+              const SizedBox(height: 6),
+              fieldRow([skuField, weightField]),
+            ],
+          );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        inputs,
+        const SizedBox(height: 8),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
+                runSpacing: 4,
+                children: [
                   Text(
-                    'Сленг: ${_selectedSlangTags.join(', ')}',
-                    style: AppTypography.productMeta().copyWith(fontSize: 12),
+                    'Магазин',
+                    style: AppTypography.productMeta().copyWith(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  _CompactFilterChip(
+                    label: 'Все',
+                    selected: _selectedStoreLocation == null,
+                    onTap: _isApplying ? null : () => _selectStoreFilter(null),
+                  ),
+                  _CompactFilterChip(
+                    label: 'Инчхон',
+                    selected: _selectedStoreLocation == StoreLocationCode.icn,
+                    onTap: _isApplying
+                        ? null
+                        : () => _selectStoreFilter(StoreLocationCode.icn),
+                  ),
+                  _CompactFilterChip(
+                    label: 'Ансан',
+                    selected: _selectedStoreLocation == StoreLocationCode.ans,
+                    onTap: _isApplying
+                        ? null
+                        : () => _selectStoreFilter(StoreLocationCode.ans),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 20,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    color: AppColors.border,
+                  ),
+                  Text(
+                    'Металл',
+                    style: AppTypography.productMeta().copyWith(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  ...SmartFilterWidget.metalFilterLabels.map(
+                    (label) => _CompactFilterChip(
+                      label: label,
+                      selected: _selectedMetalTags.contains(label),
+                      onTap: _isApplying ? null : () => _toggleMetalTag(label),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.end,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _isApplying ? null : _openAdditionalFilterDialog,
-                      icon: const Icon(Icons.tune_rounded, size: 20),
-                      label: Text(
-                        _selectedSlangTags.isEmpty
-                            ? 'Дополнительно'
-                            : 'Дополнительно (${_selectedSlangTags.length})',
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.border),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _isApplying ? null : _resetFilter,
-                      icon: const Icon(Icons.refresh_rounded, size: 20),
-                      label: const Text('Сбросить'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textSecondary,
-                        side: const BorderSide(color: AppColors.border),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                    FilledButton.icon(
-                      onPressed: _isApplying ? null : _applyFilter,
-                      icon: _isApplying
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.search_rounded, size: 20),
-                      label: Text(
-                        _isApplying ? 'Загрузка…' : 'Показать результаты',
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: AppColors.textOnAccent,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
-      ),
-    );
-  }
-}
-
-class _FacetChipSection extends StatelessWidget {
-  const _FacetChipSection({
-    required this.title,
-    required this.labels,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  final String title;
-  final List<String> labels;
-  final Set<String> selected;
-  final ValueChanged<String> onToggle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: AppTypography.productMeta().copyWith(
-            fontWeight: FontWeight.w700,
-            color: AppColors.textSecondary,
-          ),
+        const SizedBox(height: 6),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            Text(
+              'Категория',
+              style: AppTypography.productMeta().copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            ...SmartFilterWidget.categoryFilterLabels.map(
+              (label) => _CompactFilterChip(
+                label: label,
+                selected: _selectedCategoryTags.contains(label),
+                onTap: _isApplying ? null : () => _toggleCategoryTag(label),
+              ),
+            ),
+          ],
         ),
+        if (_selectedSlangTags.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Сленг: ${_selectedSlangTags.join(', ')}',
+            style: AppTypography.productMeta().copyWith(fontSize: 11),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
-          runSpacing: 8,
-          children: labels.map((label) {
-            final isSelected = selected.contains(label);
-            return FilterChip(
-              label: Text(label),
-              selected: isSelected,
-              onSelected: (_) => onToggle(label),
-              selectedColor: AppColors.accent.withValues(alpha: 0.25),
-              checkmarkColor: AppColors.accent,
-              side: const BorderSide(color: AppColors.border),
-            );
-          }).toList(),
+          runSpacing: 6,
+          alignment: WrapAlignment.end,
+          children: [
+            _CompactActionButton(
+              icon: Icons.tune_rounded,
+              label: _selectedSlangTags.isEmpty
+                  ? 'Дополнительно'
+                  : 'Доп. (${_selectedSlangTags.length})',
+              onPressed: _isApplying ? null : _openAdditionalFilterDialog,
+              outlined: true,
+            ),
+            _CompactActionButton(
+              icon: Icons.refresh_rounded,
+              label: 'Сбросить',
+              onPressed: _isApplying ? null : _resetFilter,
+              outlined: true,
+            ),
+            _CompactActionButton(
+              icon: Icons.search_rounded,
+              label: _isApplying ? 'Загрузка…' : 'Показать',
+              onPressed: _isApplying ? null : _applyFilter,
+              loading: _isApplying,
+              filled: true,
+            ),
+          ],
         ),
       ],
     );
   }
-}
 
-class _FilterTextField extends StatelessWidget {
-  const _FilterTextField({
-    required this.controller,
-    required this.label,
-    this.keyboardType,
-    this.inputFormatters,
-    this.onSubmitted,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final TextInputType? keyboardType;
-  final List<TextInputFormatter>? inputFormatters;
-  final ValueChanged<String>? onSubmitted;
+  Widget _buildLegacyBody(double maxWidth) => _buildCompactFilterBody(maxWidth);
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      onSubmitted: onSubmitted,
-      textInputAction: TextInputAction.search,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: AppColors.background,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.border),
+    final compact = widget.compactAdminLayout;
+
+    final content = Material(
+      color: AppColors.cardBackground,
+      elevation: 0,
+      borderRadius: BorderRadius.circular(compact ? 10 : 16),
+      child: Container(
+        padding: EdgeInsets.all(compact ? 10 : 16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(compact ? 10 : 16),
+          border: Border.all(color: AppColors.border),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.border),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final filterBody = compact
+                ? _buildCompactFilterBody(constraints.maxWidth)
+                : _buildLegacyBody(constraints.maxWidth);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Фильтр витрины',
+                        style: AppTypography.heading(
+                          fontSize: compact ? 14 : 18,
+                        ),
+                      ),
+                    ),
+                    if (compact && _activeFacetCount > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Text(
+                          'активно: $_activeFacetCount',
+                          style: AppTypography.productMeta().copyWith(
+                            fontSize: 11,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    if (compact)
+                      TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _filterCollapsed = !_filterCollapsed),
+                        icon: Icon(
+                          _filterCollapsed
+                              ? Icons.unfold_more
+                              : Icons.unfold_less,
+                          size: 18,
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        label: Text(
+                          _filterCollapsed ? 'Развернуть' : 'Свернуть',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                  ],
+                ),
+                if (!compact || !_filterCollapsed) ...[
+                  SizedBox(height: compact ? 8 : 12),
+                  filterBody,
+                ],
+              ],
+            );
+          },
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
-        ),
+      ),
+    );
+
+    if (compact) {
+      return content;
+    }
+
+    final maxContentWidth = MediaQuery.sizeOf(context).width.clamp(320.0, 1200.0);
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxContentWidth),
+        child: content,
       ),
     );
   }
 }
 
-class _StoreFilterChip extends StatelessWidget {
-  const _StoreFilterChip({
+class _CompactFilterChip extends StatelessWidget {
+  const _CompactFilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -560,12 +533,129 @@ class _StoreFilterChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilterChip(
-      label: Text(label),
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 11),
+      ),
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       selected: selected,
       onSelected: onTap == null ? null : (_) => onTap!(),
-      selectedColor: AppColors.accent.withValues(alpha: 0.25),
+      selectedColor: AppColors.accent.withValues(alpha: 0.22),
       checkmarkColor: AppColors.accent,
       side: const BorderSide(color: AppColors.border),
+    );
+  }
+}
+
+class _CompactActionButton extends StatelessWidget {
+  const _CompactActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.outlined = false,
+    this.filled = false,
+    this.loading = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool outlined;
+  final bool filled;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = loading
+        ? const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : Icon(icon, size: 16);
+
+    final style = ButtonStyle(
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      ),
+      minimumSize: const WidgetStatePropertyAll(Size(0, 32)),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+    );
+
+    if (filled) {
+      return FilledButton.icon(
+        onPressed: onPressed,
+        style: style.copyWith(
+          backgroundColor: const WidgetStatePropertyAll(AppColors.accent),
+          foregroundColor: const WidgetStatePropertyAll(AppColors.textOnAccent),
+        ),
+        icon: child,
+        label: Text(label),
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      style: style,
+      icon: child,
+      label: Text(label),
+    );
+  }
+}
+
+class _FilterTextField extends StatelessWidget {
+  const _FilterTextField({
+    required this.controller,
+    required this.label,
+    this.keyboardType,
+    this.inputFormatters,
+    this.onSubmitted,
+    this.compact = false,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final ValueChanged<String>? onSubmitted;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(compact ? 8 : 12),
+      borderSide: const BorderSide(color: AppColors.border),
+    );
+
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      onSubmitted: onSubmitted,
+      textInputAction: TextInputAction.search,
+      style: TextStyle(fontSize: compact ? 12 : 14),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(fontSize: compact ? 11 : 13),
+        isDense: compact,
+        contentPadding: compact
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 10)
+            : null,
+        constraints: compact
+            ? const BoxConstraints(minHeight: 36, maxHeight: 40)
+            : null,
+        filled: true,
+        fillColor: AppColors.background,
+        border: border,
+        enabledBorder: border,
+        focusedBorder: border.copyWith(
+          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+        ),
+      ),
     );
   }
 }

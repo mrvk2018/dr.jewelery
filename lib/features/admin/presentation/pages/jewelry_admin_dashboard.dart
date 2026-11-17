@@ -157,6 +157,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   List<String> _imageUrls(Map<String, dynamic> row) =>
       productGalleryImageUrls(row);
 
+  String? _thumbnailUrlForRow(Map<String, dynamic> row) {
+    final urls = _imageUrls(row);
+    return urls.isEmpty ? null : urls.first;
+  }
+
   Future<void> _fetchAndMergeProductMedia(String sku) async {
     if (sku.isEmpty) return;
 
@@ -550,63 +555,86 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       backgroundColor: AppColors.background,
       body: _initialLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final lowViewport = constraints.maxHeight < 700;
+                final tableMinHeight = lowViewport ? 300.0 : 260.0;
+
+                final columnChildren = <Widget>[
                   _TopControlBar(
-                    database: widget.database,
                     isSuperAdmin: isSuperAdmin,
-                    onFilterApplied: _applyRows,
                     onOpenDraft: _openDraftIntake,
                     onOpenScrap: _openScrapIntake,
                     onAddProduct: _openAddProductDialog,
                     onProductReturn: _openProductReturnDialog,
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: _ProductTablePanel(
-                            products: _products,
-                            selectedSku: selectedSku,
-                            isSuperAdmin: isSuperAdmin,
-                            onSelect: _selectProductRow,
-                            onEdit: _openEditProductDialog,
-                            cell: _cell,
-                            insertLabel: adminProductInsertLabel,
-                            productName: extractStoredProductName,
-                            salePriceLabel: adminShowroomSalePriceLabel,
-                            weight: _weight,
-                            size: _size,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          flex: 2,
-                          child: _MediaAndKpiPanel(
-                            selected: _selected,
-                            imageUrls: _selected == null
-                                ? const []
-                                : _imageUrls(_selected!),
-                            totalCount: _products.length,
-                            totalWeightGrams: _totalWeightGrams,
-                            totalPriceKrw: _totalPriceKrw,
-                            storeStats: _storeSelectionStats,
-                            cell: _cell,
-                            weight: _weight,
-                            photoUploadBusy: _photoUploadBusy,
-                            onAddPhoto: _addPhotoToSelected,
-                          ),
-                        ),
-                      ],
-                    ),
+                  const SizedBox(height: 8),
+                  SmartFilterWidget(
+                    database: widget.database,
+                    compactAdminLayout: true,
+                    onFilterApplied: _applyRows,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  _ShowroomKpiStrip(
+                    totalCount: _products.length,
+                    totalWeightGrams: _totalWeightGrams,
+                    totalPriceKrw: _totalPriceKrw,
+                    storeStats: _storeSelectionStats,
+                  ),
+                  const SizedBox(height: 8),
+                  if (!lowViewport)
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: tableMinHeight),
+                        child: _ProductTablePanel(
+                          products: _products,
+                          selectedSku: selectedSku,
+                          isSuperAdmin: isSuperAdmin,
+                          onSelect: _selectProductRow,
+                          onEdit: _openEditProductDialog,
+                          cell: _cell,
+                          insertLabel: adminProductInsertLabel,
+                          productName: extractStoredProductName,
+                          salePriceLabel: adminShowroomSalePriceLabel,
+                          weight: _weight,
+                          size: _size,
+                          thumbnailUrl: _thumbnailUrlForRow,
+                        ),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: tableMinHeight,
+                        maxHeight: tableMinHeight,
+                      ),
+                      child: _ProductTablePanel(
+                        products: _products,
+                        selectedSku: selectedSku,
+                        isSuperAdmin: isSuperAdmin,
+                        onSelect: _selectProductRow,
+                        onEdit: _openEditProductDialog,
+                        cell: _cell,
+                        insertLabel: adminProductInsertLabel,
+                        productName: extractStoredProductName,
+                        salePriceLabel: adminShowroomSalePriceLabel,
+                        weight: _weight,
+                        size: _size,
+                        thumbnailUrl: _thumbnailUrlForRow,
+                      ),
+                    ),
+                  if (_selected != null) ...[
+                    const SizedBox(height: 8),
+                    _SelectedProductMediaBar(
+                      selected: _selected!,
+                      imageUrls: _imageUrls(_selected!),
+                      cell: _cell,
+                      weight: _weight,
+                      photoUploadBusy: _photoUploadBusy,
+                      onAddPhoto: _addPhotoToSelected,
+                    ),
+                  ],
+                  const SizedBox(height: 8),
                   _BottomActionBar(
                     hasSelection: _selected != null,
                     isSuperAdmin: isSuperAdmin,
@@ -618,8 +646,30 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     onMarkSold: _markSoldSelected,
                     onWriteOff: _writeOffSelected,
                   ),
-                ],
-              ),
+                ];
+
+                final padded = Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: lowViewport
+                      ? SingleChildScrollView(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: constraints.maxHeight - 20,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: columnChildren,
+                            ),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: columnChildren,
+                        ),
+                );
+
+                return padded;
+              },
             ),
     );
   }
@@ -627,75 +677,80 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
 class _TopControlBar extends StatelessWidget {
   const _TopControlBar({
-    required this.database,
     required this.isSuperAdmin,
-    required this.onFilterApplied,
     required this.onOpenDraft,
     required this.onOpenScrap,
     required this.onAddProduct,
     required this.onProductReturn,
   });
 
-  final DatabaseService database;
   final bool isSuperAdmin;
-  final void Function(List<Map<String, dynamic>> products) onFilterApplied;
   final VoidCallback onOpenDraft;
   final VoidCallback onOpenScrap;
   final VoidCallback onAddProduct;
   final VoidCallback onProductReturn;
 
+  static final _compactBtnStyle = ButtonStyle(
+    padding: const WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    ),
+    minimumSize: const WidgetStatePropertyAll(Size(0, 32)),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+    textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: AppColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              alignment: WrapAlignment.end,
-              children: [
-                if (isSuperAdmin) ...[
-                  OutlinedButton.icon(
-                    onPressed: onOpenDraft,
-                    icon: const Icon(Icons.move_to_inbox_outlined),
-                    label: const Text('Перейти в режим Приёмки (Черновики)'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: onOpenScrap,
-                    icon: const Icon(Icons.scale_outlined),
-                    label: const Text('Приёмка лома'),
-                  ),
-                  FilledButton.icon(
-                    onPressed: onAddProduct,
-                    icon: const Icon(Icons.add_circle_outline),
-                    label: const Text('Добавить товар'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.textOnPrimary,
-                    ),
-                  ),
-                ],
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              if (isSuperAdmin) ...[
                 OutlinedButton.icon(
-                  onPressed: onProductReturn,
-                  icon: const Icon(Icons.replay_outlined),
-                  label: const Text('Возврат товара'),
+                  onPressed: onOpenDraft,
+                  style: _compactBtnStyle,
+                  icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
+                  label: const Text('Приёмка черновиков'),
                 ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onOpenScrap,
+                  style: _compactBtnStyle,
+                  icon: const Icon(Icons.scale_outlined, size: 16),
+                  label: const Text('Приёмка лома'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: onAddProduct,
+                  style: _compactBtnStyle.copyWith(
+                    backgroundColor:
+                        const WidgetStatePropertyAll(AppColors.primary),
+                    foregroundColor:
+                        const WidgetStatePropertyAll(AppColors.textOnPrimary),
+                  ),
+                  icon: const Icon(Icons.add_circle_outline, size: 16),
+                  label: const Text('Добавить товар'),
+                ),
+                const SizedBox(width: 8),
               ],
-            ),
-            const SizedBox(height: 12),
-            SmartFilterWidget(
-              database: database,
-              onFilterApplied: onFilterApplied,
-            ),
-          ],
+              OutlinedButton.icon(
+                onPressed: onProductReturn,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.replay_outlined, size: 16),
+                label: const Text('Возврат товара'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -715,6 +770,7 @@ class _ProductTablePanel extends StatefulWidget {
     required this.salePriceLabel,
     required this.weight,
     required this.size,
+    required this.thumbnailUrl,
   });
 
   final List<Map<String, dynamic>> products;
@@ -728,30 +784,94 @@ class _ProductTablePanel extends StatefulWidget {
   final String Function(Map<String, dynamic>) salePriceLabel;
   final double Function(Map<String, dynamic>) weight;
   final double Function(Map<String, dynamic>) size;
+  final String? Function(Map<String, dynamic>) thumbnailUrl;
 
   @override
   State<_ProductTablePanel> createState() => _ProductTablePanelState();
 }
 
 class _ProductTablePanelState extends State<_ProductTablePanel> {
-  final ScrollController _horizontalScroll = ScrollController();
   final ScrollController _verticalScroll = ScrollController();
+
+  static const _rowHeight = 44.0;
+  static const _headerHeight = 38.0;
+
+  /// Доли ширины таблицы (сумма ≈ 1.0).
+  static const _colFlex = <double>[
+    0.06, // фото
+    0.11, // sku
+    0.08, // магазин
+    0.09, // металл
+    0.07, // вес
+    0.07, // размер
+    0.14, // вставки
+    0.09, // цена
+    0.21, // описание
+    0.08, // действие
+  ];
+
+  static const _headers = <String>[
+    'Фото',
+    'Артикул',
+    'Магазин',
+    'Металл',
+    'Вес, г',
+    'Размер',
+    'Вставки',
+    'Цена',
+    'Описание',
+    '',
+  ];
 
   @override
   void dispose() {
-    _horizontalScroll.dispose();
     _verticalScroll.dispose();
     super.dispose();
+  }
+
+  List<double> _columnWidths(double tableWidth) {
+  final horizontalPad = 16.0;
+  final inner = tableWidth - horizontalPad;
+    return _colFlex.map((f) => inner * f).toList();
+  }
+
+  Widget _headerCell(String label, double width) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        label,
+        style: AppTypography.productMeta().copyWith(
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _dataCell(String text, double width, {int maxLines = 1}) {
+    return SizedBox(
+      width: width,
+      child: Text(
+        text,
+        style: AppTypography.productMeta().copyWith(fontSize: 12),
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final products = widget.products;
+
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: AppColors.border),
       ),
       child: products.isEmpty
@@ -761,118 +881,313 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                 style: AppTypography.productMeta(),
               ),
             )
-          : Scrollbar(
-              controller: _horizontalScroll,
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: _horizontalScroll,
-                scrollDirection: Axis.horizontal,
-                child: Scrollbar(
-                  controller: _verticalScroll,
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    controller: _verticalScroll,
-                    scrollDirection: Axis.vertical,
-                    child: IntrinsicWidth(
-                      child: DataTable(
-                        columnSpacing: 28,
-                        horizontalMargin: 20,
-                        showCheckboxColumn: false,
-                        headingRowColor: WidgetStateProperty.all(
-                          AppColors.cardBackground,
-                        ),
-                        columns: const [
-                          DataColumn(label: Text('Артикул (SKU)')),
-                          DataColumn(label: Text('Магазин')),
-                          DataColumn(label: Text('Металл')),
-                          DataColumn(label: Text('Вес, г')),
-                          DataColumn(label: Text('Размер')),
-                          DataColumn(label: Text('Вставки')),
-                          DataColumn(label: Text('Цена')),
-                          DataColumn(label: Text('Описание')),
-                          DataColumn(label: Text('')),
-                        ],
-                        rows: products.map((row) {
-                          final sku = widget.cell(row, 'sku');
-                          final selected = sku == widget.selectedSku;
-                          return DataRow(
-                            selected: selected,
-                            onSelectChanged: (_) => widget.onSelect(row),
-                            color: WidgetStateProperty.resolveWith((states) {
-                              if (selected) {
-                                return AppColors.accent.withValues(alpha: 0.12);
-                              }
-                              return null;
-                            }),
-                            cells: [
-                              DataCell(Text(sku)),
-                              DataCell(
-                                _StoreLocationBadge(row: row),
-                              ),
-                              DataCell(Text(widget.cell(row, 'metal'))),
-                              DataCell(
-                                Text(widget.weight(row).toStringAsFixed(2)),
-                              ),
-                              DataCell(
-                                Text(widget.size(row).toStringAsFixed(2)),
-                              ),
-                              DataCell(Text(widget.insertLabel(row))),
-                              DataCell(Text(widget.salePriceLabel(row))),
-                              DataCell(
-                                SizedBox(
-                                  width: 220,
-                                  child: Text(
-                                    widget.productName(row),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final widths = _columnWidths(constraints.maxWidth);
+
+                Widget tableHeader() {
+                  return Container(
+                    height: _headerHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    alignment: Alignment.centerLeft,
+                    decoration: const BoxDecoration(
+                      color: AppColors.cardBackground,
+                      border: Border(
+                        bottom: BorderSide(color: AppColors.border),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < _headers.length; i++)
+                          _headerCell(_headers[i], widths[i]),
+                      ],
+                    ),
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    tableHeader(),
+                    Expanded(
+                      child: Scrollbar(
+                        controller: _verticalScroll,
+                        thumbVisibility: true,
+                        child: ListView.builder(
+                          controller: _verticalScroll,
+                          padding: const EdgeInsets.only(bottom: 4),
+                          itemCount: products.length,
+                          itemBuilder: (context, index) {
+                            final row = products[index];
+                            final sku = widget.cell(row, 'sku');
+                            final selected = sku == widget.selectedSku;
+                            final thumb = widget.thumbnailUrl(row);
+
+                            return Material(
+                              color: selected
+                                  ? AppColors.accent.withValues(alpha: 0.1)
+                                  : (index.isEven
+                                      ? AppColors.background
+                                      : AppColors.cardBackground),
+                              child: InkWell(
+                                onTap: () => widget.onSelect(row),
+                                child: SizedBox(
+                                  height: _rowHeight,
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.symmetric(horizontal: 8),
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: widths[0],
+                                          child: _TableThumb(url: thumb),
+                                        ),
+                                        _dataCell(sku, widths[1]),
+                                        SizedBox(
+                                          width: widths[2],
+                                          child: _StoreLocationBadge(row: row),
+                                        ),
+                                        _dataCell(
+                                          widget.cell(row, 'metal'),
+                                          widths[3],
+                                        ),
+                                        _dataCell(
+                                          widget
+                                              .weight(row)
+                                              .toStringAsFixed(2),
+                                          widths[4],
+                                        ),
+                                        _dataCell(
+                                          widget.size(row).toStringAsFixed(2),
+                                          widths[5],
+                                        ),
+                                        _dataCell(
+                                          widget.insertLabel(row),
+                                          widths[6],
+                                          maxLines: 2,
+                                        ),
+                                        _dataCell(
+                                          widget.salePriceLabel(row),
+                                          widths[7],
+                                        ),
+                                        _dataCell(
+                                          widget.productName(row),
+                                          widths[8],
+                                          maxLines: 2,
+                                        ),
+                                        SizedBox(
+                                          width: widths[9],
+                                          child: widget.isSuperAdmin
+                                              ? IconButton(
+                                                  tooltip: 'Редактировать',
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                    minWidth: 32,
+                                                    minHeight: 32,
+                                                  ),
+                                                  onPressed: () =>
+                                                      widget.onEdit(row),
+                                                  icon: const Icon(
+                                                    Icons.edit_outlined,
+                                                    size: 18,
+                                                  ),
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                widget.isSuperAdmin
-                                    ? IconButton(
-                                        tooltip: 'Редактировать карточку',
-                                        icon: const Text(
-                                          '✏️',
-                                          style: TextStyle(fontSize: 18),
-                                        ),
-                                        onPressed: () => widget.onEdit(row),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                            ],
-                          );
-                        }).toList(),
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ),
+                  ],
+                );
+              },
             ),
     );
   }
 }
 
-class _MediaAndKpiPanel extends StatelessWidget {
-  const _MediaAndKpiPanel({
-    required this.selected,
-    required this.imageUrls,
+class _TableThumb extends StatelessWidget {
+  const _TableThumb({this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.border),
+          color: AppColors.cardBackground,
+        ),
+        child: url == null
+            ? Icon(
+                Icons.image_outlined,
+                size: 18,
+                color: AppColors.textSecondary.withValues(alpha: 0.5),
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.network(
+                  url!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.broken_image_outlined, size: 18),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _ShowroomKpiStrip extends StatelessWidget {
+  const _ShowroomKpiStrip({
     required this.totalCount,
     required this.totalWeightGrams,
     required this.totalPriceKrw,
     required this.storeStats,
+  });
+
+  final int totalCount;
+  final double totalWeightGrams;
+  final int totalPriceKrw;
+  final Map<String, ShowroomStoreSelectionStats> storeStats;
+
+  String _storeLine(String code, String title) {
+    final stats = storeStats[code] ?? const ShowroomStoreSelectionStats();
+    return '$title ${stats.count} шт · '
+        '${stats.weightGrams.toStringAsFixed(1)} г · '
+        '${adminShowroomKrwLabel(stats.priceKrw)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 900;
+            final kpiRow = Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _KpiCompactChip(
+                  label: 'Позиций',
+                  value: '$totalCount',
+                ),
+                _KpiCompactChip(
+                  label: 'Масса',
+                  value: '${totalWeightGrams.toStringAsFixed(2)} г',
+                ),
+                _KpiCompactChip(
+                  label: 'Сумма',
+                  value: adminShowroomKrwLabel(totalPriceKrw),
+                ),
+                Container(
+                  width: 1,
+                  height: 28,
+                  color: AppColors.border,
+                ),
+                Text(
+                  _storeLine(StoreLocationCode.icn, 'Инчхон:'),
+                  style: AppTypography.productMeta().copyWith(fontSize: 11),
+                ),
+                Text(
+                  _storeLine(StoreLocationCode.ans, 'Ансан:'),
+                  style: AppTypography.productMeta().copyWith(fontSize: 11),
+                ),
+              ],
+            );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KPI витрины (текущая выборка)',
+                  style: AppTypography.heading(fontSize: 13),
+                ),
+                const SizedBox(height: 6),
+                if (narrow)
+                  kpiRow
+                else
+                  Row(
+                    children: [
+                      Expanded(child: kpiRow),
+                    ],
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _KpiCompactChip extends StatelessWidget {
+  const _KpiCompactChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: AppTypography.productMeta().copyWith(fontSize: 11),
+          ),
+          Text(
+            value,
+            style: AppTypography.productMeta().copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectedProductMediaBar extends StatelessWidget {
+  const _SelectedProductMediaBar({
+    required this.selected,
+    required this.imageUrls,
     required this.cell,
     required this.weight,
     required this.photoUploadBusy,
     required this.onAddPhoto,
   });
 
-  final Map<String, dynamic>? selected;
+  final Map<String, dynamic> selected;
   final List<String> imageUrls;
-  final int totalCount;
-  final double totalWeightGrams;
-  final int totalPriceKrw;
-  final Map<String, ShowroomStoreSelectionStats> storeStats;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
   final bool photoUploadBusy;
@@ -880,133 +1195,75 @@ class _MediaAndKpiPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sku = cell(selected, 'sku');
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: AppColors.border),
       ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
           children: [
-            Text('KPI витрины (текущая выборка)', style: AppTypography.heading(fontSize: 16)),
-            const SizedBox(height: 8),
+            Expanded(
+              child: Text(
+                'Фото · $sku · ${weight(selected).toStringAsFixed(2)} г · '
+                '${storeLocationDisplayLabelForRow(selected)}',
+                style: AppTypography.productMeta().copyWith(fontSize: 11),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: _KpiTile(
-                    label: 'Позиций',
-                    value: '$totalCount',
+                for (var index = 0;
+                    index < ProductItem.maxGalleryImages;
+                    index++) ...[
+                  if (index > 0) const SizedBox(width: 6),
+                  SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: _PhotoSlot(
+                      url: index < imageUrls.length
+                          ? imageUrls[index]
+                          : null,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _KpiTile(
-                    label: 'Суммарная масса',
-                    value: '${totalWeightGrams.toStringAsFixed(2)} г',
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _KpiTile(
-                    label: 'Общая сумма',
-                    value: adminShowroomKrwLabel(totalPriceKrw),
-                  ),
-                ),
+                ],
               ],
             ),
-            const SizedBox(height: 12),
-            _KpiStoreBreakdown(storeStats: storeStats),
-            const SizedBox(height: 20),
-            Text(
-              selected == null
-                  ? 'Фото товара'
-                  : 'Фото · ${cell(selected!, 'sku')}',
-              style: AppTypography.heading(fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            _ProductPhotoGrid(imageUrls: imageUrls),
-            if (selected != null) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: photoUploadBusy ||
-                          imageUrls.length >= ProductItem.maxGalleryImages
-                      ? null
-                      : onAddPhoto,
-                  icon: photoUploadBusy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add_photo_alternate_outlined),
-                  label: Text(
-                    'Добавить фото (${imageUrls.length}/${ProductItem.maxGalleryImages})',
-                  ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: photoUploadBusy ||
+                      imageUrls.length >= ProductItem.maxGalleryImages
+                  ? null
+                  : onAddPhoto,
+              style: ButtonStyle(
+                padding: const WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 ),
+                minimumSize: const WidgetStatePropertyAll(Size(0, 32)),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+                textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 11)),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Масса выбранного: ${weight(selected!).toStringAsFixed(2)} г',
-                style: AppTypography.productMeta(),
+              icon: photoUploadBusy
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_photo_alternate_outlined, size: 16),
+              label: Text(
+                'Добавить (${imageUrls.length}/${ProductItem.maxGalleryImages})',
               ),
-              Text(
-                'Магазин: ${storeLocationDisplayLabelForRow(selected!)}',
-                style: AppTypography.productMeta(),
-              ),
-            ],
+            ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _KpiStoreBreakdown extends StatelessWidget {
-  const _KpiStoreBreakdown({required this.storeStats});
-
-  final Map<String, ShowroomStoreSelectionStats> storeStats;
-
-  String _line(String code, String title) {
-    final stats = storeStats[code] ?? const ShowroomStoreSelectionStats();
-    return '$title: ${stats.count} шт · '
-        '${stats.weightGrams.toStringAsFixed(2)} г · '
-        '${adminShowroomKrwLabel(stats.priceKrw)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'По магазинам',
-            style: AppTypography.productMeta().copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            _line(StoreLocationCode.icn, 'Инчхон'),
-            style: AppTypography.productMeta(),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _line(StoreLocationCode.ans, 'Ансан'),
-            style: AppTypography.productMeta(),
-          ),
-        ],
       ),
     );
   }
@@ -1023,10 +1280,10 @@ class _StoreLocationBadge extends StatelessWidget {
     final label = storeLocationDisplayLabelForRow(row);
     final colors = storeLocationBadgeColors(code);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: colors.bg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(color: colors.fg.withValues(alpha: 0.25)),
       ),
       child: Text(
@@ -1034,70 +1291,11 @@ class _StoreLocationBadge extends StatelessWidget {
         style: AppTypography.productMeta().copyWith(
           color: colors.fg,
           fontWeight: FontWeight.w700,
-          fontSize: 12,
+          fontSize: 10,
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
-    );
-  }
-}
-
-class _KpiTile extends StatelessWidget {
-  const _KpiTile({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: AppTypography.productMeta(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: AppTypography.heading(fontSize: 18),
-              maxLines: 1,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProductPhotoGrid extends StatelessWidget {
-  const _ProductPhotoGrid({required this.imageUrls});
-
-  final List<String> imageUrls;
-
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      children: List.generate(ProductItem.maxGalleryImages, (index) {
-        final url = index < imageUrls.length ? imageUrls[index] : null;
-        return _PhotoSlot(url: url);
-      }),
     );
   }
 }
@@ -1109,36 +1307,29 @@ class _PhotoSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: url == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.image_not_supported_outlined,
-                    color: AppColors.textSecondary.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('Нет фото', style: AppTypography.productMeta()),
-                ],
-              )
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  url!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) =>
-                      const Icon(Icons.broken_image_outlined),
-                ),
-              ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
       ),
+      child: url == null
+          ? Icon(
+              Icons.image_not_supported_outlined,
+              size: 18,
+              color: AppColors.textSecondary.withValues(alpha: 0.5),
+            )
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                url!,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: double.infinity,
+                errorBuilder: (_, _, _) =>
+                    const Icon(Icons.broken_image_outlined, size: 18),
+              ),
+            ),
     );
   }
 }
@@ -1168,72 +1359,99 @@ class _BottomActionBar extends StatelessWidget {
 
   static const _soldGreen = Color(0xFF1B5E20);
 
+  static final _barBtnStyle = ButtonStyle(
+    padding: const WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    ),
+    minimumSize: const WidgetStatePropertyAll(Size(0, 34)),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
+    textStyle: const WidgetStatePropertyAll(
+      TextStyle(fontSize: 12, overflow: TextOverflow.ellipsis),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final buttons = <Widget>[
+      FilledButton.icon(
+        onPressed: hasSelection ? onAddToPosCart : null,
+        style: _barBtnStyle.copyWith(
+          backgroundColor: const WidgetStatePropertyAll(AppColors.accent),
+        ),
+        icon: const Icon(Icons.add_shopping_cart_outlined, size: 16),
+        label: const Text('В POS-корзину'),
+      ),
+      Badge(
+        isLabelVisible: posCartCount > 0,
+        label: Text('$posCartCount'),
+        child: OutlinedButton.icon(
+          onPressed: onOpenPosCart,
+          style: _barBtnStyle,
+          icon: const Icon(Icons.shopping_cart_checkout_outlined, size: 16),
+          label: Text(
+            posCartCount > 0 ? 'POS ($posCartCount)' : 'POS-корзина',
+          ),
+        ),
+      ),
+      FilledButton.tonalIcon(
+        onPressed: hasSelection ? onPrint : null,
+        style: _barBtnStyle,
+        icon: const Icon(Icons.print_outlined, size: 16),
+        label: const Text('Дубликат бирки'),
+      ),
+      if (isSuperAdmin) ...[
+        OutlinedButton.icon(
+          onPressed: hasSelection ? onEdit : null,
+          style: _barBtnStyle,
+          icon: const Icon(Icons.edit_outlined, size: 16),
+          label: const Text('Редактировать'),
+        ),
+        FilledButton.icon(
+          onPressed: hasSelection ? onMarkSold : null,
+          style: _barBtnStyle.copyWith(
+            backgroundColor: const WidgetStatePropertyAll(_soldGreen),
+            foregroundColor: const WidgetStatePropertyAll(Colors.white),
+          ),
+          icon: const Icon(Icons.handshake_outlined, size: 16),
+          label: const Text('Продано'),
+        ),
+        OutlinedButton.icon(
+          onPressed: hasSelection ? onWriteOff : null,
+          style: _barBtnStyle.copyWith(
+            foregroundColor: const WidgetStatePropertyAll(AppColors.saleRed),
+            side: const WidgetStatePropertyAll(
+              BorderSide(color: AppColors.saleRed),
+            ),
+          ),
+          icon: const Icon(Icons.delete_outline, size: 16),
+          label: const Text('Списать'),
+        ),
+      ],
+    ];
+
     return Card(
       elevation: 0,
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: AppColors.border),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            FilledButton.icon(
-              onPressed: hasSelection ? onAddToPosCart : null,
-              icon: const Icon(Icons.add_shopping_cart_outlined),
-              label: const Text('В POS-корзину'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.accent,
-              ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < buttons.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  buttons[i],
+                ],
+              ],
             ),
-            Badge(
-              isLabelVisible: posCartCount > 0,
-              label: Text('$posCartCount'),
-              child: OutlinedButton.icon(
-                onPressed: onOpenPosCart,
-                icon: const Icon(Icons.shopping_cart_checkout_outlined),
-                label: Text(
-                  posCartCount > 0
-                      ? 'POS-корзина ($posCartCount)'
-                      : 'POS-корзина',
-                ),
-              ),
-            ),
-            FilledButton.tonalIcon(
-              onPressed: hasSelection ? onPrint : null,
-              icon: const Icon(Icons.print_outlined),
-              label: const Text('Распечатать дубликат бирки'),
-            ),
-            if (isSuperAdmin) ...[
-              OutlinedButton.icon(
-                onPressed: hasSelection ? onEdit : null,
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Редактировать карточку'),
-              ),
-              FilledButton.icon(
-                onPressed: hasSelection ? onMarkSold : null,
-                icon: const Icon(Icons.handshake_outlined),
-                label: const Text('Продано'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _soldGreen,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: hasSelection ? onWriteOff : null,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Списать / Изъять с витрины'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.saleRed,
-                  side: const BorderSide(color: AppColors.saleRed),
-                ),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

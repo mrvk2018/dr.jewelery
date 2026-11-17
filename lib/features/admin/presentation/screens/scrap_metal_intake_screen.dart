@@ -20,11 +20,15 @@ class ScrapMetalIntakeScreen extends StatefulWidget {
     DatabaseService? database,
     this.initialSellerCode,
     this.initialSellerName,
+    this.hideJournalBulkWriteOff = false,
+    this.actorCode = 'ADMIN',
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
   final String? initialSellerCode;
   final String? initialSellerName;
+  final bool hideJournalBulkWriteOff;
+  final String actorCode;
 
   @override
   State<ScrapMetalIntakeScreen> createState() => _ScrapMetalIntakeScreenState();
@@ -824,17 +828,18 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: _journalKpiBar(kpi),
         ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.icon(
-              onPressed: _writeOffSelected,
-              icon: const Icon(Icons.archive_outlined),
-              label: const Text('Списать выбранные / со склада'),
+        if (!widget.hideJournalBulkWriteOff)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _writeOffSelected,
+                icon: const Icon(Icons.archive_outlined),
+                label: const Text('Списать выбранные / со склада'),
+              ),
             ),
           ),
-        ),
         Expanded(
           child: _journalLoading
               ? const Center(child: CircularProgressIndicator())
@@ -883,6 +888,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
           'Статус',
           [
             ('in_stock', 'На складе'),
+            ('in_transfer', 'В трансфере'),
             ('written_off', 'Списано'),
             ('all', 'Все'),
           ],
@@ -1011,10 +1017,81 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     }).toList();
   }
 
+  Future<void> _startScrapTransfer(Map<String, dynamic> row) async {
+    final id = row['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    final from = row['store_location']?.toString().toUpperCase() ?? 'ICN';
+    final to = from == 'ICN' ? 'ANS' : 'ICN';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отправить лом в трансфер?'),
+        content: Text('Маршрут: $from → $to'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отправить')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await widget.database.initiateScrapTransfer(
+      intakeId: id,
+      toStore: to,
+      senderCode: widget.actorCode,
+    );
+    if (result['ok'] != true) {
+      _snack(result['error']?.toString() ?? 'Ошибка', error: true);
+      return;
+    }
+    _snack('Лом отправлен в $to');
+    await _loadJournal();
+  }
+
+  Future<void> _completeScrapTransfer(Map<String, dynamic> row) async {
+    final id = row['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    final result = await widget.database.completeScrapTransfer(
+      intakeId: id,
+      receiverCode: widget.actorCode,
+    );
+    if (result['ok'] != true) {
+      _snack(result['error']?.toString() ?? 'Ошибка приёмки', error: true);
+      return;
+    }
+    _snack('Лом принят на склад');
+    await _loadJournal();
+  }
+
+  Future<void> _cancelScrapTransfer(Map<String, dynamic> row) async {
+    final id = row['id']?.toString() ?? '';
+    if (id.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отменить трансфер лома?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Нет')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отменить')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final result = await widget.database.cancelScrapTransfer(intakeId: id);
+    if (result['ok'] != true) {
+      _snack(result['error']?.toString() ?? 'Не удалось отменить', error: true);
+      return;
+    }
+    _snack('Трансфер отменён');
+    await _loadJournal();
+  }
+
   Widget _journalCard(Map<String, dynamic> row) {
     final id = row['id']?.toString() ?? '';
-    final inStock = row['status']?.toString() == 'in_stock';
+    final status = row['status']?.toString() ?? '';
+    final inStock = status == 'in_stock';
+    final inTransfer = status == 'in_transfer';
     final store = row['store_location']?.toString() ?? StoreLocationCode.icn;
+    final transferTo = row['transfer_to_store']?.toString();
     final colors = storeLocationBadgeColors(store);
     final selected = _selectedJournalIds.contains(id);
 
@@ -1059,9 +1136,27 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
               ],
             ),
             Text(
-              '${row['accepted_by_name']} · ${inStock ? 'На складе' : 'Списано'}',
+              '${row['accepted_by_name']} · '
+              '${inStock
+                  ? 'На складе'
+                  : inTransfer
+                      ? 'В трансфере'
+                      : 'Списано'}',
               style: AppTypography.productMeta(),
             ),
+            if (inTransfer && transferTo != null)
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'В пути: $store → $transferTo',
+                  style: AppTypography.caption(fontWeight: FontWeight.w700),
+                ),
+              ),
             if ((row['notes']?.toString().trim() ?? '').isNotEmpty)
               Text(row['notes'].toString(), style: AppTypography.productMeta()),
             const SizedBox(height: 6),
@@ -1116,6 +1211,11 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                 ),
                 if (inStock)
                   FilledButton.tonal(
+                    onPressed: () => _startScrapTransfer(row),
+                    child: const Text('В трансфер'),
+                  ),
+                if (inStock)
+                  OutlinedButton(
                     onPressed: () async {
                       final res = await widget.database.writeOffScrapMetalIntakes(ids: [id]);
                       if (!res.ok) {
@@ -1127,6 +1227,16 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                     },
                     child: const Text('Списать со склада'),
                   ),
+                if (inTransfer) ...[
+                  FilledButton(
+                    onPressed: () => _completeScrapTransfer(row),
+                    child: const Text('Принять лом'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _cancelScrapTransfer(row),
+                    child: const Text('Отменить'),
+                  ),
+                ],
                 TextButton(
                   onPressed: () => _deleteAct(id),
                   child: const Text('Удалить', style: TextStyle(color: AppColors.saleRed)),

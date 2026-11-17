@@ -23,6 +23,7 @@ import '../../shared/models/feedback_item.dart';
 import '../../shared/models/product_item.dart';
 import '../../shared/models/app_marketing_settings.dart';
 import '../../shared/models/seller_item.dart';
+import '../../shared/models/seller_login_option.dart';
 import '../../shared/models/seller_referral_apply_result.dart';
 import 'device_secrets_store.dart';
 
@@ -81,6 +82,27 @@ abstract final class ScrapMetalRpc {
   static const idsParam = 'p_ids';
   static const noteParam = 'p_note';
   static const idParam = 'p_id';
+  static const initiateScrapTransfer = 'initiate_scrap_transfer';
+  static const completeScrapTransfer = 'complete_scrap_transfer';
+  static const cancelScrapTransfer = 'cancel_scrap_transfer';
+  static const intakeIdParam = 'p_intake_id';
+  static const toStoreParam = 'p_to_store';
+  static const senderCodeParam = 'p_sender_code';
+  static const receiverCodeParam = 'p_receiver_code';
+}
+
+abstract final class TransferRpc {
+  static const createProductTransferById = 'create_product_transfer_by_id';
+  static const completeProductTransferById = 'complete_product_transfer_by_id';
+  static const cancelProductTransferById = 'cancel_product_transfer_by_id';
+  static const listProductTransfers = 'list_product_transfers';
+  static const sendDraftsBatchToAnsan = 'send_drafts_batch_to_ansan';
+  static const productIdParam = 'p_product_id';
+  static const transferIdParam = 'p_transfer_id';
+  static const actorCodeParam = 'p_actor_code';
+  static const statusParam = 'p_status';
+  static const storeParam = 'p_store';
+  static const notesParam = 'p_notes';
 }
 
 typedef ScrapMetalUpsertResult = ({bool ok, String? id, String? error});
@@ -119,6 +141,8 @@ abstract final class AdminCatalogRpc {
 
 abstract final class SellerAdminRpc {
   static const upsertSellerByAdmin = 'upsert_seller_by_admin';
+  static const getActiveSellersForLogin = 'get_active_sellers_for_login';
+  static const sellerLoginOrSetupPin = 'seller_login_or_setup_pin';
   static const promoCodeParam = 'p_promo_code';
   static const nameParam = 'p_name';
   static const isActiveParam = 'p_is_active';
@@ -131,6 +155,10 @@ abstract final class SellerAdminRpc {
       'p_app_gold_buyer_discount_percent';
   static const appSilverBuyerDiscountPercentParam =
       'p_app_silver_buyer_discount_percent';
+  static const loginPasswordParam = 'p_login_password';
+  static const resetPinParam = 'p_reset_pin';
+  static const loginPasswordField = 'p_password';
+  static const loginPinField = 'p_pin';
 }
 
 abstract final class SellerPayrollRpc {
@@ -330,6 +358,18 @@ abstract class DatabaseService {
     double appSilverCommissionPercent = 0,
     double appGoldBuyerDiscountPercent = 0,
     double appSilverBuyerDiscountPercent = 0,
+    String? loginPassword,
+    bool resetPin = false,
+  });
+
+  /// Активные продавцы для диалога входа (без паролей/PIN).
+  Future<List<SellerLoginOption>> getActiveSellersForLogin();
+
+  /// Вход или первичная настройка PIN (`seller_login_or_setup_pin`).
+  Future<Map<String, dynamic>> sellerLoginOrSetupPin({
+    required String promoCode,
+    String? password,
+    String? pin,
   });
 
   /// POS: привязка продавца к свежим строкам sales_history (окно 15 мин).
@@ -636,6 +676,45 @@ abstract class DatabaseService {
 
   /// Возврат на витрину: RPC `process_product_return_manual` (сторно + active).
   Future<Map<String, dynamic>> processProductReturn(String sku);
+
+  Future<Map<String, dynamic>> createProductTransferById({
+    required String productId,
+    required String toStore,
+    required String senderCode,
+    String? notes,
+  });
+
+  Future<Map<String, dynamic>> completeProductTransferById({
+    required String transferId,
+    required String receiverCode,
+  });
+
+  Future<Map<String, dynamic>> cancelProductTransferById({
+    required String transferId,
+    required String actorCode,
+  });
+
+  Future<List<Map<String, dynamic>>> listProductTransfers({
+    String? status,
+    String? store,
+  });
+
+  Future<Map<String, dynamic>> sendDraftsBatchToAnsan({
+    required String actorCode,
+  });
+
+  Future<Map<String, dynamic>> initiateScrapTransfer({
+    required String intakeId,
+    required String toStore,
+    required String senderCode,
+  });
+
+  Future<Map<String, dynamic>> completeScrapTransfer({
+    required String intakeId,
+    required String receiverCode,
+  });
+
+  Future<Map<String, dynamic>> cancelScrapTransfer({required String intakeId});
 }
 
 /// Облачное хранилище: Supabase (read/write по RLS и RPC).
@@ -1146,6 +1225,60 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
+  Future<List<SellerLoginOption>> getActiveSellersForLogin() async {
+    try {
+      final response = await _supabaseClient.rpc(
+        SellerAdminRpc.getActiveSellersForLogin,
+      );
+      if (response is! List) return const [];
+      final rows = <SellerLoginOption>[];
+      for (final item in response) {
+        if (item is Map) {
+          rows.add(SellerLoginOption.fromJson(Map<String, dynamic>.from(item)));
+        }
+      }
+      rows.sort((a, b) => a.name.compareTo(b.name));
+      return rows;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.getActiveSellersForLogin failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> sellerLoginOrSetupPin({
+    required String promoCode,
+    String? password,
+    String? pin,
+  }) async {
+    final code = promoCode.trim().toUpperCase();
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerAdminRpc.sellerLoginOrSetupPin,
+        params: {
+          SellerAdminRpc.promoCodeParam: code,
+          SellerAdminRpc.loginPasswordField: password?.trim(),
+          SellerAdminRpc.loginPinField: pin?.trim(),
+        },
+      );
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return {'ok': result == true};
+    } on PostgrestException catch (error) {
+      final msg = error.message.trim();
+      throw StateError(
+        msg.isEmpty ? 'Ошибка входа продавца' : msg,
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.sellerLoginOrSetupPin failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
   Future<void> upsertSellerByAdmin({
     required String promoCode,
     required String name,
@@ -1156,6 +1289,8 @@ class CloudDatabaseService implements DatabaseService {
     double appSilverCommissionPercent = 0,
     double appGoldBuyerDiscountPercent = 0,
     double appSilverBuyerDiscountPercent = 0,
+    String? loginPassword,
+    bool resetPin = false,
   }) async {
     final code = SellerItem.normalizePromoCode(promoCode);
     final trimmedName = name.trim();
@@ -1172,22 +1307,28 @@ class CloudDatabaseService implements DatabaseService {
       throw StateError('Проценты должны быть от 0 до 100');
     }
     try {
+      final pwd = loginPassword?.trim();
+      final params = <String, dynamic>{
+        SellerAdminRpc.promoCodeParam: code,
+        SellerAdminRpc.nameParam: trimmedName,
+        SellerAdminRpc.isActiveParam: isActive,
+        SellerAdminRpc.goldCommissionPercentParam: goldCommissionPercent,
+        SellerAdminRpc.silverCommissionPercentParam: silverCommissionPercent,
+        SellerAdminRpc.appGoldCommissionPercentParam: appGoldCommissionPercent,
+        SellerAdminRpc.appSilverCommissionPercentParam:
+            appSilverCommissionPercent,
+        SellerAdminRpc.appGoldBuyerDiscountPercentParam:
+            appGoldBuyerDiscountPercent,
+        SellerAdminRpc.appSilverBuyerDiscountPercentParam:
+            appSilverBuyerDiscountPercent,
+        SellerAdminRpc.resetPinParam: resetPin,
+      };
+      if (pwd != null && pwd.isNotEmpty) {
+        params[SellerAdminRpc.loginPasswordParam] = pwd;
+      }
       final result = await _supabaseClient.rpc(
         SellerAdminRpc.upsertSellerByAdmin,
-        params: {
-          SellerAdminRpc.promoCodeParam: code,
-          SellerAdminRpc.nameParam: trimmedName,
-          SellerAdminRpc.isActiveParam: isActive,
-          SellerAdminRpc.goldCommissionPercentParam: goldCommissionPercent,
-          SellerAdminRpc.silverCommissionPercentParam: silverCommissionPercent,
-          SellerAdminRpc.appGoldCommissionPercentParam: appGoldCommissionPercent,
-          SellerAdminRpc.appSilverCommissionPercentParam:
-              appSilverCommissionPercent,
-          SellerAdminRpc.appGoldBuyerDiscountPercentParam:
-              appGoldBuyerDiscountPercent,
-          SellerAdminRpc.appSilverBuyerDiscountPercentParam:
-              appSilverBuyerDiscountPercent,
-        },
+        params: params,
       );
       final ok = result == true ||
           (result is Map && (result['ok'] == true || result['success'] == true));
@@ -3038,6 +3179,185 @@ class CloudDatabaseService implements DatabaseService {
     return {'ok': result == true, 'raw': result};
   }
 
+  static List<Map<String, dynamic>> _parseTransferRpcList(dynamic response) {
+    if (response is! List) return const [];
+    return response
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  @override
+  Future<Map<String, dynamic>> createProductTransferById({
+    required String productId,
+    required String toStore,
+    required String senderCode,
+    String? notes,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        TransferRpc.createProductTransferById,
+        params: {
+          TransferRpc.productIdParam: productId.trim(),
+          ScrapMetalRpc.toStoreParam: toStore.trim().toUpperCase(),
+          ScrapMetalRpc.senderCodeParam: senderCode.trim().toUpperCase(),
+          if (notes != null && notes.trim().isNotEmpty)
+            TransferRpc.notesParam: notes.trim(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.createProductTransferById failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeProductTransferById({
+    required String transferId,
+    required String receiverCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        TransferRpc.completeProductTransferById,
+        params: {
+          TransferRpc.transferIdParam: transferId.trim(),
+          ScrapMetalRpc.receiverCodeParam: receiverCode.trim().toUpperCase(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.completeProductTransferById failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelProductTransferById({
+    required String transferId,
+    required String actorCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        TransferRpc.cancelProductTransferById,
+        params: {
+          TransferRpc.transferIdParam: transferId.trim(),
+          TransferRpc.actorCodeParam: actorCode.trim().toUpperCase(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.cancelProductTransferById failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listProductTransfers({
+    String? status,
+    String? store,
+  }) async {
+    try {
+      final params = <String, dynamic>{};
+      final st = status?.trim();
+      final loc = store?.trim().toUpperCase();
+      if (st != null && st.isNotEmpty && st != 'all') {
+        params[TransferRpc.statusParam] = st;
+      }
+      if (loc != null && loc.isNotEmpty && loc != 'ALL') {
+        params[TransferRpc.storeParam] = loc;
+      }
+      final response = await _supabaseClient.rpc(
+        TransferRpc.listProductTransfers,
+        params: params.isEmpty ? null : params,
+      );
+      return _parseTransferRpcList(response);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.listProductTransfers failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendDraftsBatchToAnsan({
+    required String actorCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        TransferRpc.sendDraftsBatchToAnsan,
+        params: {TransferRpc.actorCodeParam: actorCode.trim().toUpperCase()},
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.sendDraftsBatchToAnsan failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> initiateScrapTransfer({
+    required String intakeId,
+    required String toStore,
+    required String senderCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.initiateScrapTransfer,
+        params: {
+          ScrapMetalRpc.intakeIdParam: intakeId.trim(),
+          ScrapMetalRpc.toStoreParam: toStore.trim().toUpperCase(),
+          ScrapMetalRpc.senderCodeParam: senderCode.trim().toUpperCase(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.initiateScrapTransfer failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeScrapTransfer({
+    required String intakeId,
+    required String receiverCode,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.completeScrapTransfer,
+        params: {
+          ScrapMetalRpc.intakeIdParam: intakeId.trim(),
+          ScrapMetalRpc.receiverCodeParam: receiverCode.trim().toUpperCase(),
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.completeScrapTransfer failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelScrapTransfer({required String intakeId}) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        ScrapMetalRpc.cancelScrapTransfer,
+        params: {ScrapMetalRpc.intakeIdParam: intakeId.trim()},
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.cancelScrapTransfer failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
   @override
   Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload) async {
     final qr = qrPayload.trim();
@@ -3047,7 +3367,7 @@ class CloudDatabaseService implements DatabaseService {
           .from('products')
           .select(
             'id, sku, metal_type, weight_grams, size_value, gem_inserts, '
-            'notes, sale_price, qr_code_payload, store_location, '
+            'notes, sale_price, qr_code_payload, store_location, status, '
             'product_status, stock_quantity, is_customer_order',
           )
           .eq('qr_code_payload', qr)

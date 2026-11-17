@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../core/admin/admin_staff_session_store.dart';
 import '../../core/services/database_service.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
@@ -133,6 +134,7 @@ class ProfileController extends ChangeNotifier {
   Future<bool> isAdminDeviceClaimed() => _database.isAdminDeviceClaimed();
 
   Future<void> completeAdminFirstClaim(String pin) async {
+    await AdminStaffSessionStore.clearActiveSession();
     await _database.claimAdminDevicePin(pin);
     signInAdmin();
   }
@@ -140,6 +142,7 @@ class ProfileController extends ChangeNotifier {
   Future<bool> unlockAdminWithPin(String pin) async {
     final ok = await _database.verifyAdminPin(pin);
     if (!ok) return false;
+    await AdminStaffSessionStore.clearActiveSession();
     signInAdmin();
     isPanelAdminAuthenticated = true;
     notifyListeners();
@@ -149,6 +152,7 @@ class ProfileController extends ChangeNotifier {
   Future<bool> verifyAdminPinForPanel(String pin) async {
     final ok = await _database.verifyAdminPin(pin);
     if (ok) {
+      await AdminStaffSessionStore.clearActiveSession();
       isPanelAdminAuthenticated = true;
       notifyListeners();
     }

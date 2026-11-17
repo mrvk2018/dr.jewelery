@@ -13,6 +13,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
+import '../widgets/admin_product_photo_preview.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -87,10 +88,16 @@ class JewelryAdminDashboard extends StatefulWidget {
     super.key,
     DatabaseService? database,
     this.onPosSaleArchived,
+    this.sellerStaffMode = false,
+    this.presetSellerPromoCode,
+    this.presetSellerName,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
   final VoidCallback? onPosSaleArchived;
+  final bool sellerStaffMode;
+  final String? presetSellerPromoCode;
+  final String? presetSellerName;
 
   @override
   State<JewelryAdminDashboard> createState() => _JewelryAdminDashboardState();
@@ -136,8 +143,12 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   /// Рабочий стол: только витрина в наличии (не черновики hidden, не нулевой остаток).
   bool _isShowroomRow(Map<String, dynamic> row) {
     if (_catalogStatus(row) == 'hidden') return false;
+    if (_catalogStatus(row) == 'in_transfer') return false;
     return _stockQty(row) > 0;
   }
+
+  String get _transferActorCode =>
+      widget.presetSellerPromoCode?.trim().toUpperCase() ?? 'ADMIN';
 
   String _cell(Map<String, dynamic> row, String key) {
     final value = row[key];
@@ -204,6 +215,23 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     await _fetchAndMergeProductMedia(
       sku: sku,
       expectedProductId: productId,
+    );
+  }
+
+  Future<void> _openSelectedPhotoPreview(int index) async {
+    final row = _selected;
+    if (row == null) return;
+    final urls = _imageUrls(row);
+    if (index < 0 || index >= urls.length) return;
+    final sku = _cell(row, 'sku');
+    final subtitle =
+        '${_weight(row).toStringAsFixed(2)} г · ${storeLocationDisplayLabelForRow(row)}';
+    await showAdminProductPhotoPreview(
+      context,
+      title: sku,
+      subtitle: subtitle,
+      imageUrls: urls,
+      initialIndex: index,
     );
   }
 
@@ -417,6 +445,13 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
+    if (_catalogStatus(row) == 'in_transfer') {
+      _snack(
+        'Товар находится в трансфере и недоступен для продажи',
+        error: true,
+      );
+      return;
+    }
     final currentRow = _selected ?? row;
     final sku = row['sku']?.toString().trim() ?? '';
     if (sku.isNotEmpty) {
@@ -448,6 +483,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       builder: (context) => AdminPosCartSheet(
         cart: _posCart,
         database: widget.database,
+        lockSellerSelection: widget.sellerStaffMode,
+        presetSellerPromoCode: widget.presetSellerPromoCode,
+        presetSellerName: widget.presetSellerName,
         onArchived: () async {
           _posCart.clearCart();
           await _refreshCatalog();
@@ -455,6 +493,110 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         },
       ),
     );
+  }
+
+  Future<void> _startProductTransfer() async {
+    final row = _selected;
+    if (row == null) {
+      _snack('Выберите товар в таблице', error: true);
+      return;
+    }
+    final productId = _productId(row);
+    if (productId == null) {
+      _snack('У позиции нет id', error: true);
+      return;
+    }
+    if (_catalogStatus(row) == 'in_transfer') {
+      _snack('Товар уже в трансфере', error: true);
+      return;
+    }
+    final from = row['store_location']?.toString().trim().toUpperCase();
+    var defaultTo = 'ANS';
+    if (from == 'ICN') {
+      defaultTo = 'ANS';
+    } else if (from == 'ANS') {
+      defaultTo = 'ICN';
+    }
+
+    final notesController = TextEditingController();
+    var toStore = defaultTo;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: const Text('В трансфер'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'SKU ${_cell(row, 'sku')} · ${from ?? '—'} →',
+                style: AppTypography.productMeta(),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: toStore,
+                decoration: const InputDecoration(
+                  labelText: 'Магазин-получатель',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'ICN', child: Text('Инчхон (ICN)')),
+                  DropdownMenuItem(value: 'ANS', child: Text('Ансан (ANS)')),
+                ],
+                onChanged: (v) {
+                  if (v == null) return;
+                  setLocal(() => toStore = v);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Комментарий (необязательно)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Отправить'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final notesText = notesController.text.trim();
+    notesController.dispose();
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final result = await widget.database.createProductTransferById(
+        productId: productId,
+        toStore: toStore,
+        senderCode: _transferActorCode,
+        notes: notesText.isEmpty ? null : notesText,
+      );
+      if (result['ok'] != true) {
+        _snack(result['error']?.toString() ?? 'Трансфер не создан', error: true);
+        return;
+      }
+      _snack('Отправлено в $toStore');
+      setState(() => _selected = null);
+      await _refreshCatalog();
+    } catch (error) {
+      _snack('Ошибка трансфера: $error', error: true);
+    }
   }
 
   Future<void> _markSoldSelected() async {
@@ -575,6 +717,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       supabaseUser: Supabase.instance.client.auth.currentUser,
       localPanelAdmin: profile.isLocalAdminAuthenticated,
     );
+    final panelAdmin = isSuperAdmin && !widget.sellerStaffMode;
     final selectedProductId = _productId(_selected);
 
     return Scaffold(
@@ -588,7 +731,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 
                 final columnChildren = <Widget>[
                   _TopControlBar(
-                    isSuperAdmin: isSuperAdmin,
+                    isSuperAdmin: panelAdmin,
                     onOpenDraft: _openDraftIntake,
                     onOpenScrap: _openScrapIntake,
                     onAddProduct: _openAddProductDialog,
@@ -615,7 +758,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                         child: _ProductTablePanel(
                           products: _products,
                           selectedProductId: selectedProductId,
-                          isSuperAdmin: isSuperAdmin,
+                          isSuperAdmin: panelAdmin,
                           onSelect: _selectProductRow,
                           onEdit: _openEditProductDialog,
                           cell: _cell,
@@ -637,7 +780,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                       child: _ProductTablePanel(
                         products: _products,
                         selectedProductId: selectedProductId,
-                        isSuperAdmin: isSuperAdmin,
+                        isSuperAdmin: panelAdmin,
                         onSelect: _selectProductRow,
                         onEdit: _openEditProductDialog,
                         cell: _cell,
@@ -658,12 +801,13 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                       weight: _weight,
                       photoUploadBusy: _photoUploadBusy,
                       onAddPhoto: _addPhotoToSelected,
+                      onPhotoTap: _openSelectedPhotoPreview,
                     ),
                   ],
                   const SizedBox(height: 8),
                   _BottomActionBar(
                     hasSelection: _selected != null,
-                    isSuperAdmin: isSuperAdmin,
+                    isSuperAdmin: panelAdmin,
                     posCartCount: _posCart.lineCount,
                     onAddToPosCart: _addSelectedToPosCart,
                     onOpenPosCart: _openPosCartSheet,
@@ -671,6 +815,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     onEdit: _editSelectedCard,
                     onMarkSold: _markSoldSelected,
                     onWriteOff: _writeOffSelected,
+                    onTransfer: _startProductTransfer,
                   ),
                 ];
 
@@ -769,12 +914,13 @@ class _TopControlBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              OutlinedButton.icon(
-                onPressed: onProductReturn,
-                style: _compactBtnStyle,
-                icon: const Icon(Icons.replay_outlined, size: 16),
-                label: const Text('Возврат товара'),
-              ),
+              if (isSuperAdmin)
+                OutlinedButton.icon(
+                  onPressed: onProductReturn,
+                  style: _compactBtnStyle,
+                  icon: const Icon(Icons.replay_outlined, size: 16),
+                  label: const Text('Возврат товара'),
+                ),
             ],
           ),
         ),
@@ -1212,6 +1358,7 @@ class _SelectedProductMediaBar extends StatelessWidget {
     required this.weight,
     required this.photoUploadBusy,
     required this.onAddPhoto,
+    required this.onPhotoTap,
   });
 
   final Map<String, dynamic> selected;
@@ -1220,6 +1367,7 @@ class _SelectedProductMediaBar extends StatelessWidget {
   final double Function(Map<String, dynamic>) weight;
   final bool photoUploadBusy;
   final VoidCallback onAddPhoto;
+  final ValueChanged<int> onPhotoTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1258,6 +1406,9 @@ class _SelectedProductMediaBar extends StatelessWidget {
                     child: _PhotoSlot(
                       url: index < imageUrls.length
                           ? imageUrls[index]
+                          : null,
+                      onTap: index < imageUrls.length
+                          ? () => onPhotoTap(index)
                           : null,
                     ),
                   ),
@@ -1329,35 +1480,31 @@ class _StoreLocationBadge extends StatelessWidget {
 }
 
 class _PhotoSlot extends StatelessWidget {
-  const _PhotoSlot({this.url});
+  const _PhotoSlot({this.url, this.onTap});
 
   final String? url;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: url == null
-          ? Icon(
-              Icons.image_not_supported_outlined,
-              size: 18,
-              color: AppColors.textSecondary.withValues(alpha: 0.5),
-            )
-          : ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                url!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Icons.broken_image_outlined, size: 18),
-              ),
-            ),
+    if (url == null) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          size: 18,
+          color: AppColors.textSecondary.withValues(alpha: 0.5),
+        ),
+      );
+    }
+    return AdminClickableNetworkThumbnail(
+      imageUrl: url,
+      size: 44,
+      onTap: onTap,
     );
   }
 }
@@ -1373,6 +1520,7 @@ class _BottomActionBar extends StatelessWidget {
     required this.onEdit,
     required this.onMarkSold,
     required this.onWriteOff,
+    required this.onTransfer,
   });
 
   final bool hasSelection;
@@ -1384,6 +1532,7 @@ class _BottomActionBar extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onMarkSold;
   final VoidCallback onWriteOff;
+  final VoidCallback onTransfer;
 
   static const _soldGreen = Color(0xFF1B5E20);
 
@@ -1427,6 +1576,12 @@ class _BottomActionBar extends StatelessWidget {
         style: _barBtnStyle,
         icon: const Icon(Icons.print_outlined, size: 16),
         label: const Text('Дубликат бирки'),
+      ),
+      OutlinedButton.icon(
+        onPressed: hasSelection ? onTransfer : null,
+        style: _barBtnStyle,
+        icon: const Icon(Icons.local_shipping_outlined, size: 16),
+        label: const Text('В трансфер'),
       ),
       if (isSuperAdmin) ...[
         OutlinedButton.icon(

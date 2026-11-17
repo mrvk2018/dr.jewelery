@@ -1451,7 +1451,24 @@ async function main() {
 const isPhoto0Resync = process.argv.includes('--resync-photo0');
 const entry = isPhoto0Resync ? mainResyncPhoto0 : main;
 
-entry().catch((err) => {
-  console.error(isPhoto0Resync ? 'photo0 resync fatal:' : 'sync.js fatal:', err);
-  process.exit(1);
-});
+module.exports = {
+  MSSQL_CONFIG,
+  MSSQL_CONNECT_TIMEOUT_MS,
+  requireEnv,
+  runMssqlWithTimeout,
+  buildDesiredScalarsForRow,
+  fetchArticulImageBuffers,
+  uploadImageUrlsFromSlots,
+  upsertProductsInChunks,
+  mergeWarehouseImageFingerprints,
+  slotMssqlByteSizes,
+  resolveStoreLocationFromMart,
+  parsePriceKrw,
+};
+
+if (require.main === module) {
+  entry().catch((err) => {
+    console.error(isPhoto0Resync ? 'photo0 resync fatal:' : 'sync.js fatal:', err);
+    process.exit(1);
+  });
+}

@@ -234,6 +234,11 @@ class _SellerTerminalScreenState extends State<SellerTerminalScreen> {
         _snack('Товар не найден по QR', error: true);
         return;
       }
+      final status = product['status']?.toString().trim();
+      if (status == 'in_transfer') {
+        _snack('Товар в трансфере и недоступен для продажи', error: true);
+        return;
+      }
       setState(() {
         _posProduct = product;
         _discountPercent = 0;

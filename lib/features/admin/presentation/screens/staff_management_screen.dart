@@ -795,6 +795,8 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
   late final TextEditingController _appGoldDiscountController;
   late final TextEditingController _appSilverDiscountController;
   late bool _isActive;
+  bool _resetPin = false;
+  final _loginPasswordController = TextEditingController();
   bool _saving = false;
   String? _error;
 
@@ -839,6 +841,7 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
     _appSilverCommissionController.dispose();
     _appGoldDiscountController.dispose();
     _appSilverDiscountController.dispose();
+    _loginPasswordController.dispose();
     super.dispose();
   }
 
@@ -892,6 +895,7 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
       _error = null;
     });
     try {
+      final loginPassword = _loginPasswordController.text.trim();
       await widget.database.upsertSellerByAdmin(
         promoCode: code,
         name: name,
@@ -902,6 +906,8 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
         appSilverCommissionPercent: appSilverComm!,
         appGoldBuyerDiscountPercent: appGoldDisc!,
         appSilverBuyerDiscountPercent: appSilverDisc!,
+        loginPassword: loginPassword.isEmpty ? null : loginPassword,
+        resetPin: _resetPin,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -1018,6 +1024,29 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
             ),
+            TextField(
+              controller: _loginPasswordController,
+              obscureText: true,
+              decoration: InputDecoration(
+                labelText: 'Пароль для входа',
+                border: const OutlineInputBorder(),
+                helperText: widget.isEdit
+                    ? 'Оставьте пустым, чтобы не менять'
+                    : 'Задайте пароль для первого входа продавца',
+              ),
+            ),
+            if (widget.isEdit)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Сбросить PIN-код'),
+                subtitle: const Text(
+                  'При следующем входе продавец задаст новый PIN по паролю',
+                ),
+                value: _resetPin,
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() => _resetPin = value ?? false),
+              ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Активен'),

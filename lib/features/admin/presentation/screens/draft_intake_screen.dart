@@ -12,16 +12,23 @@ import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
 import '../pages/jewelry_admin_dashboard.dart';
+import '../widgets/admin_product_photo_preview.dart';
 import '../../domain/draft_batch_reconcile.dart';
+
+enum _AdminDraftFilter { all, onShelf, sentAnsan }
 
 /// Складская приёмка черновиков (`stock_quantity = 0` → `1`) + печать этикеток.
 class DraftIntakeScreen extends StatefulWidget {
   DraftIntakeScreen({
     super.key,
     DatabaseService? database,
+    this.sellerStaffMode = false,
+    this.actorCode = 'ADMIN',
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
+  final bool sellerStaffMode;
+  final String actorCode;
 
   @override
   State<DraftIntakeScreen> createState() => _DraftIntakeScreenState();
@@ -34,7 +41,36 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   List<Map<String, dynamic>> _drafts = const [];
   bool _searchLoading = false;
   bool _bulkBusy = false;
+  bool _batchSendBusy = false;
+  _AdminDraftFilter _adminDraftFilter = _AdminDraftFilter.all;
   final Set<String> _rowBusyIds = {};
+
+  List<Map<String, dynamic>> get _visibleDrafts {
+    if (widget.sellerStaffMode) {
+      return _drafts.where((row) {
+        return row['store_location']?.toString() == 'ANS' &&
+            row['status']?.toString() == 'in_transfer';
+      }).toList();
+    }
+    return _drafts.where((row) {
+      final status = row['status']?.toString();
+      return switch (_adminDraftFilter) {
+        _AdminDraftFilter.all => true,
+        _AdminDraftFilter.onShelf =>
+          status == 'hidden' || status == 'active',
+        _AdminDraftFilter.sentAnsan => status == 'in_transfer',
+      };
+    }).toList();
+  }
+
+  int get _ansanBatchCount => _drafts.where((row) {
+        final status = row['status']?.toString();
+        final store = row['store_location']?.toString();
+        final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
+        return stock == 0 &&
+            store == 'ANS' &&
+            (status == 'hidden' || status == 'active');
+      }).length;
 
   @override
   void initState() {
@@ -138,15 +174,19 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   }
 
   static String? _thumbnailUrl(Map<String, dynamic> row) {
-    final direct = row['image_url']?.toString().trim();
-    if (direct != null && direct.isNotEmpty) return direct;
+    final urls = adminProductImageUrls(row);
+    return urls.isEmpty ? null : urls.first;
+  }
 
-    final raw = row['additional_images'];
-    if (raw is List && raw.isNotEmpty) {
-      final first = raw.first?.toString().trim() ?? '';
-      if (first.isNotEmpty) return first;
-    }
-    return null;
+  Future<void> _openDraftPhotoPreview(Map<String, dynamic> row) async {
+    final urls = adminProductImageUrls(row);
+    if (urls.isEmpty) return;
+    final sku = _field(row, 'sku');
+    await showAdminProductPhotoPreview(
+      context,
+      title: sku,
+      imageUrls: urls,
+    );
   }
 
   Future<String?> _confirmAcceptWithPreview(Map<String, dynamic> row) async {
@@ -464,6 +504,54 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     );
   }
 
+  Future<void> _sendBatchToAnsan() async {
+    if (_ansanBatchCount == 0) {
+      _showSnack('Нет черновиков ANS для отправки', isError: true);
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Отправить партию в Ансан?'),
+        content: Text(
+          'Будет переведено в трансфер: $_ansanBatchCount поз. '
+          '(store_location=ANS, черновики).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Отправить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _batchSendBusy = true);
+    try {
+      final result = await widget.database.sendDraftsBatchToAnsan(
+        actorCode: widget.actorCode,
+      );
+      if (result['ok'] != true) {
+        _showSnack(
+          result['error']?.toString() ?? 'Партия не отправлена',
+          isError: true,
+        );
+        return;
+      }
+      final count = (result['sent_count'] as num?)?.toInt() ?? _ansanBatchCount;
+      _showSnack('Отправлено в трансфер: $count поз.');
+      await _runSearch(_searchController.text);
+    } catch (error) {
+      _showSnack('Ошибка: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _batchSendBusy = false);
+    }
+  }
+
   Future<void> _acceptEntireShipment() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -520,7 +608,12 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text('Приёмка черновиков', style: AppTypography.heading(fontSize: 20)),
+        title: Text(
+          widget.sellerStaffMode
+              ? 'Приёмка поставки (Ансан)'
+              : 'Приёмка черновиков',
+          style: AppTypography.heading(fontSize: 20),
+        ),
       ),
       body: Align(
         alignment: Alignment.topCenter,
@@ -532,24 +625,33 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _Toolbar(
+                  sellerStaffMode: widget.sellerStaffMode,
                   searchController: _searchController,
                   searchLoading: _searchLoading,
                   bulkBusy: _bulkBusy,
+                  batchSendBusy: _batchSendBusy,
+                  ansaanBatchCount: _ansanBatchCount,
+                  adminDraftFilter: _adminDraftFilter,
                   onSubmitted: (value) => _runSearch(value),
                   onBulkAccept: _acceptEntireShipment,
                   onBatchReconcile: _showBatchReconcile,
+                  onSendBatchToAnsan: _sendBatchToAnsan,
+                  onAdminFilterChanged: (filter) =>
+                      setState(() => _adminDraftFilter = filter),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
                   child: _DraftTable(
-                    drafts: _drafts,
+                    drafts: _visibleDrafts,
                     loading: _searchLoading,
                     busyIds: _rowBusyIds,
+                    showAdminActions: !widget.sellerStaffMode,
                     onAcceptRow: _acceptSingle,
                     onPrintRow: _printLabelForProduct,
                     onEditRow: _editSingle,
                     onDeleteRow: _deleteSingle,
                     onCycleStoreLocation: _cycleDraftStoreLocation,
+                    onOpenGallery: _openDraftPhotoPreview,
                   ),
                 ),
               ],
@@ -563,20 +665,32 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
 
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
+    required this.sellerStaffMode,
     required this.searchController,
     required this.searchLoading,
     required this.bulkBusy,
+    required this.batchSendBusy,
+    required this.ansaanBatchCount,
+    required this.adminDraftFilter,
     required this.onSubmitted,
     required this.onBulkAccept,
     required this.onBatchReconcile,
+    required this.onSendBatchToAnsan,
+    required this.onAdminFilterChanged,
   });
 
+  final bool sellerStaffMode;
   final TextEditingController searchController;
   final bool searchLoading;
   final bool bulkBusy;
+  final bool batchSendBusy;
+  final int ansaanBatchCount;
+  final _AdminDraftFilter adminDraftFilter;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onBulkAccept;
   final VoidCallback onBatchReconcile;
+  final VoidCallback onSendBatchToAnsan;
+  final ValueChanged<_AdminDraftFilter> onAdminFilterChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -592,7 +706,57 @@ class _Toolbar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            if (!sellerStaffMode) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  Text('Статус:', style: AppTypography.caption()),
+                  for (final (value, label) in [
+                    (_AdminDraftFilter.all, 'Все'),
+                    (_AdminDraftFilter.onShelf, 'Новые / На складе'),
+                    (_AdminDraftFilter.sentAnsan, 'Отправлены в Ансан'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: adminDraftFilter == value,
+                      onSelected: (_) => onAdminFilterChanged(value),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed:
+                          batchSendBusy ? null : onSendBatchToAnsan,
+                      icon: batchSendBusy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.flight_takeoff_outlined),
+                      label: Text(
+                        'Отправить партию в Ансан ($ansaanBatchCount)',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.textOnPrimary,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (!sellerStaffMode)
+              Row(
               children: [
                 Expanded(
                   child: FilledButton.icon(
@@ -637,7 +801,7 @@ class _Toolbar extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            if (sellerStaffMode) const SizedBox(height: 0) else const SizedBox(height: 16),
             TextField(
               controller: searchController,
               onSubmitted: onSubmitted,
@@ -687,16 +851,20 @@ class _DraftTable extends StatelessWidget {
     required this.onEditRow,
     required this.onDeleteRow,
     required this.onCycleStoreLocation,
+    required this.onOpenGallery,
+    this.showAdminActions = true,
   });
 
   final List<Map<String, dynamic>> drafts;
   final bool loading;
   final Set<String> busyIds;
+  final bool showAdminActions;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
   final Future<void> Function(Map<String, dynamic> row) onPrintRow;
   final Future<void> Function(Map<String, dynamic> row) onEditRow;
   final Future<void> Function(Map<String, dynamic> row) onDeleteRow;
   final Future<void> Function(Map<String, dynamic> row) onCycleStoreLocation;
+  final Future<void> Function(Map<String, dynamic> row) onOpenGallery;
 
   @override
   Widget build(BuildContext context) {
@@ -749,6 +917,8 @@ class _DraftTable extends StatelessWidget {
                             onEdit: () => onEditRow(row),
                             onDelete: () => onDeleteRow(row),
                             onCycleStore: () => onCycleStoreLocation(row),
+                            onOpenGallery: () => onOpenGallery(row),
+                            showAdminActions: showAdminActions,
                           )
                         : _DraftTableWideRow(
                             row: row,
@@ -759,6 +929,8 @@ class _DraftTable extends StatelessWidget {
                             onEdit: () => onEditRow(row),
                             onDelete: () => onDeleteRow(row),
                             onCycleStore: () => onCycleStoreLocation(row),
+                            onOpenGallery: () => onOpenGallery(row),
+                            showAdminActions: showAdminActions,
                           );
                   },
                 ),
@@ -844,6 +1016,8 @@ class _DraftTableWideRow extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCycleStore,
+    required this.onOpenGallery,
+    this.showAdminActions = true,
   });
 
   final Map<String, dynamic> row;
@@ -854,9 +1028,14 @@ class _DraftTableWideRow extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCycleStore;
+  final VoidCallback onOpenGallery;
+  final bool showAdminActions;
 
   @override
   Widget build(BuildContext context) {
+    final thumbUrl = _DraftIntakeScreenState._thumbnailUrl(row);
+    final canPreview =
+        thumbUrl != null && thumbUrl.isNotEmpty && adminProductImageUrls(row).isNotEmpty;
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: _DraftTableLayout.horizontalPadding,
@@ -866,8 +1045,9 @@ class _DraftTableWideRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _DraftThumbnail(
-            url: _DraftIntakeScreenState._thumbnailUrl(row),
+            url: thumbUrl,
             size: _DraftTableLayout.photoSize,
+            onTap: canPreview ? onOpenGallery : null,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -883,8 +1063,8 @@ class _DraftTableWideRow extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: StoreLocationClickableBadge(
                 code: storeLocationCodeFromProductRow(row),
-                showCycleIcon: true,
-                onTap: busy ? null : onCycleStore,
+                showCycleIcon: showAdminActions,
+                onTap: !showAdminActions || busy ? null : onCycleStore,
               ),
             ),
           ),
@@ -927,6 +1107,7 @@ class _DraftTableWideRow extends StatelessWidget {
               onPrint: onPrint,
               onEdit: onEdit,
               onDelete: onDelete,
+              showAdminActions: showAdminActions,
             ),
           ),
         ],
@@ -945,6 +1126,8 @@ class _DraftTableNarrowRow extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onCycleStore,
+    required this.onOpenGallery,
+    this.showAdminActions = true,
   });
 
   final Map<String, dynamic> row;
@@ -955,6 +1138,8 @@ class _DraftTableNarrowRow extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCycleStore;
+  final VoidCallback onOpenGallery;
+  final bool showAdminActions;
 
   @override
   Widget build(BuildContext context) {
@@ -963,6 +1148,9 @@ class _DraftTableNarrowRow extends StatelessWidget {
     final size = _DraftIntakeScreenState._size(row).toStringAsFixed(2);
     final metal = _DraftIntakeScreenState._field(row, 'metal_type');
     final inserts = _DraftIntakeScreenState._field(row, 'gem_inserts');
+    final thumbUrl = _DraftIntakeScreenState._thumbnailUrl(row);
+    final canPreview =
+        thumbUrl != null && thumbUrl.isNotEmpty && adminProductImageUrls(row).isNotEmpty;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -976,8 +1164,9 @@ class _DraftTableNarrowRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               _DraftThumbnail(
-                url: _DraftIntakeScreenState._thumbnailUrl(row),
+                url: thumbUrl,
                 size: _DraftTableLayout.photoSize,
+                onTap: canPreview ? onOpenGallery : null,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -992,9 +1181,9 @@ class _DraftTableNarrowRow extends StatelessWidget {
                     const SizedBox(width: 4),
                     StoreLocationClickableBadge(
                       code: storeLocationCodeFromProductRow(row),
-                      showCycleIcon: true,
+                      showCycleIcon: showAdminActions,
                       compact: true,
-                      onTap: busy ? null : onCycleStore,
+                      onTap: !showAdminActions || busy ? null : onCycleStore,
                     ),
                   ],
                 ),
@@ -1008,6 +1197,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
                 onPrint: onPrint,
                 onEdit: onEdit,
                 onDelete: onDelete,
+                showAdminActions: showAdminActions,
                 compact: true,
               ),
             ],
@@ -1072,6 +1262,7 @@ class _DraftRowActions extends StatelessWidget {
     required this.onPrint,
     required this.onEdit,
     required this.onDelete,
+    this.showAdminActions = true,
     this.compact = false,
   });
 
@@ -1080,6 +1271,7 @@ class _DraftRowActions extends StatelessWidget {
   final VoidCallback onPrint;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool showAdminActions;
   final bool compact;
 
   @override
@@ -1113,17 +1305,18 @@ class _DraftRowActions extends StatelessWidget {
                 )
               : Text(compact ? 'Прин.' : 'Принять'),
         ),
-        IconButton(
-          tooltip: 'Редактировать черновик',
-          onPressed: busy ? null : onEdit,
-          padding: EdgeInsets.zero,
-          constraints: iconConstraints,
-          iconSize: compact ? 18 : 20,
-          icon: Icon(
-            Icons.edit_outlined,
-            color: busy ? AppColors.textSecondary : AppColors.primary,
+        if (showAdminActions)
+          IconButton(
+            tooltip: 'Редактировать черновик',
+            onPressed: busy ? null : onEdit,
+            padding: EdgeInsets.zero,
+            constraints: iconConstraints,
+            iconSize: compact ? 18 : 20,
+            icon: Icon(
+              Icons.edit_outlined,
+              color: busy ? AppColors.textSecondary : AppColors.primary,
+            ),
           ),
-        ),
         IconButton(
           tooltip: 'Печать ценника',
           onPressed: busy ? null : onPrint,
@@ -1135,27 +1328,33 @@ class _DraftRowActions extends StatelessWidget {
             color: busy ? AppColors.textSecondary : AppColors.accent,
           ),
         ),
-        IconButton(
-          tooltip: 'Удалить черновик',
-          onPressed: busy ? null : onDelete,
-          padding: EdgeInsets.zero,
-          constraints: iconConstraints,
-          iconSize: compact ? 18 : 20,
-          icon: Icon(
-            Icons.delete_outline,
-            color: busy ? AppColors.textSecondary : AppColors.saleRed,
+        if (showAdminActions)
+          IconButton(
+            tooltip: 'Удалить черновик',
+            onPressed: busy ? null : onDelete,
+            padding: EdgeInsets.zero,
+            constraints: iconConstraints,
+            iconSize: compact ? 18 : 20,
+            icon: Icon(
+              Icons.delete_outline,
+              color: busy ? AppColors.textSecondary : AppColors.saleRed,
+            ),
           ),
-        ),
       ],
     );
   }
 }
 
 class _DraftThumbnail extends StatelessWidget {
-  const _DraftThumbnail({this.url, this.size = 48});
+  const _DraftThumbnail({
+    this.url,
+    this.size = 48,
+    this.onTap,
+  });
 
   final String? url;
   final double size;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1163,30 +1362,10 @@ class _DraftThumbnail extends StatelessWidget {
     if (resolved == null || resolved.isEmpty) {
       return _placeholder();
     }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Image.network(
-        resolved,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => _placeholder(),
-        loadingBuilder: (context, child, progress) {
-          if (progress == null) return child;
-          return SizedBox(
-            width: size,
-            height: size,
-            child: const Center(
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
-        },
-      ),
+    return AdminClickableNetworkThumbnail(
+      imageUrl: resolved,
+      size: size,
+      onTap: onTap,
     );
   }
 

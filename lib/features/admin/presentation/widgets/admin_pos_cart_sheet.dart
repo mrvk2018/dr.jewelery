@@ -9,6 +9,7 @@ import '../../../profile/domain/models/user_profile.dart';
 import '../../application/pos_cart_controller.dart';
 import '../../domain/admin_pos_sale_exception.dart';
 import '../../domain/models/pos_cart_item.dart';
+import 'admin_product_photo_preview.dart';
 
 abstract final class AdminPosPaymentMethods {
   static const options = <String>[
@@ -31,11 +32,17 @@ class AdminPosCartSheet extends StatefulWidget {
     required this.cart,
     required this.database,
     required this.onArchived,
+    this.lockSellerSelection = false,
+    this.presetSellerPromoCode,
+    this.presetSellerName,
   });
 
   final PosCartController cart;
   final DatabaseService database;
   final Future<void> Function() onArchived;
+  final bool lockSellerSelection;
+  final String? presetSellerPromoCode;
+  final String? presetSellerName;
 
   @override
   State<AdminPosCartSheet> createState() => _AdminPosCartSheetState();
@@ -56,6 +63,20 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
 
   Future<void> _loadActiveSellers() async {
     try {
+      if (widget.lockSellerSelection) {
+        final code = widget.presetSellerPromoCode?.trim().toUpperCase();
+        final name = widget.presetSellerName?.trim() ?? code ?? '';
+        if (code != null && code.isNotEmpty) {
+          setState(() {
+            _activeSellers = [
+              SellerItem(promoCode: code, name: name.isEmpty ? code : name),
+            ];
+            _selectedPromoCode = code;
+            _sellersLoading = false;
+          });
+          return;
+        }
+      }
       final all =
           await widget.database.getSellers(UserRole.admin);
       if (!mounted) return;
@@ -273,43 +294,58 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                               ? 'Нет активных сотрудников (Incheon: добавьте в «Управление персоналом»)'
                               : null,
                     ),
-                    child: _sellersLoading
-                        ? const SizedBox(
-                            height: 24,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              ),
+                    child: widget.lockSellerSelection
+                        ? Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _checkoutSellerLabel.isEmpty
+                                  ? '—'
+                                  : _checkoutSellerLabel,
+                              style: AppTypography.productName(),
                             ),
                           )
-                        : DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              isExpanded: true,
-                              value: _activeSellers
-                                      .any((s) => s.promoCode == _selectedPromoCode)
-                                  ? _selectedPromoCode
-                                  : null,
-                              hint: const Text('Выберите продавца'),
-                              items: [
-                                for (final seller in _activeSellers)
-                                  DropdownMenuItem(
-                                    value: seller.promoCode,
-                                    child: Text(
-                                      '${seller.name} · ${seller.promoCode}',
-                                    ),
+                        : _sellersLoading
+                            ? const SizedBox(
+                                height: 24,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
                                   ),
-                              ],
-                              onChanged: _checkoutBusy || _activeSellers.isEmpty
-                                  ? null
-                                  : (code) {
-                                      if (code == null) return;
-                                      setState(() => _selectedPromoCode = code);
-                                    },
-                            ),
-                          ),
+                                ),
+                              )
+                            : DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  isExpanded: true,
+                                  value: _activeSellers.any(
+                                        (s) => s.promoCode == _selectedPromoCode,
+                                      )
+                                      ? _selectedPromoCode
+                                      : null,
+                                  hint: const Text('Выберите продавца'),
+                                  items: [
+                                    for (final seller in _activeSellers)
+                                      DropdownMenuItem(
+                                        value: seller.promoCode,
+                                        child: Text(
+                                          '${seller.name} · ${seller.promoCode}',
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged:
+                                      _checkoutBusy || _activeSellers.isEmpty
+                                          ? null
+                                          : (code) {
+                                              if (code == null) return;
+                                              setState(
+                                                () => _selectedPromoCode = code,
+                                              );
+                                            },
+                                ),
+                              ),
                   ),
                   const SizedBox(height: 12),
                   InputDecorator(
@@ -391,14 +427,17 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     BuildContext context,
     PosCartItem line,
   ) async {
-    final urls = posCartProductImageUrls(line.product);
+    final product = line.product;
+    final urls = posCartProductImageUrls(product);
     if (urls.isEmpty) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => _PosCartPhotoPreviewDialog(
-        line: line,
-        imageUrls: urls,
-      ),
+    final subtitle = line.discountPercent <= 0
+        ? '${_formatKrw(line.finalPriceKrw)} ₩'
+        : '${_formatKrw(line.finalPriceKrw)} ₩ · −${line.discountPercent}%';
+    await showAdminProductPhotoPreview(
+      context,
+      title: product.sku,
+      subtitle: subtitle,
+      imageUrls: urls,
     );
   }
 
@@ -414,12 +453,10 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
 }
 
 List<String> posCartProductImageUrls(ProductItem product) {
-  if (product.images.isNotEmpty) {
-    return product.images;
-  }
-  final url = product.imageUrl?.trim();
-  if (url != null && url.isNotEmpty) return [url];
-  return const [];
+  return posCartProductImageUrlsFromProduct(
+    images: product.images,
+    imageUrl: product.imageUrl,
+  );
 }
 
 class _PosCartLineTile extends StatelessWidget {
@@ -615,153 +652,3 @@ class _PosCartLineThumbnail extends StatelessWidget {
   }
 }
 
-class _PosCartPhotoPreviewDialog extends StatefulWidget {
-  const _PosCartPhotoPreviewDialog({
-    required this.line,
-    required this.imageUrls,
-  });
-
-  final PosCartItem line;
-  final List<String> imageUrls;
-
-  @override
-  State<_PosCartPhotoPreviewDialog> createState() =>
-      _PosCartPhotoPreviewDialogState();
-}
-
-class _PosCartPhotoPreviewDialogState extends State<_PosCartPhotoPreviewDialog> {
-  late final PageController _pageController;
-  int _index = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController();
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final line = widget.line;
-    final urls = widget.imageUrls;
-    final size = MediaQuery.sizeOf(context);
-    final maxWidth = size.width.clamp(280.0, 520.0);
-    final imageHeight = (size.height * 0.45).clamp(240.0, 480.0);
-
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      line.product.sku,
-                      style: AppTypography.heading(fontSize: 16),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Закрыть',
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              _PosCartLinePrice(line: line),
-              if (urls.length > 1) ...[
-                const SizedBox(height: 6),
-                Text(
-                  'Фото ${_index + 1} из ${urls.length}',
-                  style: AppTypography.productMeta(),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              const SizedBox(height: 12),
-              SizedBox(
-                height: imageHeight,
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: urls.length,
-                  onPageChanged: (i) => setState(() => _index = i),
-                  itemBuilder: (context, index) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.network(
-                        urls[index],
-                        fit: BoxFit.contain,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        },
-                        errorBuilder: (_, _, _) => const Center(
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            size: 48,
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              if (urls.length > 1) ...[
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      tooltip: 'Предыдущее',
-                      onPressed: _index > 0
-                          ? () => _pageController.previousPage(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeOut,
-                              )
-                          : null,
-                      icon: const Icon(Icons.chevron_left),
-                    ),
-                    ...List.generate(urls.length, (i) {
-                      final active = i == _index;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Icon(
-                          Icons.circle,
-                          size: active ? 9 : 7,
-                          color: active
-                              ? AppColors.primary
-                              : AppColors.textSecondary.withValues(alpha: 0.4),
-                        ),
-                      );
-                    }),
-                    IconButton(
-                      tooltip: 'Следующее',
-                      onPressed: _index < urls.length - 1
-                          ? () => _pageController.nextPage(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeOut,
-                              )
-                          : null,
-                      icon: const Icon(Icons.chevron_right),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}

@@ -17,6 +17,7 @@ import '../../../admin/presentation/pages/admin_web_shell.dart';
 import '../../../seller/presentation/screens/seller_terminal_screen.dart';
 import '../../../admin/presentation/widgets/admin_first_claim_dialog.dart';
 import '../../../admin/presentation/widgets/admin_unlock_dialog.dart';
+import '../../../admin/presentation/widgets/staff_panel_login_dialog.dart';
 import '../widgets/profile_auth_views.dart';
 
 /// Экран профиля покупателя (silent Supabase anonymous session).
@@ -129,6 +130,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _showAdminSnack('Режим администратора Dr. Jewelry уже активен');
       return;
     }
+
+    final wantAdmin = await showStaffPanelLoginDialog(context);
+    if (!mounted || wantAdmin == null) return;
+    if (wantAdmin != true) return;
 
     final claimed = await profile.isAdminDeviceClaimed();
     if (!mounted) return;

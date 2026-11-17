@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -11,6 +12,7 @@ import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
 import '../pages/jewelry_admin_dashboard.dart';
+import '../../domain/draft_batch_reconcile.dart';
 
 /// Складская приёмка черновиков (`stock_quantity = 0` → `1`) + печать этикеток.
 class DraftIntakeScreen extends StatefulWidget {
@@ -439,6 +441,29 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }
   }
 
+  Future<void> _showBatchReconcile() async {
+    final query = _searchController.text.trim();
+    final scopeSubtitle = query.isEmpty
+        ? 'По всем черновикам в текущем списке (поиск не задан)'
+        : 'По результатам поиска: «$query»';
+
+    final report = computeDraftBatchReconcileReport(
+      _drafts,
+      weightGramsForRow: _weight,
+      priceKrwForRow: (row) => _salePriceKrw(row) ?? 0,
+    );
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => _DraftBatchReconcileDialog(
+        report: report,
+        scopeSubtitle: scopeSubtitle,
+        totalRows: _drafts.length,
+      ),
+    );
+  }
+
   Future<void> _acceptEntireShipment() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -512,6 +537,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                   bulkBusy: _bulkBusy,
                   onSubmitted: (value) => _runSearch(value),
                   onBulkAccept: _acceptEntireShipment,
+                  onBatchReconcile: _showBatchReconcile,
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -542,6 +568,7 @@ class _Toolbar extends StatelessWidget {
     required this.bulkBusy,
     required this.onSubmitted,
     required this.onBulkAccept,
+    required this.onBatchReconcile,
   });
 
   final TextEditingController searchController;
@@ -549,6 +576,7 @@ class _Toolbar extends StatelessWidget {
   final bool bulkBusy;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onBulkAccept;
+  final VoidCallback onBatchReconcile;
 
   @override
   Widget build(BuildContext context) {
@@ -564,21 +592,50 @@ class _Toolbar extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FilledButton.icon(
-              onPressed: bulkBusy ? null : onBulkAccept,
-              icon: bulkBusy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.inventory_2_outlined),
-              label: const Text('Принять всю поставку (Массовая активация)'),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.accent,
-                foregroundColor: AppColors.textOnAccent,
-                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: bulkBusy ? null : onBulkAccept,
+                    icon: bulkBusy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.inventory_2_outlined),
+                    label: const Text(
+                      'Принять всю поставку',
+                      textAlign: TextAlign.center,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.textOnAccent,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onBatchReconcile,
+                    icon: const Icon(Icons.fact_check_outlined),
+                    label: const Text('Сверка партии'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      side: const BorderSide(color: AppColors.accent, width: 1.5),
+                      backgroundColor: AppColors.accent.withValues(alpha: 0.08),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 12,
+                        horizontal: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextField(
@@ -1289,6 +1346,253 @@ class _DraftAcceptPreviewDialogState extends State<_DraftAcceptPreviewDialog> {
           child: const Text('Принять и печатать'),
         ),
       ],
+    );
+  }
+}
+
+class _DraftBatchReconcileDialog extends StatelessWidget {
+  const _DraftBatchReconcileDialog({
+    required this.report,
+    required this.scopeSubtitle,
+    required this.totalRows,
+  });
+
+  final DraftBatchReconcileReport report;
+  final String scopeSubtitle;
+  final int totalRows;
+
+  Future<void> _copyReport(BuildContext context) async {
+    final text = draftBatchReconcilePlainText(
+      report: report,
+      scopeSubtitle: scopeSubtitle,
+      totalRows: totalRows,
+    );
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Отчёт скопирован'),
+        backgroundColor: AppColors.accent,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _groupCard({
+    required String title,
+    required DraftBatchGroupTotals stats,
+    required Color accent,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: AppTypography.heading(fontSize: 16).copyWith(color: accent),
+          ),
+          const SizedBox(height: 8),
+          _metricLine('Количество изделий', '${stats.count} шт.'),
+          _metricLine(
+            'Суммарный вес',
+            '${stats.weightGrams.toStringAsFixed(2)} г',
+          ),
+          _metricLine('Сумма', formatDraftReconcileKrw(stats.priceKrw)),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(label, style: AppTypography.productMeta()),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: AppTypography.productMeta().copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.end,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final dialogWidth = width < 520 ? width * 0.92 : 520.0;
+    final grand = report.grandTotal;
+    const goldAccent = AppColors.bannerGoldEnd;
+    const silverAccent = Color(0xFF6B7280);
+
+    return Dialog(
+      backgroundColor: AppColors.background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: AppColors.accent, width: 1.5),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: dialogWidth, maxHeight: 640),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.bannerGoldStart,
+                    AppColors.bannerGoldEnd,
+                  ],
+                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Сверка партии',
+                    style: AppTypography.heading(fontSize: 20).copyWith(
+                      color: AppColors.textOnAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    scopeSubtitle,
+                    style: AppTypography.productMeta().copyWith(
+                      color: AppColors.textOnAccent.withValues(alpha: 0.92),
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    'Позиций в списке: $totalRows',
+                    style: AppTypography.productMeta().copyWith(
+                      color: AppColors.textOnAccent.withValues(alpha: 0.85),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _groupCard(
+                      title: 'Золото',
+                      stats: report.gold,
+                      accent: goldAccent,
+                    ),
+                    const SizedBox(height: 10),
+                    _groupCard(
+                      title: 'Серебро',
+                      stats: report.silver,
+                      accent: silverAccent,
+                    ),
+                    if (report.other.count > 0) ...[
+                      const SizedBox(height: 10),
+                      _groupCard(
+                        title: 'Прочее / Не указано',
+                        stats: report.other,
+                        accent: AppColors.textSecondary,
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.accent, width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Итого по партии',
+                            style: AppTypography.heading(fontSize: 16),
+                          ),
+                          const SizedBox(height: 8),
+                          _metricLine(
+                            'Общее количество',
+                            '${grand.count} шт.',
+                          ),
+                          _metricLine(
+                            'Общий вес',
+                            '${grand.weightGrams.toStringAsFixed(2)} г',
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            formatDraftReconcileKrw(grand.priceKrw),
+                            style: AppTypography.heading(fontSize: 22).copyWith(
+                              color: AppColors.bannerGoldEnd,
+                            ),
+                            textAlign: TextAlign.right,
+                          ),
+                          Text(
+                            'Общая сумма',
+                            style: AppTypography.productMeta(),
+                            textAlign: TextAlign.right,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _copyReport(context),
+                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      label: const Text('Копировать отчёт'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textPrimary,
+                        side: const BorderSide(color: AppColors.accent),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: AppColors.textOnAccent,
+                      ),
+                      child: const Text('Закрыть'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

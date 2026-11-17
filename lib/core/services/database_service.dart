@@ -10,6 +10,7 @@ import '../../features/catalog/domain/models/catalog_constants.dart';
 import '../../features/admin/domain/admin_pos_archive_result.dart';
 import '../../features/admin/domain/draft_delete_result.dart';
 import '../../features/admin/domain/draft_store_location_result.dart';
+import '../../features/admin/domain/draft_update_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
@@ -102,7 +103,9 @@ abstract final class AdminCatalogRpc {
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
   static const deleteDraftProduct = 'delete_draft_product';
   static const setDraftStoreLocation = 'set_draft_product_store_location';
+  static const updateDraftProduct = 'update_draft_product';
   static const draftStoreLocationParam = 'p_store_location';
+  static const draftPayloadParam = 'p_payload';
   static const draftProductIdParam = 'p_id';
   static const processProductReturnManual = 'process_product_return_manual';
   static const skuParam = 'p_sku';
@@ -462,6 +465,9 @@ abstract class DatabaseService {
     required String id,
     String? storeLocation,
   });
+
+  /// Полное обновление черновика (RPC `update_draft_product`).
+  Future<DraftUpdateResult> updateDraftProduct(Map<String, dynamic> payload);
 
   Future<ScrapMetalUpsertResult> upsertScrapMetalIntake(
     Map<String, dynamic> payload,
@@ -1908,6 +1914,49 @@ class CloudDatabaseService implements DatabaseService {
       );
     }
     return (ok: false, storeLocation: null, error: 'Неизвестный ответ сервера');
+  }
+
+  static DraftUpdateResult _parseDraftUpdateRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] == true) {
+        return (
+          ok: true,
+          id: map['id']?.toString(),
+          sku: map['sku']?.toString(),
+          error: null,
+        );
+      }
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        error: message == null || message.isEmpty ? 'Ошибка сервера' : message,
+      );
+    }
+    return (ok: false, id: null, sku: null, error: 'Неизвестный ответ сервера');
+  }
+
+  @override
+  Future<DraftUpdateResult> updateDraftProduct(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final body = Map<String, dynamic>.from(payload);
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.updateDraftProduct,
+        params: {
+          AdminCatalogRpc.draftPayloadParam: body,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return _parseDraftUpdateRpc(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.updateDraftProduct failed: $error');
+      debugPrint('$stackTrace');
+      return (ok: false, id: null, sku: null, error: error.toString());
+    }
   }
 
   @override

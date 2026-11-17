@@ -10,6 +10,7 @@ import '../../../../core/utils/won_format.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
+import '../pages/jewelry_admin_dashboard.dart';
 
 /// Складская приёмка черновиков (`stock_quantity = 0` → `1`) + печать этикеток.
 class DraftIntakeScreen extends StatefulWidget {
@@ -332,6 +333,34 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }
   }
 
+  Future<void> _editSingle(Map<String, dynamic> row) async {
+    final sku = _field(row, 'sku');
+    if (sku == '—') return;
+
+    setState(() => _rowBusySkus.add(sku));
+    try {
+      final editRow = Map<String, dynamic>.from(row);
+      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      if (media != null) {
+        editRow.addAll(media);
+      }
+      if (!mounted) return;
+      final saved = await showManualProductDraftEditDialog(
+        context,
+        database: widget.database,
+        editProduct: editRow,
+      );
+      if (!mounted || !saved) return;
+      _showSnack('Черновик $sku обновлён');
+      await _runSearch(_searchController.text);
+    } catch (error) {
+      if (!mounted) return;
+      _showSnack('Ошибка редактирования: $error', isError: true);
+    } finally {
+      if (mounted) setState(() => _rowBusySkus.remove(sku));
+    }
+  }
+
   Future<void> _deleteSingle(Map<String, dynamic> row) async {
     final sku = _field(row, 'sku');
     if (sku == '—') return;
@@ -475,6 +504,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     busySkus: _rowBusySkus,
                     onAcceptRow: _acceptSingle,
                     onPrintRow: _printLabelForProduct,
+                    onEditRow: _editSingle,
                     onDeleteRow: _deleteSingle,
                     onCycleStoreLocation: _cycleDraftStoreLocation,
                   ),
@@ -568,7 +598,7 @@ class _Toolbar extends StatelessWidget {
 abstract final class _DraftTableLayout {
   static const narrowBreakpoint = 680.0;
   static const photoSize = 40.0;
-  static const actionsWidth = 132.0;
+  static const actionsWidth = 164.0;
   static const horizontalPadding = 12.0;
   static const rowVerticalPadding = 10.0;
 }
@@ -580,6 +610,7 @@ class _DraftTable extends StatelessWidget {
     required this.busySkus,
     required this.onAcceptRow,
     required this.onPrintRow,
+    required this.onEditRow,
     required this.onDeleteRow,
     required this.onCycleStoreLocation,
   });
@@ -589,6 +620,7 @@ class _DraftTable extends StatelessWidget {
   final Set<String> busySkus;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
   final Future<void> Function(Map<String, dynamic> row) onPrintRow;
+  final Future<void> Function(Map<String, dynamic> row) onEditRow;
   final Future<void> Function(Map<String, dynamic> row) onDeleteRow;
   final Future<void> Function(Map<String, dynamic> row) onCycleStoreLocation;
 
@@ -638,6 +670,7 @@ class _DraftTable extends StatelessWidget {
                             busy: busy,
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
+                            onEdit: () => onEditRow(row),
                             onDelete: () => onDeleteRow(row),
                             onCycleStore: () => onCycleStoreLocation(row),
                           )
@@ -647,6 +680,7 @@ class _DraftTable extends StatelessWidget {
                             busy: busy,
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
+                            onEdit: () => onEditRow(row),
                             onDelete: () => onDeleteRow(row),
                             onCycleStore: () => onCycleStoreLocation(row),
                           );
@@ -731,6 +765,7 @@ class _DraftTableWideRow extends StatelessWidget {
     required this.busy,
     required this.onAccept,
     required this.onPrint,
+    required this.onEdit,
     required this.onDelete,
     required this.onCycleStore,
   });
@@ -740,6 +775,7 @@ class _DraftTableWideRow extends StatelessWidget {
   final bool busy;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCycleStore;
 
@@ -813,6 +849,7 @@ class _DraftTableWideRow extends StatelessWidget {
               busy: busy,
               onAccept: onAccept,
               onPrint: onPrint,
+              onEdit: onEdit,
               onDelete: onDelete,
             ),
           ),
@@ -829,6 +866,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
     required this.busy,
     required this.onAccept,
     required this.onPrint,
+    required this.onEdit,
     required this.onDelete,
     required this.onCycleStore,
   });
@@ -838,6 +876,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
   final bool busy;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onCycleStore;
 
@@ -891,6 +930,7 @@ class _DraftTableNarrowRow extends StatelessWidget {
                 busy: busy,
                 onAccept: onAccept,
                 onPrint: onPrint,
+                onEdit: onEdit,
                 onDelete: onDelete,
                 compact: true,
               ),
@@ -954,6 +994,7 @@ class _DraftRowActions extends StatelessWidget {
     required this.busy,
     required this.onAccept,
     required this.onPrint,
+    required this.onEdit,
     required this.onDelete,
     this.compact = false,
   });
@@ -961,6 +1002,7 @@ class _DraftRowActions extends StatelessWidget {
   final bool busy;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final bool compact;
 
@@ -994,6 +1036,17 @@ class _DraftRowActions extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(compact ? 'Прин.' : 'Принять'),
+        ),
+        IconButton(
+          tooltip: 'Редактировать черновик',
+          onPressed: busy ? null : onEdit,
+          padding: EdgeInsets.zero,
+          constraints: iconConstraints,
+          iconSize: compact ? 18 : 20,
+          icon: Icon(
+            Icons.edit_outlined,
+            color: busy ? AppColors.textSecondary : AppColors.primary,
+          ),
         ),
         IconButton(
           tooltip: 'Печать ценника',

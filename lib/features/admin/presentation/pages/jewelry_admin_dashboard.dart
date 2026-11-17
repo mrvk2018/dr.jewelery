@@ -1473,12 +1473,14 @@ class _ManualProductDialog extends StatefulWidget {
     required this.onSaved,
     this.editProduct,
     this.catalogRows = const [],
+    this.draftIntakeMode = false,
   });
 
   final DatabaseService database;
   final Future<void> Function({required bool asDraft}) onSaved;
   final Map<String, dynamic>? editProduct;
   final List<Map<String, dynamic>> catalogRows;
+  final bool draftIntakeMode;
 
   bool get isEditMode => editProduct != null;
 
@@ -2182,6 +2184,56 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       final notes = _notesController.text.trim();
       final manufacturer = _resolvedManufacturer;
 
+      if (widget.draftIntakeMode && _isEditMode) {
+        final productId = widget.editProduct!['id']?.toString().trim() ?? '';
+        if (productId.isEmpty) {
+          _snack('Нет id черновика', error: true);
+          return;
+        }
+        if (_deferredPhotos.isNotEmpty) {
+          await _uploadDeferredPhotos(sku);
+          if (mounted) setState(() => _deferredPhotos.clear());
+          await _refreshGalleryAfterSave(sku);
+        }
+        final gallery = List<String>.from(_imageUrls);
+        final storeCode = _storeLocationCode == StoreLocationCode.unselected
+            ? ''
+            : normalizeStoreLocationCode(storeLocation: _storeLocationCode);
+        final result = await widget.database.updateDraftProduct({
+          'id': productId,
+          'sku': sku,
+          'name': productName,
+          'category': productCategory,
+          'metal_type': _resolvedMetalType,
+          'metal': _resolvedMetalType,
+          'insert': formatGemInsertsForStorage(
+            catalog: _selectedCatalogGems,
+            legacy: _legacyGemValues,
+          ),
+          'gem_inserts': formatGemInsertsForStorage(
+            catalog: _selectedCatalogGems,
+            legacy: _legacyGemValues,
+          ),
+          'weight_grams': weight,
+          if (size != null) 'size_value': size,
+          'notes': notes,
+          'manufacturer': manufacturer,
+          'sale_price': price,
+          'price': price,
+          'store_location': storeCode,
+          'additional_images': gallery,
+          if (gallery.isNotEmpty) 'image_url': gallery.first,
+        });
+        if (!result.ok) {
+          _snack(result.error ?? 'Не удалось обновить черновик', error: true);
+          return;
+        }
+        await widget.onSaved(asDraft: true);
+        if (!mounted) return;
+        Navigator.pop(context, true);
+        return;
+      }
+
       final ok = _isEditMode
           ? await widget.database.updateManualProduct(
               productId: widget.editProduct!['id']?.toString() ?? '',
@@ -2626,7 +2678,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
     return AlertDialog(
       title: Text(
-        _isEditMode ? 'Редактировать карточку' : 'Добавить товар',
+        widget.draftIntakeMode
+            ? 'Редактирование черновика'
+            : (_isEditMode ? 'Редактировать карточку' : 'Добавить товар'),
         style: AppTypography.heading(fontSize: 18),
       ),
       content: SizedBox(
@@ -2682,34 +2736,48 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                     onPressed: _saving ? null : () => Navigator.pop(context),
                     child: const Text('Закрыть'),
                   ),
-                  if (!_isEditMode) ...[
+                  if (widget.draftIntakeMode) ...[
                     const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed:
-                          _saving ? null : () => _requestSubmit(asDraft: true),
+                    FilledButton(
+                      onPressed: _saving ? null : () => _requestSubmit(asDraft: true),
                       child: _saving
                           ? const SizedBox(
                               width: 18,
                               height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Text('Сохранить в черновики'),
+                          : const Text('Сохранить изменения'),
+                    ),
+                  ] else ...[
+                    if (!_isEditMode) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed:
+                            _saving ? null : () => _requestSubmit(asDraft: true),
+                        child: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('Сохранить в черновики'),
+                      ),
+                    ],
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed:
+                          _saving ? null : () => _requestSubmit(asDraft: false),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              _isEditMode ? 'Сохранить' : 'Добавить на витрину',
+                            ),
                     ),
                   ],
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed:
-                        _saving ? null : () => _requestSubmit(asDraft: false),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(
-                            _isEditMode ? 'Сохранить' : 'Добавить на витрину',
-                          ),
-                  ),
                 ],
               ),
             ),
@@ -2826,4 +2894,22 @@ class _DeferredPhotoPreview extends StatelessWidget {
       },
     );
   }
+}
+
+/// Редактирование черновика из экрана «Приёмка черновиков».
+Future<bool> showManualProductDraftEditDialog(
+  BuildContext context, {
+  required DatabaseService database,
+  required Map<String, dynamic> editProduct,
+}) async {
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => _ManualProductDialog(
+      database: database,
+      editProduct: editProduct,
+      draftIntakeMode: true,
+      onSaved: ({required bool asDraft}) async {},
+    ),
+  );
+  return saved == true;
 }

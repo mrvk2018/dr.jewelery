@@ -619,9 +619,6 @@ abstract class DatabaseService {
     required List<String> additionalImages,
   });
 
-  /// Списание с витрины (`stock_quantity` → `0`). Устаревает в пользу [deleteProductPermanently].
-  Future<bool> writeOffProductBySku(String sku);
-
   /// Безвозвратное удаление изделия (`delete_product_permanently`, 047).
   Future<ProductDeleteResult> deleteProductPermanently(String productId);
 
@@ -3076,24 +3073,6 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint(
         'CloudDatabaseService.updateProductGalleryByProductId failed: $error',
       );
-      debugPrint('$stackTrace');
-      return false;
-    }
-  }
-
-  @override
-  Future<bool> writeOffProductBySku(String sku) async {
-    final normalizedSku = sku.trim();
-    if (normalizedSku.isEmpty) return false;
-    try {
-      final rows = await _supabaseClient
-          .from('products')
-          .update({'stock_quantity': 0})
-          .eq('sku', normalizedSku)
-          .select('sku');
-      return rows.isNotEmpty;
-    } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.writeOffProductBySku failed: $error');
       debugPrint('$stackTrace');
       return false;
     }

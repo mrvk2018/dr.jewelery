@@ -201,6 +201,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
           database: _database,
           sellerStaffMode: true,
           actorCode: session.promoCode,
+          onTransfersMutated: _refreshTransfersBadge,
         ),
       ];
 

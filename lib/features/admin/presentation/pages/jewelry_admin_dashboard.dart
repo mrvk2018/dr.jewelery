@@ -336,7 +336,10 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   Future<void> _openDraftIntake() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DraftIntakeScreen(database: widget.database),
+        builder: (_) => DraftIntakeScreen(
+          database: widget.database,
+          onTransfersMutated: widget.onProductTransfersChanged,
+        ),
       ),
     );
     if (!mounted) return;

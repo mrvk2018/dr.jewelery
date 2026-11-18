@@ -2047,6 +2047,9 @@ class CloudDatabaseService implements DatabaseService {
           sku: map['sku']?.toString(),
           storeLocation: map['store_location']?.toString(),
           error: null,
+          transferResolution: map['transfer_resolution']?.toString(),
+          transferFrom: map['transfer_from']?.toString(),
+          transferTo: map['transfer_to']?.toString(),
         );
       }
       final message = map['error']?.toString().trim();
@@ -2056,6 +2059,9 @@ class CloudDatabaseService implements DatabaseService {
         sku: null,
         storeLocation: null,
         error: message == null || message.isEmpty ? 'Ошибка сервера' : message,
+        transferResolution: null,
+        transferFrom: null,
+        transferTo: null,
       );
     }
     return (
@@ -2064,6 +2070,9 @@ class CloudDatabaseService implements DatabaseService {
       sku: null,
       storeLocation: null,
       error: 'Неизвестный ответ сервера',
+      transferResolution: null,
+      transferFrom: null,
+      transferTo: null,
     );
   }
 
@@ -2081,6 +2090,9 @@ class CloudDatabaseService implements DatabaseService {
         sku: null,
         storeLocation: null,
         error: 'Пустой id',
+        transferResolution: null,
+        transferFrom: null,
+        transferTo: null,
       );
     }
     try {
@@ -2110,6 +2122,9 @@ class CloudDatabaseService implements DatabaseService {
         sku: null,
         storeLocation: null,
         error: error.toString(),
+        transferResolution: null,
+        transferFrom: null,
+        transferTo: null,
       );
     }
   }

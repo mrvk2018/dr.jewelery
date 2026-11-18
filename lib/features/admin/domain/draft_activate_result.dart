@@ -5,4 +5,8 @@ typedef DraftActivateResult = ({
   String? sku,
   String? storeLocation,
   String? error,
+  /// `completed` | `cancelled` при авто-закрытии висящего `product_transfers` (045).
+  String? transferResolution,
+  String? transferFrom,
+  String? transferTo,
 });

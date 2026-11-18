@@ -13,6 +13,7 @@ import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
 import '../pages/jewelry_admin_dashboard.dart';
 import '../widgets/admin_product_photo_preview.dart';
+import '../../domain/draft_activate_result.dart';
 import '../../domain/draft_batch_reconcile.dart';
 
 enum _AdminDraftFilter { all, onShelf, sentAnsan }
@@ -24,11 +25,13 @@ class DraftIntakeScreen extends StatefulWidget {
     DatabaseService? database,
     this.sellerStaffMode = false,
     this.actorCode = 'ADMIN',
+    this.onTransfersMutated,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
   final bool sellerStaffMode;
   final String actorCode;
+  final VoidCallback? onTransfersMutated;
 
   @override
   State<DraftIntakeScreen> createState() => _DraftIntakeScreenState();
@@ -339,6 +342,24 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return id;
   }
 
+  void _showTransferAutoCloseSnackIfNeeded(DraftActivateResult result) {
+    final resolution = result.transferResolution?.trim().toLowerCase();
+    if (resolution == null || resolution.isEmpty) return;
+
+    final from = result.transferFrom ?? '—';
+    final to = result.transferTo ?? '—';
+    final message = switch (resolution) {
+      'cancelled' =>
+        'Висящий трансфер $from→$to отменён (приёмка не совпала с маршрутом).',
+      'completed' =>
+        'Трансфер $from→$to закрыт — совпал с магазином приёмки.',
+      _ => null,
+    };
+    if (message != null) {
+      _showSnack(message);
+    }
+  }
+
   static String? _storeCodeForActivate(Map<String, dynamic> row) {
     if (isStoreLocationUnsetInDatabase(row)) return null;
     return normalizeStoreLocationCode(
@@ -378,6 +399,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         );
         return;
       }
+
+      widget.onTransfersMutated?.call();
+      _showTransferAutoCloseSnackIfNeeded(result);
 
       final printRow = Map<String, dynamic>.from(row)..['notes'] = productName;
       _showSnack('Принят 1 экз. $sku — на витрине (stock=1)');

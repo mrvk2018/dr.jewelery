@@ -1,4 +1,4 @@
--- Синхронизация image_url, images (text[]) и additional_images (jsonb) для галереи витрины.
+-- Синхронизация image_url, images (text[]) и additional_images (text[]) для галереи витрины.
 
 BEGIN;
 
@@ -14,7 +14,7 @@ COMMENT ON COLUMN public.products.images IS
 CREATE OR REPLACE FUNCTION public._product_gallery_urls_merged(
   p_image_url text,
   p_images text[],
-  p_additional jsonb
+  p_additional text[]
 )
 RETURNS text[]
 LANGUAGE plpgsql
@@ -24,7 +24,6 @@ DECLARE
   v_urls text[] := ARRAY[]::text[];
   v_url text;
   v_elem text;
-  i int;
 BEGIN
   v_url := NULLIF(btrim(COALESCE(p_image_url, '')), '');
   IF v_url IS NOT NULL AND NOT (v_url = ANY (v_urls)) THEN
@@ -44,9 +43,9 @@ BEGIN
     END LOOP;
   END IF;
 
-  IF p_additional IS NOT NULL AND jsonb_typeof(p_additional) = 'array' THEN
-    FOR i IN 0..GREATEST(jsonb_array_length(p_additional) - 1, -1) LOOP
-      v_elem := NULLIF(btrim(COALESCE(p_additional ->> i, '')), '');
+  IF p_additional IS NOT NULL THEN
+    FOREACH v_elem IN ARRAY p_additional LOOP
+      v_elem := NULLIF(btrim(COALESCE(v_elem, '')), '');
       IF v_elem IS NULL OR v_elem = ANY (v_urls) THEN
         CONTINUE;
       END IF;
@@ -68,15 +67,18 @@ IMMUTABLE
 AS $$
 DECLARE
   v_images text[];
-  v_additional jsonb;
+  v_additional text[];
 BEGIN
   IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
     RETURN ARRAY[]::text[];
   END IF;
 
-  v_additional := COALESCE(p_payload -> 'additional_images', '[]'::jsonb);
-  IF jsonb_typeof(v_additional) IS DISTINCT FROM 'array' THEN
-    v_additional := '[]'::jsonb;
+  v_additional := ARRAY[]::text[];
+  IF p_payload ? 'additional_images' AND jsonb_typeof(p_payload -> 'additional_images') = 'array' THEN
+    SELECT COALESCE(array_agg(NULLIF(btrim(elem), '')), ARRAY[]::text[])
+    INTO v_additional
+    FROM jsonb_array_elements_text(p_payload -> 'additional_images') AS elem
+    WHERE NULLIF(btrim(elem), '') IS NOT NULL;
   END IF;
 
   v_images := ARRAY[]::text[];
@@ -108,9 +110,10 @@ BEGIN
   v_urls := public._product_gallery_urls_merged(
     p_row.image_url,
     p_row.images,
-  to_jsonb(p_row.additional_images));
+    p_row.additional_images
+  );
   v_out.images := v_urls;
-  v_out.additional_images := to_jsonb(v_urls);
+  v_out.additional_images := v_urls;
   IF array_length(v_urls, 1) IS NOT NULL AND array_length(v_urls, 1) > 0 THEN
     v_out.image_url := v_urls[1];
   ELSE
@@ -149,7 +152,7 @@ CREATE TRIGGER products_sync_gallery_fields
 UPDATE public.products AS p
 SET
   images = g.urls,
-  additional_images = to_jsonb(g.urls),
+  additional_images = g.urls,
   image_url = CASE
     WHEN array_length(g.urls, 1) IS NOT NULL AND array_length(g.urls, 1) > 0 THEN g.urls[1]
     ELSE NULL
@@ -160,7 +163,7 @@ FROM (
     public._product_gallery_urls_merged(
       pr.image_url,
       pr.images,
-      to_jsonb(pr.additional_images)
+      pr.additional_images
     ) AS urls
   FROM public.products AS pr
 ) AS g
@@ -173,7 +176,7 @@ WHERE p.id = g.id
         ELSE NULL
       END
     )
-    OR to_jsonb(p.additional_images) IS DISTINCT FROM to_jsonb(g.urls)
+    OR p.additional_images IS DISTINCT FROM g.urls
   );
 
 -- ---------------------------------------------------------------------------
@@ -214,7 +217,7 @@ BEGIN
   v_urls := public._product_gallery_urls_merged(
     v_row.image_url,
     v_row.images,
-    to_jsonb(v_row.additional_images)
+    v_row.additional_images
   );
 
   RETURN jsonb_build_object(
@@ -263,7 +266,7 @@ BEGIN
 
   UPDATE public.products
   SET
-    additional_images = to_jsonb(v_urls),
+    additional_images = v_urls,
     images = v_urls,
     image_url = CASE
       WHEN array_length(v_urls, 1) IS NOT NULL AND array_length(v_urls, 1) > 0 THEN v_urls[1]
@@ -378,7 +381,7 @@ BEGIN
     sale_price = GREATEST(COALESCE((p_payload->>'sale_price')::integer, (p_payload->>'price')::integer, 0), 0),
     old_price = GREATEST(COALESCE((p_payload->>'sale_price')::integer, (p_payload->>'price')::integer, 0), 0),
     store_location = v_loc,
-    additional_images = to_jsonb(v_urls),
+    additional_images = v_urls,
     images = v_urls,
     image_url = CASE
       WHEN array_length(v_urls, 1) IS NOT NULL AND array_length(v_urls, 1) > 0 THEN v_urls[1]
@@ -409,7 +412,7 @@ BEGIN
   v_urls := public._product_gallery_urls_merged(
     p_row.image_url,
     p_row.images,
-    to_jsonb(p_row.additional_images)
+    p_row.additional_images
   );
 
   IF array_length(v_urls, 1) IS NOT NULL AND array_length(v_urls, 1) > 0 THEN

@@ -1352,8 +1352,10 @@ function assertLegacySyncAllowed() {
     process.env.ALLOW_LEGACY_MSSQL_FULL_SYNC === 'true';
   if (!forced) {
     console.error(
-      '[sync] BLOCKED: полный DrJaw→Supabase sync отключён после cutover. ' +
-        'Для ручного запуска: --force-cutover-override или ALLOW_LEGACY_MSSQL_FULL_SYNC=true',
+      '[sync] BLOCKED: витрина ICN/ANS переведена на Supabase (cutover 2026-11-18). ' +
+        'Полный импорт DrJaw→products по умолчанию запрещён — перезапишет продажи и админ-черновики. ' +
+        'Точечные операции: scripts/import-items-id-range.js, scripts/archive-mssql-sales.js. ' +
+        'Для legacy full sync: node sync.js --force-cutover-override или ALLOW_LEGACY_MSSQL_FULL_SYNC=true',
     );
     process.exit(2);
   }

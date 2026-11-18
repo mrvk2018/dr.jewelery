@@ -410,12 +410,29 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _snack('Выберите товар в таблице', error: true);
       return;
     }
+    final productId = _productId(row);
+    if (productId == null) {
+      _snack('У позиции нет id', error: true);
+      return;
+    }
     final sku = _cell(row, 'sku');
+    final weightRaw = row['weight_grams'];
+    final weight = weightRaw is num
+        ? weightRaw.toDouble()
+        : double.tryParse('$weightRaw');
+    final weightLabel =
+        weight != null ? '${weight.toStringAsFixed(2)} г' : '—';
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Списать с витрины?'),
-        content: Text('SKU $sku → stock_quantity = 0'),
+        title: const Text('Вы точно хотите безвозвратно удалить?'),
+        content: Text(
+          'SKU $sku · $weightLabel\n\n'
+          'Изделие будет полностью удалено из базы (public.products), '
+          'минуя черновики и архив. Это действие нельзя отменить. '
+          'Если по изделию есть продажи в истории кассы — удаление будет заблокировано.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -424,7 +441,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.saleRed),
-            child: const Text('Списать'),
+            child: const Text('Удалить безвозвратно'),
           ),
         ],
       ),
@@ -432,15 +449,20 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     if (confirmed != true || !mounted) return;
 
     try {
-      final ok = await widget.database.writeOffProductBySku(sku);
-      if (!ok) {
-        _snack('Списание не выполнено (RLS?)', error: true);
+      final result = await widget.database.deleteProductPermanently(productId);
+      if (!result.ok) {
+        _snack(result.error ?? 'Удаление не выполнено', error: true);
         return;
       }
-      _snack('Товар $sku снят с витрины');
+      if (_posCart.containsProduct(productId)) {
+        _posCart.removeFromCart(productId);
+      }
+      setState(() => _selected = null);
+      widget.onProductTransfersChanged?.call();
+      _snack('Изделие $sku удалено из базы');
       await _refreshCatalog();
     } catch (error) {
-      _snack('Ошибка списания: $error', error: true);
+      _snack('Ошибка удаления: $error', error: true);
     }
   }
 

@@ -11,6 +11,7 @@ import '../../features/admin/domain/admin_pos_archive_result.dart';
 import '../../features/admin/domain/draft_delete_result.dart';
 import '../../features/admin/domain/draft_store_location_result.dart';
 import '../../features/admin/domain/draft_activate_result.dart';
+import '../../features/admin/domain/product_delete_result.dart';
 import '../../features/admin/domain/draft_update_result.dart';
 import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
@@ -135,6 +136,7 @@ abstract final class AdminCatalogRpc {
   static const draftPayloadParam = 'p_payload';
   static const draftProductIdParam = 'p_id';
   static const processProductReturnManual = 'process_product_return_manual';
+  static const deleteProductPermanently = 'delete_product_permanently';
   static const skuParam = 'p_sku';
   static const additionalImagesParam = 'p_additional_images';
 }
@@ -617,8 +619,11 @@ abstract class DatabaseService {
     required List<String> additionalImages,
   });
 
-  /// Списание с витрины (`stock_quantity` → `0`).
+  /// Списание с витрины (`stock_quantity` → `0`). Устаревает в пользу [deleteProductPermanently].
   Future<bool> writeOffProductBySku(String sku);
+
+  /// Безвозвратное удаление изделия (`delete_product_permanently`, 047).
+  Future<ProductDeleteResult> deleteProductPermanently(String productId);
 
   /// Ручная продажа админом: `status = sold`, `stock_quantity = 0` (триггер → sales_history).
   Future<bool> markProductSoldByProductId(String productId);
@@ -3096,6 +3101,70 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.writeOffProductBySku failed: $error');
       debugPrint('$stackTrace');
       return false;
+    }
+  }
+
+  static ProductDeleteResult _parseProductDeleteRpc(dynamic result) {
+    if (result is Map) {
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] == true) {
+        return (
+          ok: true,
+          id: map['id']?.toString(),
+          sku: map['sku']?.toString(),
+          transfersRemoved: (map['transfers_removed'] as num?)?.toInt() ?? 0,
+          error: null,
+        );
+      }
+      final message = map['error']?.toString().trim();
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        transfersRemoved: 0,
+        error: message == null || message.isEmpty ? 'Ошибка сервера' : message,
+      );
+    }
+    return (
+      ok: false,
+      id: null,
+      sku: null,
+      transfersRemoved: 0,
+      error: 'Неизвестный ответ сервера',
+    );
+  }
+
+  @override
+  Future<ProductDeleteResult> deleteProductPermanently(String productId) async {
+    final id = productId.trim();
+    if (id.isEmpty) {
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        transfersRemoved: 0,
+        error: 'Пустой id',
+      );
+    }
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.deleteProductPermanently,
+        params: {
+          AdminCatalogRpc.productIdParam: id,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return _parseProductDeleteRpc(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.deleteProductPermanently failed: $error');
+      debugPrint('$stackTrace');
+      return (
+        ok: false,
+        id: null,
+        sku: null,
+        transfersRemoved: 0,
+        error: error.toString(),
+      );
     }
   }
 

@@ -793,17 +793,12 @@ class CloudDatabaseService implements DatabaseService {
     Map<String, dynamic> row,
   ) {
     final galleryUrls = productGalleryImageUrls(row);
-    if (galleryUrls.isNotEmpty) {
-      return {
-        'imageUrl': galleryUrls.first,
-        'images': galleryUrls,
-      };
+    if (galleryUrls.isEmpty) {
+      return {'imageUrl': null, 'images': const <String>[]};
     }
-    final legacyImages = row['images'] as List<dynamic>?;
-    final legacyUrl = row['image_url']?.toString().trim();
     return {
-      'imageUrl': legacyUrl?.isNotEmpty == true ? legacyUrl : null,
-      if (legacyImages != null && legacyImages.isNotEmpty) 'images': legacyImages,
+      'imageUrl': galleryUrls.first,
+      'images': galleryUrls,
     };
   }
 
@@ -2561,7 +2556,7 @@ class CloudDatabaseService implements DatabaseService {
         'sale_price': priceKrw,
         'old_price': priceKrw,
         'status': isDraft ? 'hidden' : 'active',
-        'additional_images': additionalImages,
+        ...productGalleryDbFieldsFromUrls(additionalImages),
       };
       final locValue = storeLocationToDatabaseValue(
         storeLocation ?? StoreLocationCode.unselected,

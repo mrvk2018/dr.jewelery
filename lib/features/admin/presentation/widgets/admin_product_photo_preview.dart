@@ -4,17 +4,8 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/product_gallery_urls.dart';
-import '../../../../shared/models/product_item.dart';
-
-List<String> adminProductImageUrls(Map<String, dynamic> row) {
-  final primary = productGalleryImageUrls(row);
-  if (primary.isNotEmpty) return primary;
-  final fromImages = parseAdditionalImagesField(row['images']);
-  if (fromImages.isNotEmpty) {
-    return fromImages.take(ProductItem.maxGalleryImages).toList();
-  }
-  return const [];
-}
+List<String> adminProductImageUrls(Map<String, dynamic> row) =>
+    productGalleryImageUrls(row);
 
 List<String> posCartProductImageUrlsFromProduct({
   required List<String> images,

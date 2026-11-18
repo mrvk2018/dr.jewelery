@@ -36,16 +36,49 @@ List<String> parseAdditionalImagesField(Object? raw) {
   return const [];
 }
 
+/// Поля `products` для записи галереи (первый URL → `image_url`, полный список в оба массива).
+Map<String, dynamic> productGalleryDbFieldsFromUrls(
+  Iterable<String> urls, {
+  int maxCount = ProductItem.maxGalleryImages,
+}) {
+  final normalized = mergeUniqueGalleryUrls(urls, maxCount: maxCount);
+  if (normalized.isEmpty) {
+    return {
+      'image_url': null,
+      'images': const <String>[],
+      'additional_images': const <String>[],
+    };
+  }
+  return {
+    'image_url': normalized.first,
+    'images': normalized,
+    'additional_images': normalized,
+  };
+}
+
 List<String> productGalleryImageUrls(Map<String, dynamic> row) {
+  final primary = row['image_url']?.toString().trim() ?? '';
+  final fromImages = parseAdditionalImagesField(row['images']);
   final fromAdditional = parseAdditionalImagesField(row['additional_images']);
-  if (fromAdditional.isNotEmpty) {
-    return fromAdditional.take(ProductItem.maxGalleryImages).toList();
-  }
-  final legacyUrl = row['image_url']?.toString().trim() ?? '';
-  if (legacyUrl.isNotEmpty) {
-    return [legacyUrl];
-  }
-  return const [];
+  return mergeUniqueGalleryUrls([
+    if (primary.isNotEmpty) primary,
+    ...fromImages,
+    ...fromAdditional,
+  ]);
+}
+
+List<String> productGalleryImageUrlsFromClientJson(Map<String, dynamic> json) {
+  final primary =
+      json['imageUrl'] as String? ?? json['image_url'] as String? ?? '';
+  final fromImages = parseAdditionalImagesField(json['images']);
+  final fromAdditional = parseAdditionalImagesField(
+    json['additionalImages'] ?? json['additional_images'],
+  );
+  return mergeUniqueGalleryUrls([
+    if (primary.trim().isNotEmpty) primary.trim(),
+    ...fromImages,
+    ...fromAdditional,
+  ]);
 }
 
 List<String> mergeUniqueGalleryUrls(

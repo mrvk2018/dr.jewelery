@@ -1,4 +1,5 @@
 import '../../core/l10n/localized_text.dart';
+import '../../core/utils/product_gallery_urls.dart';
 
 export '../../core/utils/won_format.dart';
 
@@ -134,26 +135,28 @@ class ProductItem {
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
     final id = json['id']?.toString() ?? '';
-    final legacyImageUrl =
-        json['imageUrl'] as String? ?? json['image_url'] as String?;
-    final imagesFromDb = (json['images'] as List<dynamic>? ?? const [])
-        .map((e) => e.toString())
-        .where((url) => url.trim().isNotEmpty)
-        .toList();
-
-    final imageUrl = legacyImageUrl?.trim().isNotEmpty == true
-        ? legacyImageUrl!.trim()
-        : (imagesFromDb.isNotEmpty ? imagesFromDb.first.trim() : null);
-
+    final mergedGallery = productGalleryImageUrlsFromClientJson(json);
+    final String? imageUrl;
     final List<String> images;
-    if (imagesFromDb.isNotEmpty) {
-      images = imagesFromDb.take(maxGalleryImages).toList();
-    } else if (imageUrl != null && isProductStorageImageUrl(imageUrl)) {
-      images = storageGalleryUrlsFromBase(imageUrl);
-    } else if (imageUrl != null) {
-      images = [imageUrl];
+    if (mergedGallery.isNotEmpty) {
+      images = mergedGallery;
+      imageUrl = mergedGallery.first;
     } else {
-      images = const [];
+      final legacyImageUrl =
+          json['imageUrl'] as String? ?? json['image_url'] as String?;
+      final trimmed = legacyImageUrl?.trim();
+      if (trimmed != null &&
+          trimmed.isNotEmpty &&
+          isProductStorageImageUrl(trimmed)) {
+        images = storageGalleryUrlsFromBase(trimmed);
+        imageUrl = trimmed;
+      } else if (trimmed != null && trimmed.isNotEmpty) {
+        images = [trimmed];
+        imageUrl = trimmed;
+      } else {
+        images = const [];
+        imageUrl = null;
+      }
     }
 
     return ProductItem(

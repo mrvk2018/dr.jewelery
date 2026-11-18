@@ -2625,6 +2625,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           await _refreshGalleryAfterSave(sku);
         }
         final gallery = List<String>.from(_imageUrls);
+        final galleryFields = productGalleryDbFieldsFromUrls(gallery);
         final storeCode = _storeLocationCode == StoreLocationCode.unselected
             ? ''
             : normalizeStoreLocationCode(storeLocation: _storeLocationCode);
@@ -2650,8 +2651,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           'sale_price': price,
           'price': price,
           'store_location': storeCode,
-          'additional_images': gallery,
-          if (gallery.isNotEmpty) 'image_url': gallery.first,
+          ...galleryFields,
         });
         if (!result.ok) {
           _snack(result.error ?? 'Не удалось обновить черновик', error: true);

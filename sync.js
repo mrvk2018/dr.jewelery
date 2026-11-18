@@ -1346,7 +1346,22 @@ async function mainResyncPhoto0() {
   }
 }
 
+function assertLegacySyncAllowed() {
+  const forced =
+    process.argv.includes('--force-cutover-override') ||
+    process.env.ALLOW_LEGACY_MSSQL_FULL_SYNC === 'true';
+  if (!forced) {
+    console.error(
+      '[sync] BLOCKED: полный DrJaw→Supabase sync отключён после cutover. ' +
+        'Для ручного запуска: --force-cutover-override или ALLOW_LEGACY_MSSQL_FULL_SYNC=true',
+    );
+    process.exit(2);
+  }
+  console.warn('[sync] WARNING: legacy MSSQL full sync explicitly allowed.');
+}
+
 async function main() {
+  assertLegacySyncAllowed();
   requireEnv();
   await applyDropSkuUniqueConstraint();
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

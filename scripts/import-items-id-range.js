@@ -11,6 +11,12 @@ const sync = require('../sync.js');
 
 const MIN_ID = Number(process.argv[2] || 20190);
 const MAX_ID = Number(process.argv[3] || 20215);
+const SKIP_IDS = new Set(
+  (process.env.SKIP_IMPORT_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
 
 async function fetchMssqlIdRange(pool, minId, maxId) {
   return sync.runMssqlWithTimeout(`fetchItems_${minId}_${maxId}`, async (activePool) => {
@@ -81,11 +87,22 @@ async function importRange(supabase, pool, rows) {
 
   for (const row of rows) {
     const id = String(row.Id);
+    if (SKIP_IDS.has(id)) {
+      console.log(`[import] skip id=${id} (SKIP_IMPORT_IDS)`);
+      continue;
+    }
     const sku = String(row.Articul || '').trim();
     try {
       const { scalars } = await sync.buildDesiredScalarsForRow(row);
-      scalars.status = 'active';
-      scalars.stock_quantity = 1;
+      const msStatus = String(row.Status ?? '').trim();
+      if (msStatus === 'InTransfer') {
+        scalars.status = 'in_transfer';
+        scalars.stock_quantity = 0;
+        scalars.store_location = sync.resolveStoreLocationFromMart(row.Mart);
+      } else {
+        scalars.status = 'active';
+        scalars.stock_quantity = 1;
+      }
 
       const { slots } = await sync.fetchArticulImageBuffers(pool, sku);
       articulSlotsCache.set(sku, slots);

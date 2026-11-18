@@ -592,6 +592,7 @@ class _SalesHistoryTile extends StatelessWidget {
         ? AdminPosPaymentMethods.label(payment)
         : '—';
     final seller = row.sellerName?.trim();
+    final manufacturer = row.manufacturer?.trim();
     final soldAt = formatSoldAtKst(row);
 
     return Padding(
@@ -649,6 +650,11 @@ class _SalesHistoryTile extends StatelessWidget {
                           icon: Icons.store_outlined,
                           label: salesStorePointLabel(row.storeLocation),
                         ),
+                        if (manufacturer != null && manufacturer.isNotEmpty)
+                          _InfoChip(
+                            icon: Icons.factory_outlined,
+                            label: manufacturer,
+                          ),
                         _InfoChip(
                           icon: Icons.person_outline,
                           label: (seller != null && seller.isNotEmpty)

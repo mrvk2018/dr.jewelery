@@ -87,6 +87,7 @@ class SalesHistoryRow {
     this.storeLocation,
     this.sellerName,
     this.sellerCode,
+    this.manufacturer,
     this.paymentMethod,
     this.soldAtUtc,
     this.soldDateKst,
@@ -111,6 +112,7 @@ class SalesHistoryRow {
   final String? storeLocation;
   final String? sellerName;
   final String? sellerCode;
+  final String? manufacturer;
   final String? paymentMethod;
   final DateTime? soldAtUtc;
   final String? soldDateKst;
@@ -244,6 +246,7 @@ class SalesHistoryRow {
       storeLocation: map['store_location']?.toString().trim(),
       sellerName: map['seller_name']?.toString().trim(),
       sellerCode: map['seller_code']?.toString().trim(),
+      manufacturer: map['manufacturer']?.toString().trim(),
       paymentMethod: map['payment_method']?.toString().trim(),
       soldAtUtc: _parseDateTime(map['sold_at_utc']),
       soldDateKst: map['sold_date_kst']?.toString().trim(),

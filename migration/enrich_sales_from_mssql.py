@@ -349,8 +349,6 @@ def build_patch(
 
     if store and not str(sh_row.get("store_location") or "").strip():
         patch["store_location"] = store
-    if manager and not str(sh_row.get("seller_name") or "").strip():
-        patch["seller_name"] = manager
     if product_id and not str(sh_row.get("product_id") or "").strip():
         patch["product_id"] = product_id
     if not str(sh_row.get("source_system") or "").strip():
@@ -409,8 +407,6 @@ def sales_row_needs_enrich(row: dict[str, Any]) -> bool:
     if not str(payload.get("Metall") or "").strip():
         return True
     if not str(row.get("store_location") or "").strip():
-        return True
-    if not str(row.get("seller_name") or "").strip():
         return True
     if str(row.get("metal_category") or "other") == "other":
         return True

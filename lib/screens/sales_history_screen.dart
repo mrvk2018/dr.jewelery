@@ -1,11 +1,11 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/won_format.dart';
+import '../features/admin/presentation/widgets/admin_pos_cart_sheet.dart';
+import '../features/admin/presentation/widgets/admin_product_photo_preview.dart';
 import '../models/sales_history_row.dart';
 import '../services/sales_history_service.dart';
 
@@ -30,6 +30,37 @@ String formatSalesRangeLabel(DateTimeRange range) {
   return '${fmt.format(range.start)} — ${fmt.format(range.end)}';
 }
 
+String formatSoldAtKst(SalesHistoryRow row) {
+  final utc = row.soldAtUtc;
+  if (utc != null) {
+    final kst = utc.add(const Duration(hours: 9));
+    return DateFormat('yyyy-MM-dd HH:mm').format(kst);
+  }
+  final dateOnly = row.soldDateKst?.trim();
+  if (dateOnly != null && dateOnly.isNotEmpty) return dateOnly;
+  return '—';
+}
+
+String salesStorePointLabel(String? code) {
+  final raw = code?.trim().toUpperCase() ?? '';
+  if (raw == 'ICN') return 'Инчхон (ICN)';
+  if (raw == 'ANS') return 'Ансан (ANS)';
+  return '—';
+}
+
+String? metalCategoryBadgeLabel(String? category) {
+  final raw = category?.trim().toLowerCase() ?? '';
+  if (raw.isEmpty) return null;
+  if (raw == 'gold' || raw.contains('золот')) return 'Золото';
+  if (raw == 'silver' || raw.contains('сереб')) return 'Серебро';
+  return null;
+}
+
+String formatWeightGrams(double? grams) {
+  if (grams == null || grams <= 0) return '';
+  return '${grams.toStringAsFixed(2)} г';
+}
+
 class SalesHistoryScreen extends StatefulWidget {
   const SalesHistoryScreen({super.key, this.repository});
 
@@ -45,7 +76,8 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   final _rows = <SalesHistoryRow>[];
 
   late DateTimeRange _selectedRange;
-  int? _periodRevenueKrw;
+  SalesHistoryStoreFilter _storeFilter = SalesHistoryStoreFilter.all;
+  SalesHistorySummary? _summary;
   bool _kpiLoading = false;
   bool _listLoading = false;
   bool _loadingMore = false;
@@ -54,8 +86,6 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   String? _error;
   String? _returnBusyKey;
   Set<String> _reversedLegacyIds = const {};
-  Map<String, String> _latestSaleLegacyByProductId = const {};
-  Map<String, String> _productStatusById = const {};
 
   String get _rangeStartIso => _isoDateKst(_selectedRange.start);
   String get _rangeEndIso => _isoDateKst(_selectedRange.end);
@@ -77,7 +107,6 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
     super.dispose();
   }
 
-  /// Повторная загрузка списка и KPI с текущим [_selectedRange] (IndexedStack / после POS).
   void reload() {
     if (!mounted) return;
     _loadInitial();
@@ -85,24 +114,12 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   void _recomputeReversalIndex() {
     _reversedLegacyIds = SalesHistoryRow.collectReversedLegacyIds(_rows);
-    _latestSaleLegacyByProductId =
-        SalesHistoryRow.latestPwaSaleLegacyByProductId(_rows);
-  }
-
-  Future<Map<String, String>> _fetchProductStatusesForRows() {
-    return _repo.fetchProductStatusesByIds(
-      SalesHistoryRow.pwaProductIdsFromRows(_rows),
-    );
   }
 
   bool _canShowReturnButton(SalesHistoryRow row) {
-    if (!row.canProcessPosReturn) return false;
+    if (!row.canReturn) return false;
     if (_reversedLegacyIds.contains(row.legacyId)) return false;
-    final productId = row.resolvedProductId;
-    if (productId == null || productId.isEmpty) return false;
-    final latestLegacy = _latestSaleLegacyByProductId[productId];
-    if (latestLegacy != row.legacyId) return false;
-    return _productStatusById[productId] == 'sold';
+    return true;
   }
 
   bool _showReturnedBadge(SalesHistoryRow row) {
@@ -120,32 +137,31 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
       _pageIndex = 0;
       _hasMore = true;
       _reversedLegacyIds = const {};
-      _latestSaleLegacyByProductId = const {};
-      _productStatusById = const {};
+      _summary = null;
     });
 
     try {
-      final revenue = await _repo.sumPriceKrwForSoldDateRangeKst(
-        _rangeStartIso,
-        _rangeEndIso,
+      final store = _storeFilter.rpcValue;
+      final summary = await _repo.fetchSummary(
+        soldDateKstStart: _rangeStartIso,
+        soldDateKstEnd: _rangeEndIso,
+        store: store,
       );
       final page = await _repo.fetchPage(
         pageIndex: 0,
         soldDateKstStart: _rangeStartIso,
         soldDateKstEnd: _rangeEndIso,
+        store: store,
       );
       _rows
         ..clear()
         ..addAll(page);
       _recomputeReversalIndex();
-      final productStatuses =
-          await _fetchProductStatusesForRows();
       if (!mounted) return;
       setState(() {
-        _periodRevenueKrw = revenue;
+        _summary = summary;
         _hasMore = page.length >= SalesHistoryRepository.defaultPageSize;
         _pageIndex = 1;
-        _productStatusById = productStatuses;
         _listLoading = false;
         _kpiLoading = false;
       });
@@ -167,15 +183,12 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
         pageIndex: _pageIndex,
         soldDateKstStart: _rangeStartIso,
         soldDateKstEnd: _rangeEndIso,
+        store: _storeFilter.rpcValue,
       );
       _rows.addAll(page);
       _recomputeReversalIndex();
-      final newStatuses = await _repo.fetchProductStatusesByIds(
-        SalesHistoryRow.pwaProductIdsFromRows(page),
-      );
       if (!mounted) return;
       setState(() {
-        _productStatusById = {..._productStatusById, ...newStatuses};
         _hasMore = page.length >= SalesHistoryRepository.defaultPageSize;
         _pageIndex += 1;
         _loadingMore = false;
@@ -212,6 +225,12 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
     await _loadInitial();
   }
 
+  void _onStoreChanged(SalesHistoryStoreFilter next) {
+    if (next.rpcValue == _storeFilter.rpcValue) return;
+    setState(() => _storeFilter = next);
+    _loadInitial();
+  }
+
   void _snack(String message, {bool error = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -224,14 +243,16 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   Future<void> _openPosReturnDialog(SalesHistoryRow row) async {
     if (!_canShowReturnButton(row)) {
-      _snack(
-        'Возврат недоступен для этой продажи (legacy ${row.legacyId})',
-        error: true,
-      );
+      _snack('Возврат недоступен для этой продажи', error: true);
       return;
     }
 
-    final productId = row.resolvedProductId!;
+    final productId = row.resolvedProductId;
+    if (productId == null || productId.isEmpty) {
+      _snack('Не найден product_id для возврата', error: true);
+      return;
+    }
+
     final result = await showDialog<_PosReturnFormData>(
       context: context,
       builder: (context) => _PosReturnDialog(
@@ -262,36 +283,15 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
     }
   }
 
-  void _showPayloadDialog(SalesHistoryRow row) {
-    final payload = row.rawLegacyPayload;
-    final text = payload == null
-        ? 'raw_legacy_payload отсутствует'
-        : const JsonEncoder.withIndent('  ').convert(payload);
-
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Аудит · legacy ${row.legacyId}', style: AppTypography.heading(fontSize: 18)),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: SelectableText(
-              text,
-              style: AppTypography.productMeta().copyWith(
-                fontFamily: 'monospace',
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
+  Future<void> _openPhotoPreview(SalesHistoryRow row) async {
+    final url = row.imageUrl?.trim();
+    if (url == null || url.isEmpty) return;
+    final title = row.sku.isNotEmpty ? row.sku : row.productName ?? 'Фото';
+    await showAdminProductPhotoPreview(
+      context,
+      title: title,
+      subtitle: row.productName,
+      imageUrls: [url],
     );
   }
 
@@ -304,9 +304,11 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
         children: [
           _KpiHeader(
             rangeLabel: formatSalesRangeLabel(_selectedRange),
-            revenueKrw: _periodRevenueKrw,
+            storeFilter: _storeFilter,
+            summary: _summary,
             loading: _kpiLoading,
             onPickRange: _pickDateRange,
+            onStoreChanged: _onStoreChanged,
           ),
           if (_error != null)
             Padding(
@@ -338,7 +340,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           row: row,
                           returnBusy: _returnBusyKey == row.legacyId,
                           showReturnedBadge: _showReturnedBadge(row),
-                          onTap: () => _showPayloadDialog(row),
+                          onPhotoTap: () => _openPhotoPreview(row),
                           onReturn: _canShowReturnButton(row)
                               ? () => _openPosReturnDialog(row)
                               : null,
@@ -356,18 +358,23 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 class _KpiHeader extends StatelessWidget {
   const _KpiHeader({
     required this.rangeLabel,
-    required this.revenueKrw,
+    required this.storeFilter,
+    required this.summary,
     required this.loading,
     required this.onPickRange,
+    required this.onStoreChanged,
   });
 
   final String rangeLabel;
-  final int? revenueKrw;
+  final SalesHistoryStoreFilter storeFilter;
+  final SalesHistorySummary? summary;
   final bool loading;
   final VoidCallback onPickRange;
+  final void Function(SalesHistoryStoreFilter) onStoreChanged;
 
   @override
   Widget build(BuildContext context) {
+    final s = summary;
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -390,19 +397,13 @@ class _KpiHeader extends StatelessWidget {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Expanded(
-                child: Text(
-                  'Выручка за период (KST)',
-                  style: AppTypography.caption(
-                    color: AppColors.textOnPrimary,
-                    fontWeight: FontWeight.w600,
-                  ).copyWith(fontSize: 14),
-                ),
-              ),
               OutlinedButton.icon(
                 onPressed: onPickRange,
                 icon: const Icon(Icons.date_range_outlined, size: 18),
@@ -416,37 +417,150 @@ class _KpiHeader extends StatelessWidget {
                   side: BorderSide(color: AppColors.textOnPrimary.withValues(alpha: 0.6)),
                 ),
               ),
+              _StoreSegmentedControl(
+                selected: storeFilter,
+                onChanged: onStoreChanged,
+              ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
+          Text(
+            'Отчёт за период (KST)',
+            style: AppTypography.caption(
+              color: AppColors.textOnPrimary,
+              fontWeight: FontWeight.w600,
+            ).copyWith(fontSize: 14),
+          ),
+          const SizedBox(height: 8),
           if (loading)
             const SizedBox(
-              height: 36,
+              height: 80,
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: SizedBox(
-                  width: 24,
-                  height: 24,
+                  width: 28,
+                  height: 28,
                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                 ),
               ),
             )
-          else
+          else ...[
             Text(
-              formatWon(revenueKrw ?? 0),
-              style: AppTypography.heading(fontSize: 32).copyWith(
+              formatWon(s?.totalSumKrw ?? 0),
+              style: AppTypography.heading(fontSize: 30).copyWith(
                 color: AppColors.textOnPrimary,
                 letterSpacing: -0.5,
               ),
             ),
-          const SizedBox(height: 4),
-          Text(
-            'Сумма price_krw за выбранный период (sold_date_kst)',
-            style: AppTypography.productMeta().copyWith(
-              color: AppColors.textOnPrimary.withValues(alpha: 0.85),
+            const SizedBox(height: 2),
+            Text(
+              '${s?.totalCount ?? 0} поз.',
+              style: AppTypography.productMeta().copyWith(
+                color: AppColors.textOnPrimary.withValues(alpha: 0.9),
+              ),
             ),
-          ),
+            const SizedBox(height: 14),
+            _MetalKpiLine(
+              title: 'Золото',
+              weightGrams: s?.goldWeightGrams ?? 0,
+              sumKrw: s?.goldSumKrw ?? 0,
+              count: s?.goldCount ?? 0,
+            ),
+            const SizedBox(height: 8),
+            _MetalKpiLine(
+              title: 'Серебро',
+              weightGrams: s?.silverWeightGrams ?? 0,
+              sumKrw: s?.silverSumKrw ?? 0,
+              count: s?.silverCount ?? 0,
+            ),
+            if ((s?.otherCount ?? 0) > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Прочее: ${s!.otherCount} поз.',
+                style: AppTypography.productMeta().copyWith(
+                  color: AppColors.textOnPrimary.withValues(alpha: 0.85),
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _StoreSegmentedControl extends StatelessWidget {
+  const _StoreSegmentedControl({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final SalesHistoryStoreFilter selected;
+  final void Function(SalesHistoryStoreFilter) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<String>(
+      segments: const [
+        ButtonSegment(value: 'ALL', label: Text('Все')),
+        ButtonSegment(value: 'ICN', label: Text('Инчхон (ICN)')),
+        ButtonSegment(value: 'ANS', label: Text('Ансан (ANS)')),
+      ],
+      selected: {selected.rpcValue},
+      onSelectionChanged: (set) {
+        final value = set.first;
+        for (final filter in SalesHistoryStoreFilter.values) {
+          if (filter.rpcValue == value) {
+            onChanged(filter);
+            return;
+          }
+        }
+      },
+      style: ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        foregroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.primary;
+          }
+          return AppColors.textOnPrimary;
+        }),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return AppColors.textOnPrimary;
+          }
+          return AppColors.textOnPrimary.withValues(alpha: 0.12);
+        }),
+        side: WidgetStateProperty.all(
+          BorderSide(color: AppColors.textOnPrimary.withValues(alpha: 0.45)),
+        ),
+      ),
+    );
+  }
+}
+
+class _MetalKpiLine extends StatelessWidget {
+  const _MetalKpiLine({
+    required this.title,
+    required this.weightGrams,
+    required this.sumKrw,
+    required this.count,
+  });
+
+  final String title;
+  final double weightGrams;
+  final int sumKrw;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final weightText =
+        weightGrams > 0 ? '${weightGrams.toStringAsFixed(2)} г · ' : '';
+    return Text(
+      '$title: $weightText${formatWon(sumKrw)} · $count шт.',
+      style: AppTypography.productMeta().copyWith(
+        color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+        fontWeight: FontWeight.w500,
       ),
     );
   }
@@ -455,124 +569,277 @@ class _KpiHeader extends StatelessWidget {
 class _SalesHistoryTile extends StatelessWidget {
   const _SalesHistoryTile({
     required this.row,
-    required this.onTap,
+    required this.onPhotoTap,
     this.onReturn,
     this.returnBusy = false,
     this.showReturnedBadge = false,
   });
 
   final SalesHistoryRow row;
-  final VoidCallback onTap;
+  final VoidCallback onPhotoTap;
   final VoidCallback? onReturn;
   final bool returnBusy;
   final bool showReturnedBadge;
 
   @override
   Widget build(BuildContext context) {
+    final name = row.productName?.trim();
+    final showName = name != null && name.isNotEmpty && name != row.sku;
+    final weightText = formatWeightGrams(row.weightGrams);
+    final metal = metalCategoryBadgeLabel(row.metalCategory);
+    final payment = row.paymentMethod?.trim();
+    final paymentLabel = payment != null && payment.isNotEmpty
+        ? AdminPosPaymentMethods.label(payment)
+        : '—';
+    final seller = row.sellerName?.trim();
+    final soldAt = formatSoldAtKst(row);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                _Thumb(url: row.imageUrl),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        row.sku.isEmpty ? '—' : row.sku,
-                        style: AppTypography.productName(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'legacy_id: ${row.legacyId}',
-                        style: AppTypography.productMeta(),
-                      ),
-                      if (row.soldDateKst != null && row.soldDateKst!.isNotEmpty)
-                        Text(
-                          'KST ${row.soldDateKst}',
-                          style: AppTypography.productMeta(),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SaleThumb(url: row.imageUrl, onTap: onPhotoTap),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      formatWon(row.priceKrw),
-                      style: AppTypography.price(fontSize: 15).copyWith(
-                        color: row.isReturnLine ? AppColors.saleRed : null,
-                      ),
+                      row.sku.isEmpty ? '—' : row.sku,
+                      style: AppTypography.productName(),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (showReturnedBadge) ...[
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.textSecondary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          'Возвращено',
-                          style: AppTypography.productMeta().copyWith(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
-                            fontWeight: FontWeight.w600,
+                    if (showName) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        name,
+                        style: AppTypography.productMeta(),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (weightText.isNotEmpty)
+                          _InfoChip(
+                            icon: Icons.scale_outlined,
+                            label: weightText,
                           ),
+                        if (metal != null)
+                          _InfoChip(
+                            icon: Icons.diamond_outlined,
+                            label: metal,
+                            emphasized: true,
+                          ),
+                        _InfoChip(
+                          icon: Icons.store_outlined,
+                          label: salesStorePointLabel(row.storeLocation),
                         ),
-                      ),
-                    ],
-                    if (onReturn != null) ...[
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 32,
-                        child: returnBusy
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : TextButton.icon(
-                                onPressed: onReturn,
-                                icon: Icon(
-                                  Icons.assignment_return_outlined,
-                                  size: 18,
-                                  color: AppColors.accent.withValues(alpha: 0.95),
-                                ),
-                                label: const Text('Возврат товара'),
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                ),
-                              ),
-                      ),
-                    ],
+                        _InfoChip(
+                          icon: Icons.person_outline,
+                          label: (seller != null && seller.isNotEmpty)
+                              ? seller
+                              : '—',
+                        ),
+                        _InfoChip(
+                          icon: Icons.payments_outlined,
+                          label: paymentLabel,
+                        ),
+                        _InfoChip(
+                          icon: Icons.schedule,
+                          label: soldAt,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+              _SalePriceColumn(
+                row: row,
+                onReturn: onReturn,
+                returnBusy: returnBusy,
+                showReturnedBadge: showReturnedBadge,
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+    this.emphasized = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = emphasized
+        ? AppColors.accent.withValues(alpha: 0.12)
+        : AppColors.background;
+    final fg = emphasized ? AppColors.accent : AppColors.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.8)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 200),
+            child: Text(
+              label,
+              style: AppTypography.productMeta().copyWith(
+                fontSize: 11,
+                color: fg,
+                fontWeight: emphasized ? FontWeight.w600 : FontWeight.w400,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SalePriceColumn extends StatelessWidget {
+  const _SalePriceColumn({
+    required this.row,
+    this.onReturn,
+    this.returnBusy = false,
+    this.showReturnedBadge = false,
+  });
+
+  final SalesHistoryRow row;
+  final VoidCallback? onReturn;
+  final bool returnBusy;
+  final bool showReturnedBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    final showsDiscount = row.showsDiscount;
+    final discountPct = row.discountPercent > 0
+        ? row.discountPercent
+        : (row.listPriceKrw != null && row.listPriceKrw! > row.priceKrw
+            ? (((row.listPriceKrw! - row.priceKrw) / row.listPriceKrw!) * 100)
+                .round()
+            : 0);
+
+    return SizedBox(
+      width: 118,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (showsDiscount) ...[
+            Text(
+              formatWon(row.displayListPriceKrw),
+              style: AppTypography.productMeta().copyWith(
+                decoration: TextDecoration.lineThrough,
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+            if (discountPct > 0)
+              Container(
+                margin: const EdgeInsets.only(top: 2, bottom: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.saleRed.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '-$discountPct%',
+                  style: AppTypography.productMeta().copyWith(
+                    fontSize: 11,
+                    color: AppColors.saleRed,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+          ],
+          Text(
+            formatWon(row.priceKrw),
+            style: AppTypography.price(fontSize: 17).copyWith(
+              color: row.isReturnLine ? AppColors.saleRed : null,
+            ),
+            textAlign: TextAlign.end,
+          ),
+          if (showReturnedBadge) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Возвращено',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+          if (onReturn != null) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 32,
+              child: returnBusy
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : TextButton(
+                      onPressed: onReturn,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        'Возврат',
+                        style: AppTypography.productMeta().copyWith(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -714,54 +981,69 @@ class _PosReturnDialogState extends State<_PosReturnDialog> {
   }
 }
 
-class _Thumb extends StatelessWidget {
-  const _Thumb({this.url});
+class _SaleThumb extends StatelessWidget {
+  const _SaleThumb({this.url, required this.onTap});
 
   final String? url;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    const size = 56.0;
-    if (url == null || url!.isEmpty) {
-      return Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
-        ),
+    const size = 60.0;
+    final hasUrl = url != null && url!.isNotEmpty;
+
+    Widget child;
+    if (!hasUrl) {
+      child = Container(
+        color: AppColors.background,
+        alignment: Alignment.center,
         child: Icon(
           Icons.image_not_supported_outlined,
           color: AppColors.textSecondary.withValues(alpha: 0.5),
         ),
       );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Image.network(
-          url!,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return Container(
-              color: AppColors.background,
-              alignment: Alignment.center,
-              child: const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
-          errorBuilder: (_, _, _) => Container(
+    } else {
+      child = Image.network(
+        url!,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
             color: AppColors.background,
             alignment: Alignment.center,
-            child: const Icon(Icons.broken_image_outlined, size: 22),
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
+        errorBuilder: (_, _, _) => Container(
+          color: AppColors.background,
+          alignment: Alignment.center,
+          child: const Icon(Icons.broken_image_outlined, size: 22),
+        ),
+      );
+    }
+
+    return Material(
+      color: AppColors.background,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: hasUrl ? onTap : null,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: child,
+            ),
           ),
         ),
       ),

@@ -1,14 +1,100 @@
+class SalesHistoryStoreFilter {
+  const SalesHistoryStoreFilter(this.rpcValue, this.label);
+
+  final String rpcValue;
+  final String label;
+
+  static const all = SalesHistoryStoreFilter('ALL', 'Все');
+  static const icn = SalesHistoryStoreFilter('ICN', 'Инчхон');
+  static const ans = SalesHistoryStoreFilter('ANS', 'Ансан');
+
+  static const values = [all, icn, ans];
+}
+
+class SalesHistorySummary {
+  const SalesHistorySummary({
+    required this.totalSumKrw,
+    required this.totalCount,
+    required this.goldWeightGrams,
+    required this.goldSumKrw,
+    required this.goldCount,
+    required this.silverWeightGrams,
+    required this.silverSumKrw,
+    required this.silverCount,
+    required this.otherCount,
+  });
+
+  final int totalSumKrw;
+  final int totalCount;
+  final double goldWeightGrams;
+  final int goldSumKrw;
+  final int goldCount;
+  final double silverWeightGrams;
+  final int silverSumKrw;
+  final int silverCount;
+  final int otherCount;
+
+  factory SalesHistorySummary.fromRpc(dynamic raw) {
+    if (raw is! Map) {
+      return const SalesHistorySummary(
+        totalSumKrw: 0,
+        totalCount: 0,
+        goldWeightGrams: 0,
+        goldSumKrw: 0,
+        goldCount: 0,
+        silverWeightGrams: 0,
+        silverSumKrw: 0,
+        silverCount: 0,
+        otherCount: 0,
+      );
+    }
+    final map = Map<String, dynamic>.from(raw);
+    return SalesHistorySummary(
+      totalSumKrw: _numToInt(map['total_sum_krw']),
+      totalCount: _numToInt(map['total_count']),
+      goldWeightGrams: _numToDouble(map['gold_weight_grams']),
+      goldSumKrw: _numToInt(map['gold_sum_krw']),
+      goldCount: _numToInt(map['gold_count']),
+      silverWeightGrams: _numToDouble(map['silver_weight_grams']),
+      silverSumKrw: _numToInt(map['silver_sum_krw']),
+      silverCount: _numToInt(map['silver_count']),
+      otherCount: _numToInt(map['other_count']),
+    );
+  }
+
+  static int _numToInt(Object? value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static double _numToDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+}
+
 class SalesHistoryRow {
   const SalesHistoryRow({
     required this.id,
     required this.legacyId,
     required this.sku,
     required this.priceKrw,
+    this.productId,
+    this.productName,
+    this.weightGrams,
+    this.listPriceKrw,
+    this.discountPercent = 0,
+    this.storeLocation,
+    this.sellerName,
+    this.sellerCode,
+    this.paymentMethod,
     this.soldAtUtc,
     this.soldDateKst,
     this.imageUrl,
     this.photoStatus,
     this.sourceSystem,
+    this.metalCategory,
+    this.canReturn = false,
     this.rawLegacyPayload,
     this.migrationMeta,
   });
@@ -17,11 +103,22 @@ class SalesHistoryRow {
   final String legacyId;
   final String sku;
   final int priceKrw;
+  final String? productId;
+  final String? productName;
+  final double? weightGrams;
+  final int? listPriceKrw;
+  final int discountPercent;
+  final String? storeLocation;
+  final String? sellerName;
+  final String? sellerCode;
+  final String? paymentMethod;
   final DateTime? soldAtUtc;
   final String? soldDateKst;
   final String? imageUrl;
   final String? photoStatus;
   final String? sourceSystem;
+  final String? metalCategory;
+  final bool canReturn;
   final Map<String, dynamic>? rawLegacyPayload;
   final Map<String, dynamic>? migrationMeta;
 
@@ -30,8 +127,18 @@ class SalesHistoryRow {
       migrationMeta?['type']?.toString() == 'return' ||
       legacyId.startsWith('return_');
 
-  /// `products.id` для POS/PWA-возврата (`process_pos_product_return`).
+  bool get showsDiscount {
+    if (discountPercent > 0) return true;
+    final list = listPriceKrw;
+    return list != null && list > priceKrw && priceKrw > 0;
+  }
+
+  int get displayListPriceKrw => listPriceKrw ?? priceKrw;
+
   String? get resolvedProductId {
+    final direct = productId?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+
     final fromMeta = migrationMeta?['product_id']?.toString().trim();
     if (fromMeta != null && fromMeta.isNotEmpty) return fromMeta;
 
@@ -61,16 +168,8 @@ class SalesHistoryRow {
     return null;
   }
 
-  /// Базовая PWA-строка, которую теоретически можно вернуть через POS (без учёта сторно / products).
-  bool get canProcessPosReturn {
-    if (isReturnLine || sku.isEmpty) return false;
-    if (resolvedSourceSystem == 'DrJaw') return false;
-    if (!isPwaSale) return false;
-    final productId = resolvedProductId;
-    return productId != null && productId.isNotEmpty;
-  }
+  bool get canProcessPosReturn => canReturn;
 
-  /// Собирает `legacy_id` продаж, уже покрытых сторно на загруженных строках.
   static Set<String> collectReversedLegacyIds(Iterable<SalesHistoryRow> rows) {
     final reversed = <String>{};
     for (final row in rows) {
@@ -88,18 +187,17 @@ class SalesHistoryRow {
     return reversed;
   }
 
-  /// Последняя (самая свежая) PWA-продажа на `products.id` среди загруженных строк.
   static Map<String, String> latestPwaSaleLegacyByProductId(
     Iterable<SalesHistoryRow> rows,
   ) {
     final latestRowByProduct = <String, SalesHistoryRow>{};
     for (final row in rows) {
       if (row.isReturnLine || !row.isPwaSale || row.priceKrw <= 0) continue;
-      final productId = row.resolvedProductId;
-      if (productId == null || productId.isEmpty) continue;
-      final existing = latestRowByProduct[productId];
+      final pid = row.resolvedProductId;
+      if (pid == null || pid.isEmpty) continue;
+      final existing = latestRowByProduct[pid];
       if (existing == null || _compareSaleRecency(row, existing) > 0) {
-        latestRowByProduct[productId] = row;
+        latestRowByProduct[pid] = row;
       }
     }
     return {
@@ -109,7 +207,6 @@ class SalesHistoryRow {
 
   static Set<String> pwaProductIdsFromRows(Iterable<SalesHistoryRow> rows) {
     return rows
-        .where((row) => row.isPwaSale && !row.isReturnLine)
         .map((row) => row.resolvedProductId)
         .whereType<String>()
         .map((id) => id.trim())
@@ -133,6 +230,30 @@ class SalesHistoryRow {
     return a.legacyId.compareTo(b.legacyId);
   }
 
+  factory SalesHistoryRow.fromReportRpc(Map<String, dynamic> map) {
+    return SalesHistoryRow(
+      id: map['id']?.toString() ?? '',
+      legacyId: map['legacy_id']?.toString() ?? '',
+      sku: map['sku']?.toString().trim() ?? '',
+      priceKrw: _parseKrw(map['price_krw']),
+      productId: map['product_id']?.toString().trim(),
+      productName: map['product_name']?.toString().trim(),
+      weightGrams: _parseDouble(map['weight_grams']),
+      listPriceKrw: _parseKrwOpt(map['list_price_krw']),
+      discountPercent: _parseKrw(map['discount_percent']),
+      storeLocation: map['store_location']?.toString().trim(),
+      sellerName: map['seller_name']?.toString().trim(),
+      sellerCode: map['seller_code']?.toString().trim(),
+      paymentMethod: map['payment_method']?.toString().trim(),
+      soldAtUtc: _parseDateTime(map['sold_at_utc']),
+      soldDateKst: map['sold_date_kst']?.toString().trim(),
+      imageUrl: map['image_url']?.toString().trim(),
+      metalCategory: map['metal_category']?.toString().trim(),
+      sourceSystem: map['source_system']?.toString().trim(),
+      canReturn: map['can_return'] == true,
+    );
+  }
+
   factory SalesHistoryRow.fromMap(Map<String, dynamic> map) {
     return SalesHistoryRow(
       id: map['id']?.toString() ?? '',
@@ -149,32 +270,16 @@ class SalesHistoryRow {
     );
   }
 
-  SalesHistoryRow copyWith({
-    String? id,
-    String? legacyId,
-    String? sku,
-    int? priceKrw,
-    DateTime? soldAtUtc,
-    String? soldDateKst,
-    String? imageUrl,
-    String? photoStatus,
-    String? sourceSystem,
-    Map<String, dynamic>? rawLegacyPayload,
-    Map<String, dynamic>? migrationMeta,
-  }) {
-    return SalesHistoryRow(
-      id: id ?? this.id,
-      legacyId: legacyId ?? this.legacyId,
-      sku: sku ?? this.sku,
-      priceKrw: priceKrw ?? this.priceKrw,
-      soldAtUtc: soldAtUtc ?? this.soldAtUtc,
-      soldDateKst: soldDateKst ?? this.soldDateKst,
-      imageUrl: imageUrl ?? this.imageUrl,
-      photoStatus: photoStatus ?? this.photoStatus,
-      sourceSystem: sourceSystem ?? this.sourceSystem,
-      rawLegacyPayload: rawLegacyPayload ?? this.rawLegacyPayload,
-      migrationMeta: migrationMeta ?? this.migrationMeta,
-    );
+  static int? _parseKrwOpt(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  static double? _parseDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   static int _parseKrw(Object? value) {

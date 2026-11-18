@@ -14,79 +14,48 @@ class SalesHistoryRepository {
   final SupabaseClient _client;
   final DatabaseService _database;
 
-  static const _table = 'sales_history';
-  static const _listColumns =
-      'id, legacy_id, sku, price_krw, sold_at_utc, sold_date_kst, '
-      'image_url, photo_status, source_system, raw_legacy_payload, migration_meta';
-
+  static const rpcListReport = 'list_sales_history_report';
+  static const rpcSummary = 'get_sales_history_summary';
   static const rpcProcessPosProductReturn = 'process_pos_product_return';
   static const posReturnProductIdParam = 'p_product_id';
   static const posReturnReasonParam = 'p_reason';
   static const posReturnAdminNameParam = 'p_admin_name';
 
+  static const pDateFrom = 'p_date_from';
+  static const pDateTo = 'p_date_to';
+  static const pStore = 'p_store';
+  static const pLimit = 'p_limit';
+  static const pOffset = 'p_offset';
+
   static const defaultPageSize = 50;
-
-  /// `products.id` → `status` (лёгкий батч для кнопки возврата).
-  Future<Map<String, String>> fetchProductStatusesByIds(Set<String> productIds) async {
-    if (productIds.isEmpty) return const {};
-    final ids = productIds.where((id) => id.trim().isNotEmpty).toList();
-    if (ids.isEmpty) return const {};
-
-    final statuses = <String, String>{};
-    const chunkSize = 80;
-
-    try {
-      for (var offset = 0; offset < ids.length; offset += chunkSize) {
-        final end = (offset + chunkSize > ids.length) ? ids.length : offset + chunkSize;
-        final chunk = ids.sublist(offset, end);
-        final rows = await _client
-            .from('products')
-            .select('id, status')
-            .inFilter('id', chunk);
-        for (final row in rows) {
-          final map = Map<String, dynamic>.from(row);
-          final id = map['id']?.toString();
-          final status = map['status']?.toString().trim();
-          if (id != null && id.isNotEmpty && status != null && status.isNotEmpty) {
-            statuses[id] = status;
-          }
-        }
-      }
-      return statuses;
-    } catch (error, stackTrace) {
-      debugPrint('SalesHistoryRepository.fetchProductStatusesByIds failed: $error');
-      debugPrint('$stackTrace');
-      rethrow;
-    }
-  }
 
   Future<List<SalesHistoryRow>> fetchPage({
     required int pageIndex,
     int pageSize = defaultPageSize,
     required String soldDateKstStart,
     required String soldDateKstEnd,
+    String store = 'ALL',
   }) async {
-    final from = pageIndex * pageSize;
-    final to = from + pageSize - 1;
+    final start = soldDateKstStart.trim();
+    final end = soldDateKstEnd.trim();
+    if (start.isEmpty || end.isEmpty) return const [];
 
     try {
-      var query = _client.from(_table).select(_listColumns);
-
-      final start = soldDateKstStart.trim();
-      final end = soldDateKstEnd.trim();
-      if (start.isNotEmpty) {
-        query = query.gte('sold_date_kst', start);
-      }
-      if (end.isNotEmpty) {
-        query = query.lte('sold_date_kst', end);
-      }
-
-      final rows = await query
-          .order('sold_date_kst', ascending: false)
-          .order('legacy_id', ascending: false)
-          .range(from, to);
-      return rows
-          .map((row) => SalesHistoryRow.fromMap(Map<String, dynamic>.from(row)))
+      final response = await _client.rpc(
+        rpcListReport,
+        params: {
+          pDateFrom: start,
+          pDateTo: end,
+          pStore: store.trim().isEmpty ? 'ALL' : store.trim().toUpperCase(),
+          pLimit: pageSize,
+          pOffset: pageIndex * pageSize,
+        },
+      );
+      if (response is! List) return const [];
+      return response
+          .map((row) => SalesHistoryRow.fromReportRpc(
+                Map<String, dynamic>.from(row as Map),
+              ))
           .toList();
     } catch (error, stackTrace) {
       debugPrint('SalesHistoryRepository.fetchPage failed: $error');
@@ -95,53 +64,34 @@ class SalesHistoryRepository {
     }
   }
 
-  /// SUM(price_krw) за диапазон sold_date_kst (включительно, KST).
-  Future<int> sumPriceKrwForSoldDateRangeKst(
-    String soldDateKstStart,
-    String soldDateKstEnd,
-  ) async {
+  Future<SalesHistorySummary> fetchSummary({
+    required String soldDateKstStart,
+    required String soldDateKstEnd,
+    String store = 'ALL',
+  }) async {
     final start = soldDateKstStart.trim();
     final end = soldDateKstEnd.trim();
-    if (start.isEmpty || end.isEmpty) return 0;
-
-    var total = 0;
-    var from = 0;
-    const chunk = 1000;
+    if (start.isEmpty || end.isEmpty) {
+      return SalesHistorySummary.fromRpc(null);
+    }
 
     try {
-      for (;;) {
-        final rows = await _client
-            .from(_table)
-            .select('price_krw')
-            .gte('sold_date_kst', start)
-            .lte('sold_date_kst', end)
-            .order('legacy_id')
-            .range(from, from + chunk - 1);
-
-        if (rows.isEmpty) break;
-
-        for (final row in rows) {
-          final map = Map<String, dynamic>.from(row);
-          final raw = map['price_krw'];
-          if (raw is num) {
-            total += raw.toInt();
-          } else {
-            total += int.tryParse(raw?.toString() ?? '') ?? 0;
-          }
-        }
-
-        if (rows.length < chunk) break;
-        from += chunk;
-      }
-      return total;
+      final response = await _client.rpc(
+        rpcSummary,
+        params: {
+          pDateFrom: start,
+          pDateTo: end,
+          pStore: store.trim().isEmpty ? 'ALL' : store.trim().toUpperCase(),
+        },
+      );
+      return SalesHistorySummary.fromRpc(response);
     } catch (error, stackTrace) {
-      debugPrint('SalesHistoryRepository.sumPriceKrwForSoldDateRangeKst failed: $error');
+      debugPrint('SalesHistoryRepository.fetchSummary failed: $error');
       debugPrint('$stackTrace');
       rethrow;
     }
   }
 
-  /// POS-возврат по `products.id` (`process_pos_product_return`).
   Future<void> processPosProductReturn({
     required String productId,
     required String reason,
@@ -177,30 +127,12 @@ class SalesHistoryRepository {
     }
   }
 
-  /// Сторно продажи + возврат SKU на витрину (`process_product_return_manual`).
   Future<SalesHistoryRow> processProductReturn(String sku) async {
     final result = await _database.processProductReturn(sku);
-    final reversalId = result['reversal_id']?.toString() ?? '';
-    if (reversalId.isNotEmpty) {
-      try {
-        final row = await _client
-            .from(_table)
-            .select(_listColumns)
-            .eq('id', reversalId)
-            .maybeSingle();
-        if (row != null) {
-          return SalesHistoryRow.fromMap(Map<String, dynamic>.from(row));
-        }
-      } catch (error, stackTrace) {
-        debugPrint('SalesHistoryRepository processProductReturn fetch: $error');
-        debugPrint('$stackTrace');
-      }
-    }
-
     final priceRaw = result['price_krw'];
     final priceKrw = priceRaw is num ? priceRaw.toInt() : 0;
     return SalesHistoryRow(
-      id: reversalId,
+      id: result['reversal_id']?.toString() ?? '',
       legacyId: result['reversal_legacy_id']?.toString() ?? '',
       sku: result['sku']?.toString() ?? sku.trim(),
       priceKrw: priceKrw,

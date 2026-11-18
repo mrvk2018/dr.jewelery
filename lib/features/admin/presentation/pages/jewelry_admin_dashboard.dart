@@ -88,6 +88,7 @@ class JewelryAdminDashboard extends StatefulWidget {
     super.key,
     DatabaseService? database,
     this.onPosSaleArchived,
+    this.onProductTransfersChanged,
     this.sellerStaffMode = false,
     this.presetSellerPromoCode,
     this.presetSellerName,
@@ -95,6 +96,7 @@ class JewelryAdminDashboard extends StatefulWidget {
 
   final DatabaseService database;
   final VoidCallback? onPosSaleArchived;
+  final VoidCallback? onProductTransfersChanged;
   final bool sellerStaffMode;
   final String? presetSellerPromoCode;
   final String? presetSellerName;
@@ -592,6 +594,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         return;
       }
       _snack('Отправлено в $toStore');
+      widget.onProductTransfersChanged?.call();
       setState(() => _selected = null);
       await _refreshCatalog();
     } catch (error) {

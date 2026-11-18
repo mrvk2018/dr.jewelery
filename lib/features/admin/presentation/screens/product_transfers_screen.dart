@@ -11,10 +11,12 @@ class ProductTransfersScreen extends StatefulWidget {
   ProductTransfersScreen({
     super.key,
     required this.actorCode,
+    this.onTransfersMutated,
     DatabaseService? database,
   }) : database = database ?? DatabaseService.create();
 
   final String actorCode;
+  final VoidCallback? onTransfersMutated;
   final DatabaseService database;
 
   @override
@@ -133,6 +135,7 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
       final alert = result['alert']?.toString();
       _snack('Трансфер принят${alert != null ? ' · $alert' : ''}');
       await _reload();
+      widget.onTransfersMutated?.call();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -168,6 +171,7 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
       }
       _snack('Трансфер отменён');
       await _reload();
+      widget.onTransfersMutated?.call();
     } finally {
       if (mounted) setState(() => _busy = false);
     }

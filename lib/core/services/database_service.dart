@@ -699,6 +699,9 @@ abstract class DatabaseService {
     String? store,
   });
 
+  /// Число трансферов «в пути» (`status = in_transit`), опционально входящих в [storeFilter].
+  Future<int> countProductTransfersInTransit({String? storeFilter});
+
   Future<Map<String, dynamic>> sendDraftsBatchToAnsan({
     required String actorCode,
   });
@@ -3279,6 +3282,28 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.listProductTransfers failed: $error');
       debugPrint('$stackTrace');
       return const [];
+    }
+  }
+
+  @override
+  Future<int> countProductTransfersInTransit({String? storeFilter}) async {
+    try {
+      var query = _supabaseClient
+          .from('product_transfers')
+          .select('id')
+          .eq('status', 'in_transit');
+      final toStore = storeFilter?.trim().toUpperCase();
+      if (toStore != null && toStore.isNotEmpty && toStore != 'ALL') {
+        query = query.eq('to_store', toStore);
+      }
+      final rows = await query;
+      return rows.length;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.countProductTransfersInTransit failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return 0;
     }
   }
 

@@ -14,6 +14,8 @@ import '../screens/product_transfers_screen.dart';
 import '../screens/scrap_metal_intake_screen.dart';
 import '../screens/staff_management_screen.dart';
 import '../../../seller/presentation/screens/seller_terminal_screen.dart';
+import '../../application/product_transfers_in_transit_counter.dart';
+import '../widgets/admin_nav_count_badge.dart';
 import 'jewelry_admin_dashboard.dart';
 
 /// Web-админка: супер-админ или режим продавца (смена после пасхалки).
@@ -26,11 +28,11 @@ class AdminWebShell extends StatefulWidget {
 
 class _AdminWebShellState extends State<AdminWebShell> {
   static const _salesHistoryTabIndex = 2;
-  static const _transfersTabIndexAdmin = 1;
 
   int _selectedIndex = 0;
   final _salesHistoryKey = GlobalKey<SalesHistoryScreenState>();
   late final DatabaseService _database = DatabaseService.create();
+  late final ProductTransfersInTransitCounter _transfersInTransitCounter;
 
   AdminStaffSession? _staffSession;
   bool _sessionReady = false;
@@ -38,7 +40,19 @@ class _AdminWebShellState extends State<AdminWebShell> {
   @override
   void initState() {
     super.initState();
+    _transfersInTransitCounter = ProductTransfersInTransitCounter(_database);
+    _transfersInTransitCounter.start();
     _loadStaffSession();
+  }
+
+  @override
+  void dispose() {
+    _transfersInTransitCounter.dispose();
+    super.dispose();
+  }
+
+  void _refreshTransfersBadge() {
+    _transfersInTransitCounter.refresh();
   }
 
   Future<void> _loadStaffSession() async {
@@ -147,8 +161,14 @@ class _AdminWebShellState extends State<AdminWebShell> {
       session?.promoCode ?? 'ADMIN';
 
   List<Widget> _adminPages(bool isSuperAdmin, AdminStaffSession? session) => [
-        JewelryAdminDashboard(onPosSaleArchived: _scheduleSalesHistoryReload),
-        ProductTransfersScreen(actorCode: _panelActorCode(session)),
+        JewelryAdminDashboard(
+          onPosSaleArchived: _scheduleSalesHistoryReload,
+          onProductTransfersChanged: _refreshTransfersBadge,
+        ),
+        ProductTransfersScreen(
+          actorCode: _panelActorCode(session),
+          onTransfersMutated: _refreshTransfersBadge,
+        ),
         SalesHistoryScreen(key: _salesHistoryKey),
         if (isSuperAdmin) StaffManagementScreen(database: _database),
         if (isSuperAdmin)
@@ -164,6 +184,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
           presetSellerPromoCode: session.promoCode,
           presetSellerName: session.name,
           onPosSaleArchived: _scheduleSalesHistoryReload,
+          onProductTransfersChanged: _refreshTransfersBadge,
         ),
         ScrapMetalIntakeScreen(
           database: _database,
@@ -172,7 +193,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
           hideJournalBulkWriteOff: true,
           actorCode: session.promoCode,
         ),
-        ProductTransfersScreen(actorCode: session.promoCode),
+        ProductTransfersScreen(
+          actorCode: session.promoCode,
+          onTransfersMutated: _refreshTransfersBadge,
+        ),
         DraftIntakeScreen(
           database: _database,
           sellerStaffMode: true,
@@ -191,6 +215,44 @@ class _AdminWebShellState extends State<AdminWebShell> {
       MaterialPageRoute<void>(
         builder: (_) => const SellerTerminalScreen(),
       ),
+    );
+  }
+
+  NavigationRailDestination _buildNavDestination({
+    required ({IconData icon, IconData selectedIcon, String label}) dest,
+    required int index,
+    required int transfersTabIndex,
+    required int inTransitCount,
+    required bool railExtended,
+  }) {
+    final isTransfers = index == transfersTabIndex;
+    final badgeCount = isTransfers ? inTransitCount : 0;
+
+    Widget icon = Icon(dest.icon);
+    Widget selectedIcon = Icon(dest.selectedIcon);
+    if (badgeCount > 0) {
+      icon = AdminNavIconWithBadge(icon: icon, count: badgeCount);
+      selectedIcon =
+          AdminNavIconWithBadge(icon: selectedIcon, count: badgeCount);
+    }
+
+    final label = isTransfers && railExtended
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: Text(dest.label)),
+              if (badgeCount > 0) ...[
+                const SizedBox(width: 8),
+                AdminNavCountBadge(count: badgeCount),
+              ],
+            ],
+          )
+        : Text(dest.label);
+
+    return NavigationRailDestination(
+      icon: icon,
+      selectedIcon: selectedIcon,
+      label: label,
     );
   }
 
@@ -237,6 +299,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
             ? _sellerPages(session)
             : _adminPages(isSuperAdmin, session);
 
+    final transfersTabIndex =
+        destinations.indexWhere((d) => d.label == 'Трансферы');
+    final railExtended = MediaQuery.sizeOf(context).width >= 960;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -276,34 +342,42 @@ class _AdminWebShellState extends State<AdminWebShell> {
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          NavigationRail(
-            selectedIndex: safeIndex,
-            extended: MediaQuery.sizeOf(context).width >= 960,
-            labelType: MediaQuery.sizeOf(context).width >= 960
-                ? NavigationRailLabelType.none
-                : NavigationRailLabelType.selected,
-            backgroundColor: AppColors.cardBackground,
-            selectedIconTheme: const IconThemeData(color: AppColors.accent),
-            selectedLabelTextStyle:
-                AppTypography.caption(fontWeight: FontWeight.w700),
-            unselectedLabelTextStyle: AppTypography.productMeta(),
-            onDestinationSelected: (index) {
-              setState(() => _selectedIndex = index);
-              if (!sellerMode && index == _salesHistoryTabIndex) {
-                _scheduleSalesHistoryReload();
-              }
-              if (!sellerMode && index == _transfersTabIndexAdmin) {
-                setState(() {});
-              }
+          ListenableBuilder(
+            listenable: _transfersInTransitCounter,
+            builder: (context, _) {
+              final inTransitCount = _transfersInTransitCounter.count;
+              return NavigationRail(
+                selectedIndex: safeIndex,
+                extended: railExtended,
+                labelType: railExtended
+                    ? NavigationRailLabelType.none
+                    : NavigationRailLabelType.selected,
+                backgroundColor: AppColors.cardBackground,
+                selectedIconTheme: const IconThemeData(color: AppColors.accent),
+                selectedLabelTextStyle:
+                    AppTypography.caption(fontWeight: FontWeight.w700),
+                unselectedLabelTextStyle: AppTypography.productMeta(),
+                onDestinationSelected: (index) {
+                  setState(() => _selectedIndex = index);
+                  if (!sellerMode && index == _salesHistoryTabIndex) {
+                    _scheduleSalesHistoryReload();
+                  }
+                  if (index == transfersTabIndex) {
+                    _refreshTransfersBadge();
+                  }
+                },
+                destinations: [
+                  for (var i = 0; i < destinations.length; i++)
+                    _buildNavDestination(
+                      dest: destinations[i],
+                      index: i,
+                      transfersTabIndex: transfersTabIndex,
+                      inTransitCount: inTransitCount,
+                      railExtended: railExtended,
+                    ),
+                ],
+              );
             },
-            destinations: [
-              for (final dest in destinations)
-                NavigationRailDestination(
-                  icon: Icon(dest.icon),
-                  selectedIcon: Icon(dest.selectedIcon),
-                  label: Text(dest.label),
-                ),
-            ],
           ),
           const VerticalDivider(width: 1),
           Expanded(

@@ -325,7 +325,17 @@ AS $$
         NULLIF(btrim(p.name ->> 'en'), ''),
         NULLIF(btrim(sh.sku), '')
       ) AS p_name,
-      p.status AS p_status
+      p.status AS p_status,
+      COALESCE(
+        NULLIF(btrim(sh.image_url), ''),
+        NULLIF(btrim(p.image_url), ''),
+        NULLIF(btrim(p.images[1]), ''),
+        CASE
+          WHEN COALESCE(array_length(p.additional_images, 1), 0) > 0 THEN
+            NULLIF(btrim(p.additional_images[1]), '')
+          ELSE NULL
+        END
+      ) AS resolved_image_url
     FROM public.sales_history AS sh
     LEFT JOIN public.products AS p ON p.id = sh.product_id
     WHERE sh.sold_date_kst BETWEEN p_date_from AND p_date_to
@@ -353,7 +363,7 @@ AS $$
     b.payment_method,
     b.sold_at_utc,
     b.sold_date_kst,
-    b.image_url,
+    b.resolved_image_url AS image_url,
     b.metal_category,
     b.source_system,
     (

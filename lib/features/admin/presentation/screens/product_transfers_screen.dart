@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/product_gallery_urls.dart';
 import '../../../../core/utils/store_location_utils.dart';
+import '../../domain/product_transfer_item.dart';
+import '../widgets/admin_product_photo_preview.dart';
 
-/// Трансферы изделий между ICN и ANS (RPC 043).
+/// Трансферы изделий между ICN и ANS (RPC 043/046).
 class ProductTransfersScreen extends StatefulWidget {
   ProductTransfersScreen({
     super.key,
@@ -35,28 +41,53 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
   String? _directionFilter;
   final _searchController = TextEditingController();
 
-  List<Map<String, dynamic>> _allRows = const [];
+  List<ProductTransferItem> _allItems = const [];
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  RealtimeChannel? _realtimeChannel;
 
   @override
   void initState() {
     super.initState();
     _reload();
+    _subscribeTransfersRealtime();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    final ch = _realtimeChannel;
+    if (ch != null) {
+      unawaited(ch.unsubscribe());
+    }
     super.dispose();
   }
 
-  Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  void _subscribeTransfersRealtime() {
+    try {
+      _realtimeChannel = Supabase.instance.client
+          .channel('product_transfers_screen_list')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'product_transfers',
+            callback: (_) => unawaited(_reload(silent: true)),
+          )
+          .subscribe();
+    } catch (error, stackTrace) {
+      debugPrint('ProductTransfersScreen realtime: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  Future<void> _reload({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final statusArg = _statusFilter == 'all' ? null : _statusFilter;
       final rows = await widget.database.listProductTransfers(
@@ -64,37 +95,39 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
         store: _directionFilter,
       );
       if (!mounted) return;
-      setState(() => _allRows = rows);
+      setState(() {
+        _allItems = rows.map(ProductTransferItem.fromMap).toList();
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = error.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !silent) setState(() => _loading = false);
     }
   }
 
-  List<Map<String, dynamic>> get _visibleRows {
+  List<ProductTransferItem> get _visibleItems {
     final q = _searchController.text.trim().toLowerCase();
     final weightQuery = double.tryParse(
       q.replaceAll(',', '.').replaceAll(RegExp(r'[^0-9.]'), ''),
     );
 
-    return _allRows.where((row) {
+    return _allItems.where((item) {
+      final row = item.raw;
       if (_directionFilter == 'TO_ANS' &&
-          row['to_store']?.toString().toUpperCase() != 'ANS') {
+          item.toStore?.toUpperCase() != 'ANS') {
         return false;
       }
       if (_directionFilter == 'TO_ICN' &&
-          row['to_store']?.toString().toUpperCase() != 'ICN') {
+          item.toStore?.toUpperCase() != 'ICN') {
         return false;
       }
       if (q.isEmpty) return true;
-      final sku = row['sku']?.toString().toLowerCase() ?? '';
+      final sku = item.sku?.toLowerCase() ?? '';
       if (sku.contains(q)) return true;
-      if (weightQuery != null) {
-        final w = (row['weight_grams'] as num?)?.toDouble();
-        if (w != null && w == weightQuery) return true;
-      }
+      if (weightQuery != null && item.weightGrams == weightQuery) return true;
+      final w = (row['weight_grams'] as num?)?.toDouble();
+      if (weightQuery != null && w != null && w == weightQuery) return true;
       return false;
     }).toList();
   }
@@ -118,8 +151,30 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
     );
   }
 
-  Future<void> _completeTransfer(Map<String, dynamic> row) async {
-    final id = row['id']?.toString() ?? '';
+  Future<void> _openPhotoPreview(ProductTransferItem item) async {
+    final urls = productGalleryImageUrls(item.raw);
+    final imageUrl = (item.imageUrl != null && item.imageUrl!.isNotEmpty)
+        ? item.imageUrl!
+        : (urls.isNotEmpty ? urls.first : null);
+    if (imageUrl == null) return;
+
+    final weight = item.weightGrams;
+    final parts = <String>[
+      if (item.productName != null && item.productName!.isNotEmpty)
+        item.productName!,
+      if (weight != null) '${weight.toStringAsFixed(2)} г',
+    ];
+
+    await showAdminProductPhotoPreview(
+      context,
+      title: item.sku ?? '—',
+      subtitle: parts.isEmpty ? null : parts.join(' · '),
+      imageUrls: [imageUrl],
+    );
+  }
+
+  Future<void> _completeTransfer(ProductTransferItem item) async {
+    final id = item.id ?? '';
     if (id.isEmpty) return;
     setState(() => _busy = true);
     try {
@@ -141,10 +196,10 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
     }
   }
 
-  Future<void> _cancelTransfer(Map<String, dynamic> row) async {
-    final id = row['id']?.toString() ?? '';
+  Future<void> _cancelTransfer(ProductTransferItem item) async {
+    final id = item.id ?? '';
     if (id.isEmpty) return;
-    final sku = row['sku']?.toString() ?? '—';
+    final sku = item.sku ?? '—';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -187,7 +242,7 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _visibleRows;
+    final items = _visibleItems;
 
     return Stack(
       children: [
@@ -216,7 +271,7 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
               Expanded(
                 child: _loading
                     ? const Center(child: CircularProgressIndicator())
-                    : rows.isEmpty
+                    : items.isEmpty
                         ? Center(
                             child: Text(
                               'Нет трансферов по фильтру',
@@ -224,15 +279,17 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
                             ),
                           )
                         : ListView.builder(
-                            itemCount: rows.length,
+                            itemCount: items.length,
                             itemBuilder: (context, index) {
+                              final item = items[index];
                               return _TransferCard(
-                                row: rows[index],
+                                item: item,
                                 busy: _busy,
-                                isOpen: _isOpenStatus(rows[index]['status']?.toString()),
+                                isOpen: _isOpenStatus(item.status),
                                 formatWhen: _formatWhen,
-                                onComplete: () => _completeTransfer(rows[index]),
-                                onCancel: () => _cancelTransfer(rows[index]),
+                                onPhotoTap: () => _openPhotoPreview(item),
+                                onComplete: () => _completeTransfer(item),
+                                onCancel: () => _cancelTransfer(item),
                               );
                             },
                           ),
@@ -339,33 +396,86 @@ class _FiltersBar extends StatelessWidget {
   }
 }
 
+class _TransferThumbnail extends StatelessWidget {
+  const _TransferThumbnail({
+    required this.item,
+    required this.onTap,
+  });
+
+  final ProductTransferItem item;
+  final VoidCallback onTap;
+
+  static const _size = 64.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = productGalleryImageUrls(item.raw);
+    final url = (item.imageUrl != null && item.imageUrl!.isNotEmpty)
+        ? item.imageUrl
+        : (urls.isNotEmpty ? urls.first : null);
+    final hasPhoto = url != null && url.isNotEmpty;
+
+    return Material(
+      color: AppColors.border.withValues(alpha: 0.25),
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: hasPhoto ? onTap : null,
+        child: SizedBox(
+          width: _size,
+          height: _size,
+          child: hasPhoto
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => _placeholder(),
+                )
+              : _placeholder(),
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder() {
+    return const ColoredBox(
+      color: Color(0xFFF0F0F0),
+      child: Center(
+        child: Icon(Icons.image_not_supported_outlined, color: AppColors.border),
+      ),
+    );
+  }
+}
+
 class _TransferCard extends StatelessWidget {
   const _TransferCard({
-    required this.row,
+    required this.item,
     required this.busy,
     required this.isOpen,
     required this.formatWhen,
+    required this.onPhotoTap,
     required this.onComplete,
     required this.onCancel,
   });
 
-  final Map<String, dynamic> row;
+  final ProductTransferItem item;
   final bool busy;
   final bool isOpen;
   final String Function(Object? raw) formatWhen;
+  final VoidCallback onPhotoTap;
   final VoidCallback onComplete;
   final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
-    final sku = row['sku']?.toString() ?? '—';
-    final from = row['from_store']?.toString() ?? '—';
-    final to = row['to_store']?.toString() ?? '—';
-    final status = row['status']?.toString() ?? '—';
-    final sender = row['sender_code']?.toString() ?? '—';
-    final metal = row['metal_type']?.toString() ?? '—';
-    final weight = (row['weight_grams'] as num?)?.toDouble();
-    final notes = row['notes']?.toString().trim() ?? '';
+    final sku = item.sku ?? '—';
+    final from = item.fromStore ?? '—';
+    final to = item.toStore ?? '—';
+    final status = item.status ?? '—';
+    final sender = item.senderCode ?? '—';
+    final metal = item.metalType ?? '—';
+    final weight = item.weightGrams;
+    final notes = item.notes?.trim() ?? '';
+    final name = item.productName;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -375,20 +485,38 @@ class _TransferCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _TransferThumbnail(item: item, onTap: onPhotoTap),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    sku,
-                    style: AppTypography.heading(fontSize: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              sku,
+                              style: AppTypography.heading(fontSize: 16),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.border.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(status, style: AppTypography.caption()),
+                          ),
+                        ],
+                      ),
+                      if (name != null && name.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(name, style: AppTypography.productMeta()),
+                      ],
+                    ],
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.border.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(status, style: AppTypography.caption()),
                 ),
               ],
             ),
@@ -401,8 +529,10 @@ class _TransferCard extends StatelessWidget {
               '${storeLocationDisplayLabel(from)} → ${storeLocationDisplayLabel(to)}',
               style: AppTypography.productMeta().copyWith(fontWeight: FontWeight.w600),
             ),
-            Text('Отправил: $sender · ${formatWhen(row['created_at'])}',
-                style: AppTypography.productMeta()),
+            Text(
+              'Отправил: $sender · ${formatWhen(item.createdAt)}',
+              style: AppTypography.productMeta(),
+            ),
             if (notes.isNotEmpty)
               Text('Комментарий: $notes', style: AppTypography.productMeta()),
             if (isOpen) ...[

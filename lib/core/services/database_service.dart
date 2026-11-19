@@ -116,6 +116,7 @@ abstract final class AdminCatalogRpc {
   static const posSaleLinesParam = 'p_lines';
   static const posSellerNameParam = 'p_seller_name';
   static const posPaymentMethodParam = 'p_payment_method';
+  static const posSellerCodeParam = 'p_seller_code';
   static const productIdParam = 'p_product_id';
   static const activateDraftBySku = 'activate_draft_product_by_sku';
   static const activateDraftById = 'activate_draft_product_by_id';
@@ -630,6 +631,7 @@ abstract class DatabaseService {
     required List<Map<String, dynamic>> lines,
     required String sellerName,
     required String paymentMethod,
+    String? sellerCode,
   });
 
   /// POS: карточка товара по `qr_code_payload`.
@@ -3172,6 +3174,7 @@ class CloudDatabaseService implements DatabaseService {
     required List<Map<String, dynamic>> lines,
     required String sellerName,
     required String paymentMethod,
+    String? sellerCode,
   }) async {
     if (lines.isEmpty) {
       return AdminPosArchiveResult.failure(
@@ -3183,6 +3186,7 @@ class CloudDatabaseService implements DatabaseService {
     }
     final seller = sellerName.trim();
     final payment = paymentMethod.trim();
+    final code = sellerCode?.trim();
     if (seller.isEmpty || payment.isEmpty) {
       return AdminPosArchiveResult.failure(
         const AdminPosSaleException(
@@ -3193,13 +3197,17 @@ class CloudDatabaseService implements DatabaseService {
     }
 
     try {
+      final params = <String, dynamic>{
+        AdminCatalogRpc.posSaleLinesParam: lines,
+        AdminCatalogRpc.posSellerNameParam: seller,
+        AdminCatalogRpc.posPaymentMethodParam: payment,
+      };
+      if (code != null && code.isNotEmpty) {
+        params[AdminCatalogRpc.posSellerCodeParam] = code;
+      }
       final result = await _supabaseClient.rpc(
         AdminCatalogRpc.archiveAdminPosSale,
-        params: {
-          AdminCatalogRpc.posSaleLinesParam: lines,
-          AdminCatalogRpc.posSellerNameParam: seller,
-          AdminCatalogRpc.posPaymentMethodParam: payment,
-        },
+        params: params,
       );
       if (result == null || result == true) {
         return AdminPosArchiveResult.success();

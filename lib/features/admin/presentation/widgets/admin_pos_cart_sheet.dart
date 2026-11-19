@@ -131,7 +131,8 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     try {
       final result = await widget.database.archiveAdminPosSale(
         lines: widget.cart.toSaleLineInputs(),
-        sellerName: _checkoutSellerLabel,
+        sellerName: seller.name,
+        sellerCode: seller.promoCode,
         paymentMethod: _paymentMethod,
       );
       if (!mounted) return;

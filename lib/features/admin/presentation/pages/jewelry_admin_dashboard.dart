@@ -2387,9 +2387,18 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     });
   }
 
+  String _resolvePhotoLookupSku() {
+    final fromField = _skuController.text.trim();
+    if (fromField.isNotEmpty) return fromField;
+    if (_isEditMode) {
+      return widget.editProduct?['sku']?.toString().trim() ?? '';
+    }
+    return '';
+  }
+
   Future<void> _lookupPhotosBySku() async {
     if (_skuPhotoLookupInProgress || _saving) return;
-    final sku = _skuController.text.trim();
+    final sku = _resolvePhotoLookupSku();
     if (sku.isEmpty) {
       _showPhotoLookupNotice(
         message: 'Введите артикул для поиска фото',
@@ -2407,7 +2416,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       if (!mounted) return;
       if (lookup.images.isEmpty) {
         _showPhotoLookupNotice(
-          message: 'Фото по артикулу «$sku» в базе не найдены',
+          message: 'Новых фото по артикулу не найдено',
           success: false,
         );
         return;
@@ -2421,13 +2430,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       setState(() => _gallerySlots = merge.slots);
       if (added == 0) {
         _showPhotoLookupNotice(
-          message: 'Все найденные фото уже добавлены в карточку',
+          message: 'Новых фото по артикулу не найдено',
           success: false,
         );
         return;
       }
       _showPhotoLookupNotice(
-        message: '✓ Подтянуто фото по артикулу: $added шт.',
+        message: '✓ Подтянуто фото: $added',
         success: true,
       );
     } catch (error) {
@@ -3069,28 +3078,26 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
                       ),
                     ),
                   ),
-                  if (!_isEditMode) ...[
-                    const SizedBox(width: 8),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: OutlinedButton.icon(
-                        onPressed: (_saving || _skuPhotoLookupInProgress)
-                            ? null
-                            : _lookupPhotosBySku,
-                        icon: _skuPhotoLookupInProgress
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(
-                                Icons.image_search_outlined,
-                                size: 20,
-                              ),
-                        label: const Text('Найти фото'),
-                      ),
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: OutlinedButton.icon(
+                      onPressed: (_saving || _skuPhotoLookupInProgress)
+                          ? null
+                          : _lookupPhotosBySku,
+                      icon: _skuPhotoLookupInProgress
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(
+                              Icons.image_search_outlined,
+                              size: 20,
+                            ),
+                      label: const Text('Найти фото'),
                     ),
-                  ],
+                  ),
                 ],
               ),
               const SizedBox(height: 8),

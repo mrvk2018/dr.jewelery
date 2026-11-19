@@ -114,7 +114,6 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
   bool _initialLoading = true;
-  bool _photoUploadBusy = false;
 
   @override
   void initState() {
@@ -268,193 +267,6 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       imageUrls: urls,
       initialIndex: index,
     );
-  }
-
-  Future<void> _uploadPhotoToSelectedSlot(int slotIndex) async {
-    final row = _selected;
-    if (row == null) return;
-    final sku = _cell(row, 'sku');
-    final productId = _productId(row);
-    if (sku == '—' || productId == null) return;
-
-    final slots = _gallerySlots(row);
-    if (slotIndex < 0 || slotIndex >= slots.length) return;
-    if (slots[slotIndex] != null && slots[slotIndex]!.trim().isNotEmpty) {
-      return;
-    }
-
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 88,
-    );
-    if (picked == null || !mounted) return;
-
-    setState(() => _photoUploadBusy = true);
-    try {
-      final bytes = await picked.readAsBytes();
-      final url = await widget.database.uploadProductGallerySlotImage(
-        productId: productId,
-        sku: sku,
-        slotIndex: slotIndex,
-        bytes: bytes,
-        contentType: picked.mimeType ?? 'image/jpeg',
-      );
-      if (!mounted) return;
-      if (url == null) {
-        _snack('Не удалось загрузить фото (неизвестная ошибка)', error: true);
-        return;
-      }
-      final label = kProductGallerySlotLabels[slotIndex];
-      _snack('Слот $label: фото загружено');
-      final slotsAfter = List<String?>.from(_gallerySlots(row));
-      if (slotIndex < slotsAfter.length) {
-        slotsAfter[slotIndex] = url;
-      }
-      _applyGallerySlotsToCatalogBySku(sku, slotsAfter);
-    } on StateError catch (error) {
-      if (!mounted) return;
-      _snack(error.message, error: true);
-    } catch (error) {
-      if (!mounted) return;
-      _snack('Ошибка загрузки: $error', error: true);
-    } finally {
-      if (mounted) setState(() => _photoUploadBusy = false);
-    }
-  }
-
-  Future<void> _addPhotoToSelected() async {
-    final row = _selected;
-    if (row == null) return;
-    final slots = _gallerySlots(row);
-    final slot = firstEmptyGallerySlotIndex(slots);
-    if (slot == null) {
-      _snack('Достигнут лимит ${ProductItem.maxGalleryImages} фото', error: true);
-      return;
-    }
-    await _uploadPhotoToSelectedSlot(slot);
-  }
-
-  Future<void> _removePhotoFromSelectedSlot(int slotIndex) async {
-    final row = _selected;
-    if (row == null) return;
-    final productId = _productId(row);
-    if (productId == null) return;
-
-    final slots = List<String?>.from(_gallerySlots(row));
-    if (slotIndex < 0 ||
-        slotIndex >= slots.length ||
-        slots[slotIndex] == null ||
-        slots[slotIndex]!.trim().isEmpty) {
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Удалить фото из слота ${kProductGallerySlotLabels[slotIndex]}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.saleRed),
-            child: const Text('Удалить'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    slots[slotIndex] = null;
-    setState(() => _photoUploadBusy = true);
-    try {
-      final ok = await widget.database.updateProductGallerySlotsByProductId(
-        productId: productId,
-        gallerySlots: slots,
-      );
-      if (!mounted) return;
-      if (!ok) {
-        _snack('Не удалось обновить галерею', error: true);
-        return;
-      }
-      final sku = _cell(row, 'sku');
-      _applyGallerySlotsToCatalogBySku(sku, slots);
-    } finally {
-      if (mounted) setState(() => _photoUploadBusy = false);
-    }
-  }
-
-  Future<void> _swapSelectedGallerySlots(int a, int b) async {
-    final row = _selected;
-    if (row == null) return;
-    final productId = _productId(row);
-    final sku = _cell(row, 'sku');
-    if (productId == null || sku == '—') return;
-
-    final slots = List<String?>.from(_gallerySlots(row));
-    swapGallerySlotUrls(slots, a, b);
-
-    setState(() => _photoUploadBusy = true);
-    try {
-      final ok = await widget.database.updateProductGallerySlotsByProductId(
-        productId: productId,
-        gallerySlots: slots,
-      );
-      if (!mounted) return;
-      if (!ok) {
-        _snack('Не удалось поменять слоты местами', error: true);
-        return;
-      }
-      _applyGallerySlotsToCatalogBySku(sku, slots);
-    } finally {
-      if (mounted) setState(() => _photoUploadBusy = false);
-    }
-  }
-
-  Future<void> _replacePhotoInSelectedSlot(int slotIndex) async {
-    final row = _selected;
-    if (row == null) return;
-    final sku = _cell(row, 'sku');
-    final productId = _productId(row);
-    if (sku == '—' || productId == null) return;
-    if (slotIndex < 0 || slotIndex >= kProductGallerySlotCount) return;
-
-    final picked = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 88,
-    );
-    if (picked == null || !mounted) return;
-
-    setState(() => _photoUploadBusy = true);
-    try {
-      final bytes = await picked.readAsBytes();
-      final url = await widget.database.uploadProductGallerySlotImage(
-        productId: productId,
-        sku: sku,
-        slotIndex: slotIndex,
-        bytes: bytes,
-        contentType: picked.mimeType ?? 'image/jpeg',
-      );
-      if (!mounted) return;
-      if (url == null) {
-        _snack('Не удалось загрузить фото', error: true);
-        return;
-      }
-      final slots = List<String?>.from(_gallerySlots(_selected!));
-      if (slotIndex < slots.length) slots[slotIndex] = url;
-      _applyGallerySlotsToCatalogBySku(sku, slots);
-      _snack('Слот ${kProductGallerySlotLabels[slotIndex]}: фото заменено');
-    } on StateError catch (error) {
-      if (!mounted) return;
-      _snack(error.message, error: true);
-    } catch (error) {
-      if (!mounted) return;
-      _snack('Ошибка замены: $error', error: true);
-    } finally {
-      if (mounted) setState(() => _photoUploadBusy = false);
-    }
   }
 
   void _applyRows(List<Map<String, dynamic>> rows) {
@@ -997,13 +809,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                       gallerySlots: _gallerySlots(_selected!),
                       cell: _cell,
                       weight: _weight,
-                      photoUploadBusy: _photoUploadBusy,
-                      onAddPhoto: _addPhotoToSelected,
-                      onEmptySlotTap: _uploadPhotoToSelectedSlot,
-                      onFilledSlotTap: _openSelectedPhotoPreview,
-                      onReplaceSlot: _replacePhotoInSelectedSlot,
-                      onSwapSlots: _swapSelectedGallerySlots,
-                      onRemoveSlot: _removePhotoFromSelectedSlot,
+                      onPhotoTap: _openSelectedPhotoPreview,
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -1558,31 +1364,18 @@ class _SelectedProductMediaBar extends StatelessWidget {
     required this.gallerySlots,
     required this.cell,
     required this.weight,
-    required this.photoUploadBusy,
-    required this.onAddPhoto,
-    required this.onEmptySlotTap,
-    required this.onFilledSlotTap,
-    required this.onReplaceSlot,
-    required this.onSwapSlots,
-    required this.onRemoveSlot,
+    required this.onPhotoTap,
   });
 
   final Map<String, dynamic> selected;
   final List<String?> gallerySlots;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
-  final bool photoUploadBusy;
-  final VoidCallback onAddPhoto;
-  final ValueChanged<int> onEmptySlotTap;
-  final ValueChanged<int> onFilledSlotTap;
-  final ValueChanged<int> onReplaceSlot;
-  final void Function(int a, int b) onSwapSlots;
-  final ValueChanged<int> onRemoveSlot;
+  final ValueChanged<int> onPhotoTap;
 
   @override
   Widget build(BuildContext context) {
     final sku = cell(selected, 'sku');
-    final filled = countFilledGallerySlots(gallerySlots);
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
@@ -1611,84 +1404,42 @@ class _SelectedProductMediaBar extends StatelessWidget {
                     index < ProductItem.maxGalleryImages;
                     index++) ...[
                   if (index > 0) const SizedBox(width: 6),
-                  _FixedGallerySlotThumb(
+                  _SelectedGallerySlotPreview(
                     label: kProductGallerySlotLabels[index],
-                    slotIndex: index,
                     url: index < gallerySlots.length
                         ? gallerySlots[index]
                         : null,
-                    busy: photoUploadBusy,
-                    onEmptyTap: () => onEmptySlotTap(index),
-                    onFilledTap: () => onFilledSlotTap(index),
-                    onReplace: () => onReplaceSlot(index),
-                    onSwapLeft: index > 0
-                        ? () => onSwapSlots(index - 1, index)
+                    onTap: _slotHasPhoto(gallerySlots, index)
+                        ? () => onPhotoTap(index)
                         : null,
-                    onSwapRight: index < ProductItem.maxGalleryImages - 1
-                        ? () => onSwapSlots(index, index + 1)
-                        : null,
-                    onRemove: () => onRemoveSlot(index),
                   ),
                 ],
               ],
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: photoUploadBusy ||
-                      filled >= ProductItem.maxGalleryImages
-                  ? null
-                  : onAddPhoto,
-              style: ButtonStyle(
-                padding: const WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                ),
-                minimumSize: const WidgetStatePropertyAll(Size(0, 32)),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-                textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 11)),
-              ),
-              icon: photoUploadBusy
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_photo_alternate_outlined, size: 16),
-              label: Text(
-                'Добавить ($filled/${ProductItem.maxGalleryImages})',
-              ),
             ),
           ],
         ),
       ),
     );
   }
+
+  static bool _slotHasPhoto(List<String?> slots, int index) {
+    if (index < 0 || index >= slots.length) return false;
+    final url = slots[index];
+    return url != null && url.trim().isNotEmpty;
+  }
 }
 
-class _FixedGallerySlotThumb extends StatelessWidget {
-  const _FixedGallerySlotThumb({
+/// Только просмотр: пустой слот без действия, заполненный — увеличение по клику.
+class _SelectedGallerySlotPreview extends StatelessWidget {
+  const _SelectedGallerySlotPreview({
     required this.label,
-    required this.slotIndex,
     required this.url,
-    required this.busy,
-    required this.onEmptyTap,
-    required this.onFilledTap,
-    required this.onReplace,
-    this.onSwapLeft,
-    this.onSwapRight,
-    required this.onRemove,
+    this.onTap,
   });
 
   final String label;
-  final int slotIndex;
   final String? url;
-  final bool busy;
-  final VoidCallback onEmptyTap;
-  final VoidCallback onFilledTap;
-  final VoidCallback onReplace;
-  final VoidCallback? onSwapLeft;
-  final VoidCallback? onSwapRight;
-  final VoidCallback onRemove;
+  final VoidCallback? onTap;
 
   bool get _filled => url != null && url!.trim().isNotEmpty;
 
@@ -1700,94 +1451,31 @@ class _FixedGallerySlotThumb extends StatelessWidget {
         SizedBox(
           width: 48,
           height: 48,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: _filled
-                    ? AdminClickableNetworkThumbnail(
-                        imageUrl: url,
-                        size: 48,
-                        onTap: busy ? null : onFilledTap,
-                      )
-                    : Material(
-                        color: AppColors.cardBackground,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: const BorderSide(color: AppColors.border),
-                        ),
-                        child: InkWell(
-                          onTap: busy ? null : onEmptyTap,
-                          borderRadius: BorderRadius.circular(8),
-                          child: const Icon(
-                            Icons.add,
-                            size: 22,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-              ),
-              if (_filled)
-                Positioned(
-                  top: -4,
-                  right: -4,
-                  child: Material(
-                    color: AppColors.saleRed,
-                    shape: const CircleBorder(),
-                    elevation: 2,
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: busy ? null : onRemove,
-                      customBorder: const CircleBorder(),
-                      child: const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Icon(Icons.close, size: 14, color: Colors.white),
-                      ),
-                    ),
+          child: _filled
+              ? AdminClickableNetworkThumbnail(
+                  imageUrl: url,
+                  size: 48,
+                  onTap: onTap,
+                )
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.border),
                   ),
+                  child: const SizedBox.expand(),
                 ),
-              if (_filled)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  child: Material(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                    child: InkWell(
-                      onTap: busy ? null : onReplace,
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(Icons.edit, size: 12, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (onSwapLeft != null)
-              _GallerySlotArrowButton(
-                label: '◀',
-                busy: busy,
-                onTap: onSwapLeft!,
-              ),
-            Text(
-              label,
-              style: AppTypography.productMeta().copyWith(fontSize: 9),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (onSwapRight != null)
-              _GallerySlotArrowButton(
-                label: '▶',
-                busy: busy,
-                onTap: onSwapRight!,
-              ),
-          ],
+        const SizedBox(height: 2),
+        SizedBox(
+          width: 52,
+          child: Text(
+            label,
+            style: AppTypography.productMeta().copyWith(fontSize: 9),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
         ),
       ],
     );

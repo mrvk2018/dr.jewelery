@@ -9,7 +9,7 @@ class AppLocalizationsRu extends AppLocalizations {
   AppLocalizationsRu([String locale = 'ru']) : super(locale);
 
   @override
-  String get appTitle => 'Dr. Jewelry';
+  String get appTitle => 'Доктор Ювелирка';
 
   @override
   String get appTagline => 'Вечная элегантность, созданная для вас';

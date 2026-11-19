@@ -141,12 +141,12 @@ class _AdminWebShellState extends State<AdminWebShell> {
       };
     }
     return switch (safe) {
-      0 => 'Доктор Ювелир · Рабочий стол',
+      0 => 'Доктор Ювелирка · Рабочий стол',
       1 => 'Трансферы ICN ↔ ANS',
       2 => 'История продаж · KST / KRW',
       3 when isSuperAdmin => 'Управление персоналом',
       4 when isSuperAdmin => 'Приёмка лома',
-      _ => 'Доктор Ювелир',
+      _ => 'Доктор Ювелирка',
     };
   }
 
@@ -315,6 +315,8 @@ class _AdminWebShellState extends State<AdminWebShell> {
             destCount: destinations.length,
           ),
           style: AppTypography.heading(fontSize: 20),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
           if (sellerMode && session != null) ...[

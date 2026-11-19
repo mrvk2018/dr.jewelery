@@ -82,7 +82,7 @@ String extractStoredProductName(Map<String, dynamic> row) {
   return '—';
 }
 
-/// Десктопный рабочий стол «Доктор Ювелир»: витрина + медиа + KPI.
+/// Десктопный рабочий стол «Доктор Ювелирка»: витрина + медиа + KPI.
 class JewelryAdminDashboard extends StatefulWidget {
   JewelryAdminDashboard({
     super.key,

@@ -661,7 +661,7 @@ abstract class DatabaseService {
   /// Строка `products` для печати бирки после ручного сохранения (в т.ч. `id`).
   Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku);
 
-  /// Админка: замена 4 фиксированных слотов по `products.id`.
+  /// Админка: 4 фиксированных слота по `products.id` (RPC синхронизирует весь SKU).
   Future<bool> updateProductGallerySlotsByProductId({
     required String productId,
     required List<String?> gallerySlots,

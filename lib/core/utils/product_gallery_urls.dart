@@ -171,6 +171,20 @@ int? firstEmptyGallerySlotIndex(List<String?> slots) {
   return null;
 }
 
+/// Меняет местами URL в двух фиксированных слотах (0..3).
+void swapGallerySlotUrls(List<String?> slots, int a, int b) {
+  if (a < 0 ||
+      b < 0 ||
+      a >= kProductGallerySlotCount ||
+      b >= kProductGallerySlotCount ||
+      a == b) {
+    return;
+  }
+  final tmp = slots[a];
+  slots[a] = slots[b];
+  slots[b] = tmp;
+}
+
 /// Витринный список URL (без «дыр», порядок слотов 0→3).
 List<String> productGalleryVitrineUrlsFromSlots(List<String?> slots) {
   final out = <String>[];

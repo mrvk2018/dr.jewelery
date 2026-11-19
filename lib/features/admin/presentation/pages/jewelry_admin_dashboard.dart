@@ -177,6 +177,35 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   List<String?> _gallerySlots(Map<String, dynamic> row) =>
       productGallerySlotsFromRow(row);
 
+  void _applyGallerySlotsToCatalogBySku(
+    String sku,
+    List<String?> slots,
+  ) {
+    final needle = normalizeProductSku(sku);
+    if (needle.isEmpty) return;
+    final vitrine = productGalleryVitrineUrlsFromSlots(slots);
+    final fields = productGalleryDbFieldsFromUrls(vitrine);
+    final slotsJson = productGallerySlotsToRpcJson(slots);
+    setState(() {
+      _products = _products.map((row) {
+        if (normalizeProductSku(_cell(row, 'sku')) != needle) return row;
+        return Map<String, dynamic>.from(row)
+          ..['gallery_slots'] = slotsJson
+          ..['image_url'] = fields['image_url']
+          ..['images'] = fields['images']
+          ..['additional_images'] = fields['additional_images'];
+      }).toList();
+      final sel = _selected;
+      if (sel != null && normalizeProductSku(_cell(sel, 'sku')) == needle) {
+        _selected = Map<String, dynamic>.from(sel)
+          ..['gallery_slots'] = slotsJson
+          ..['image_url'] = fields['image_url']
+          ..['images'] = fields['images']
+          ..['additional_images'] = fields['additional_images'];
+      }
+    });
+  }
+
   List<String> _imageUrls(Map<String, dynamic> row) =>
       productGalleryImageUrls(row);
 
@@ -277,11 +306,11 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       }
       final label = kProductGallerySlotLabels[slotIndex];
       _snack('Слот $label: фото загружено');
-      final stillSelected = _productId(_selected) == productId;
-      if (stillSelected) {
-        await _fetchAndMergeProductMedia(productId: productId);
+      final slotsAfter = List<String?>.from(_gallerySlots(row));
+      if (slotIndex < slotsAfter.length) {
+        slotsAfter[slotIndex] = url;
       }
-      await _refreshCatalog();
+      _applyGallerySlotsToCatalogBySku(sku, slotsAfter);
     } on StateError catch (error) {
       if (!mounted) return;
       _snack(error.message, error: true);
@@ -350,8 +379,79 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         _snack('Не удалось обновить галерею', error: true);
         return;
       }
-      await _fetchAndMergeProductMedia(productId: productId);
-      await _refreshCatalog();
+      final sku = _cell(row, 'sku');
+      _applyGallerySlotsToCatalogBySku(sku, slots);
+    } finally {
+      if (mounted) setState(() => _photoUploadBusy = false);
+    }
+  }
+
+  Future<void> _swapSelectedGallerySlots(int a, int b) async {
+    final row = _selected;
+    if (row == null) return;
+    final productId = _productId(row);
+    final sku = _cell(row, 'sku');
+    if (productId == null || sku == '—') return;
+
+    final slots = List<String?>.from(_gallerySlots(row));
+    swapGallerySlotUrls(slots, a, b);
+
+    setState(() => _photoUploadBusy = true);
+    try {
+      final ok = await widget.database.updateProductGallerySlotsByProductId(
+        productId: productId,
+        gallerySlots: slots,
+      );
+      if (!mounted) return;
+      if (!ok) {
+        _snack('Не удалось поменять слоты местами', error: true);
+        return;
+      }
+      _applyGallerySlotsToCatalogBySku(sku, slots);
+    } finally {
+      if (mounted) setState(() => _photoUploadBusy = false);
+    }
+  }
+
+  Future<void> _replacePhotoInSelectedSlot(int slotIndex) async {
+    final row = _selected;
+    if (row == null) return;
+    final sku = _cell(row, 'sku');
+    final productId = _productId(row);
+    if (sku == '—' || productId == null) return;
+    if (slotIndex < 0 || slotIndex >= kProductGallerySlotCount) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _photoUploadBusy = true);
+    try {
+      final bytes = await picked.readAsBytes();
+      final url = await widget.database.uploadProductGallerySlotImage(
+        productId: productId,
+        sku: sku,
+        slotIndex: slotIndex,
+        bytes: bytes,
+        contentType: picked.mimeType ?? 'image/jpeg',
+      );
+      if (!mounted) return;
+      if (url == null) {
+        _snack('Не удалось загрузить фото', error: true);
+        return;
+      }
+      final slots = List<String?>.from(_gallerySlots(_selected!));
+      if (slotIndex < slots.length) slots[slotIndex] = url;
+      _applyGallerySlotsToCatalogBySku(sku, slots);
+      _snack('Слот ${kProductGallerySlotLabels[slotIndex]}: фото заменено');
+    } on StateError catch (error) {
+      if (!mounted) return;
+      _snack(error.message, error: true);
+    } catch (error) {
+      if (!mounted) return;
+      _snack('Ошибка замены: $error', error: true);
     } finally {
       if (mounted) setState(() => _photoUploadBusy = false);
     }
@@ -453,6 +553,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         database: widget.database,
         editProduct: editProduct,
         catalogRows: _products,
+        onGallerySlotsSynced: _applyGallerySlotsToCatalogBySku,
         onSaved: ({required bool asDraft}) async {
           if (isEdit) {
             _snack('Карточка обновлена');
@@ -900,6 +1001,8 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                       onAddPhoto: _addPhotoToSelected,
                       onEmptySlotTap: _uploadPhotoToSelectedSlot,
                       onFilledSlotTap: _openSelectedPhotoPreview,
+                      onReplaceSlot: _replacePhotoInSelectedSlot,
+                      onSwapSlots: _swapSelectedGallerySlots,
                       onRemoveSlot: _removePhotoFromSelectedSlot,
                     ),
                   ],
@@ -1459,6 +1562,8 @@ class _SelectedProductMediaBar extends StatelessWidget {
     required this.onAddPhoto,
     required this.onEmptySlotTap,
     required this.onFilledSlotTap,
+    required this.onReplaceSlot,
+    required this.onSwapSlots,
     required this.onRemoveSlot,
   });
 
@@ -1470,6 +1575,8 @@ class _SelectedProductMediaBar extends StatelessWidget {
   final VoidCallback onAddPhoto;
   final ValueChanged<int> onEmptySlotTap;
   final ValueChanged<int> onFilledSlotTap;
+  final ValueChanged<int> onReplaceSlot;
+  final void Function(int a, int b) onSwapSlots;
   final ValueChanged<int> onRemoveSlot;
 
   @override
@@ -1506,12 +1613,20 @@ class _SelectedProductMediaBar extends StatelessWidget {
                   if (index > 0) const SizedBox(width: 6),
                   _FixedGallerySlotThumb(
                     label: kProductGallerySlotLabels[index],
+                    slotIndex: index,
                     url: index < gallerySlots.length
                         ? gallerySlots[index]
                         : null,
                     busy: photoUploadBusy,
                     onEmptyTap: () => onEmptySlotTap(index),
                     onFilledTap: () => onFilledSlotTap(index),
+                    onReplace: () => onReplaceSlot(index),
+                    onSwapLeft: index > 0
+                        ? () => onSwapSlots(index - 1, index)
+                        : null,
+                    onSwapRight: index < ProductItem.maxGalleryImages - 1
+                        ? () => onSwapSlots(index, index + 1)
+                        : null,
                     onRemove: () => onRemoveSlot(index),
                   ),
                 ],
@@ -1553,18 +1668,26 @@ class _SelectedProductMediaBar extends StatelessWidget {
 class _FixedGallerySlotThumb extends StatelessWidget {
   const _FixedGallerySlotThumb({
     required this.label,
+    required this.slotIndex,
     required this.url,
     required this.busy,
     required this.onEmptyTap,
     required this.onFilledTap,
+    required this.onReplace,
+    this.onSwapLeft,
+    this.onSwapRight,
     required this.onRemove,
   });
 
   final String label;
+  final int slotIndex;
   final String? url;
   final bool busy;
   final VoidCallback onEmptyTap;
   final VoidCallback onFilledTap;
+  final VoidCallback onReplace;
+  final VoidCallback? onSwapLeft;
+  final VoidCallback? onSwapRight;
   final VoidCallback onRemove;
 
   bool get _filled => url != null && url!.trim().isNotEmpty;
@@ -1624,17 +1747,82 @@ class _FixedGallerySlotThumb extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (_filled)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  child: Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                    child: InkWell(
+                      onTap: busy ? null : onReplace,
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.edit, size: 12, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: AppTypography.productMeta().copyWith(fontSize: 9),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onSwapLeft != null)
+              _GallerySlotArrowButton(
+                label: '◀',
+                busy: busy,
+                onTap: onSwapLeft!,
+              ),
+            Text(
+              label,
+              style: AppTypography.productMeta().copyWith(fontSize: 9),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (onSwapRight != null)
+              _GallerySlotArrowButton(
+                label: '▶',
+                busy: busy,
+                onTap: onSwapRight!,
+              ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+class _GallerySlotArrowButton extends StatelessWidget {
+  const _GallerySlotArrowButton({
+    required this.label,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: busy ? null : onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          child: Text(
+            label,
+            style: AppTypography.productMeta().copyWith(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2038,6 +2226,7 @@ class _ManualProductDialog extends StatefulWidget {
   const _ManualProductDialog({
     required this.database,
     required this.onSaved,
+    this.onGallerySlotsSynced,
     this.editProduct,
     this.catalogRows = const [],
     this.draftIntakeMode = false,
@@ -2045,6 +2234,7 @@ class _ManualProductDialog extends StatefulWidget {
 
   final DatabaseService database;
   final Future<void> Function({required bool asDraft}) onSaved;
+  final void Function(String sku, List<String?> slots)? onGallerySlotsSynced;
   final Map<String, dynamic>? editProduct;
   final List<Map<String, dynamic>> catalogRows;
   final bool draftIntakeMode;
@@ -2563,9 +2753,20 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
   }
 
+  void _swapDialogGallerySlots(int a, int b) {
+    if (_saving) return;
+    setState(() {
+      swapGallerySlotUrls(_gallerySlots, a, b);
+      final da = _deferredBySlot.remove(a);
+      final db = _deferredBySlot.remove(b);
+      if (da != null) _deferredBySlot[b] = da;
+      if (db != null) _deferredBySlot[a] = db;
+    });
+  }
+
   Future<void> _pickPhotoForSlot(int slotIndex) async {
     if (slotIndex < 0 || slotIndex >= kProductGallerySlotCount) return;
-  if (_gallerySlots[slotIndex] != null &&
+    if (_gallerySlots[slotIndex] != null &&
         _gallerySlots[slotIndex]!.trim().isNotEmpty) {
       return;
     }
@@ -2578,6 +2779,50 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     if (picked == null || !mounted) return;
 
     setState(() => _deferredBySlot[slotIndex] = picked);
+  }
+
+  Future<void> _replacePhotoForSlot(int slotIndex) async {
+    if (_saving) return;
+    if (slotIndex < 0 || slotIndex >= kProductGallerySlotCount) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _gallerySlots[slotIndex] = null;
+      _deferredBySlot[slotIndex] = picked;
+    });
+  }
+
+  Future<bool> _finalizeProductGallery({
+    required String sku,
+    required String productId,
+  }) async {
+    var slots = List<String?>.from(_gallerySlots);
+    if (_deferredBySlot.isNotEmpty) {
+      slots = await _uploadDeferredPhotosBySlot(
+        sku: sku,
+        productId: productId,
+      );
+      if (mounted) {
+        setState(() {
+          _deferredBySlot.clear();
+          _gallerySlots = slots;
+        });
+      }
+    }
+    final hasAny = slots.any((u) => (u?.trim().isNotEmpty ?? false));
+    if (!hasAny) return true;
+
+    final ok = await widget.database.updateProductGallerySlotsByProductId(
+      productId: productId,
+      gallerySlots: slots,
+    );
+    widget.onGallerySlotsSynced?.call(sku.trim(), slots);
+    return ok;
   }
 
   Future<void> _pickPhotoToFirstEmptySlot() async {
@@ -2618,29 +2863,18 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     return slots;
   }
 
-  /// После insert: локальные файлы → Storage; слоты пишем по `productId`.
+  /// После insert: локальные файлы → Storage; слоты по SKU через RPC.
   Future<void> _attachGalleryForNewManualProduct(String sku) async {
     final row = await widget.database.fetchProductRowForLabelBySku(sku);
     final productId = row?['id']?.toString().trim() ?? '';
     if (productId.isEmpty) return;
 
-    var slots = List<String?>.from(_gallerySlots);
-    if (_deferredBySlot.isNotEmpty) {
-      slots = await _uploadDeferredPhotosBySlot(sku: sku, productId: productId);
-      if (mounted) setState(() => _deferredBySlot.clear());
-    }
-
-    if (!slots.any((u) => (u?.trim().isNotEmpty ?? false))) return;
-
-    final galleryOk = await widget.database.updateProductGallerySlotsByProductId(
+    final galleryOk = await _finalizeProductGallery(
+      sku: sku,
       productId: productId,
-      gallerySlots: slots,
     );
     if (!galleryOk && mounted) {
       _snack('Товар сохранён, но галерея фото не обновилась', error: true);
-    }
-    if (mounted) {
-      setState(() => _gallerySlots = slots);
     }
   }
 
@@ -2741,21 +2975,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           _snack('Нет id черновика', error: true);
           return;
         }
-        if (_deferredBySlot.isNotEmpty) {
-          final slots = await _uploadDeferredPhotosBySlot(
-            sku: sku,
-            productId: productId,
-          );
-          if (mounted) {
-            setState(() {
-              _deferredBySlot.clear();
-              _gallerySlots = slots;
-            });
-          }
-        }
-        final gallery =
-            productGalleryVitrineUrlsFromSlots(_gallerySlots);
-        final galleryFields = productGalleryDbFieldsFromUrls(gallery);
         final storeCode = _storeLocationCode == StoreLocationCode.unselected
             ? ''
             : normalizeStoreLocationCode(storeLocation: _storeLocationCode);
@@ -2781,16 +3000,18 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           'sale_price': price,
           'price': price,
           'store_location': storeCode,
-          ...galleryFields,
         });
         if (!result.ok) {
           _snack(result.error ?? 'Не удалось обновить черновик', error: true);
           return;
         }
-        await widget.database.updateProductGallerySlotsByProductId(
+        final galleryOk = await _finalizeProductGallery(
+          sku: sku,
           productId: productId,
-          gallerySlots: _gallerySlots,
         );
+        if (!galleryOk) {
+          _snack('Черновик сохранён, но галерея фото не обновилась', error: true);
+        }
         await widget.onSaved(asDraft: true);
         if (!mounted) return;
         Navigator.pop(context, true);
@@ -2853,26 +3074,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
       if (_isEditMode) {
         final productId = widget.editProduct!['id']?.toString().trim() ?? '';
-        var slots = List<String?>.from(_gallerySlots);
-        if (_deferredBySlot.isNotEmpty && productId.isNotEmpty) {
-          slots = await _uploadDeferredPhotosBySlot(
+        if (productId.isNotEmpty) {
+          final galleryOk = await _finalizeProductGallery(
             sku: sku,
             productId: productId,
           );
-          if (mounted) {
-            setState(() {
-              _deferredBySlot.clear();
-              _gallerySlots = slots;
-            });
+          if (!galleryOk) {
+            _snack(
+              'Карточка сохранена, но галерея фото не обновилась',
+              error: true,
+            );
           }
-        }
-        final galleryOk =
-            await widget.database.updateProductGallerySlotsByProductId(
-          productId: productId,
-          gallerySlots: slots,
-        );
-        if (!galleryOk) {
-          _snack('Карточка сохранена, но галерея фото не обновилась', error: true);
         }
       } else {
         await _attachGalleryForNewManualProduct(sku);
@@ -2931,6 +3143,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     });
   }
 
+  bool _hasPhotoInSlot(int index) {
+    if (index < 0 || index >= _gallerySlots.length) return false;
+    final url = _gallerySlots[index];
+    if (url != null && url.trim().isNotEmpty) return true;
+    return _deferredBySlot.containsKey(index);
+  }
+
   Widget _buildManualPhotoGrid() {
     return GridView.count(
       crossAxisCount: 2,
@@ -2945,11 +3164,25 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
         final filled = url != null && url.trim().isNotEmpty;
         return _ManualDialogPhotoSlot(
           slotLabel: kProductGallerySlotLabels[index],
+          slotIndex: index,
           url: filled ? url : null,
           deferredFile: deferred,
+          busy: _saving,
           onEmptyTap: _saving
               ? null
               : () => unawaited(_pickPhotoForSlot(index)),
+          onReplaceTap: _hasPhotoInSlot(index)
+              ? (_saving
+                  ? null
+                  : () => unawaited(_replacePhotoForSlot(index)))
+              : null,
+          onSwapLeft: index > 0 && !_saving
+              ? () => _swapDialogGallerySlots(index - 1, index)
+              : null,
+          onSwapRight:
+              index < kProductGallerySlotCount - 1 && !_saving
+                  ? () => _swapDialogGallerySlots(index, index + 1)
+                  : null,
           onRemove: filled
               ? () => _confirmRemoveNetworkPhoto(index)
               : (deferred != null
@@ -3364,16 +3597,26 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 class _ManualDialogPhotoSlot extends StatelessWidget {
   const _ManualDialogPhotoSlot({
     this.slotLabel,
+    this.slotIndex = 0,
     this.url,
     this.deferredFile,
+    this.busy = false,
     this.onEmptyTap,
+    this.onReplaceTap,
+    this.onSwapLeft,
+    this.onSwapRight,
     this.onRemove,
   });
 
   final String? slotLabel;
+  final int slotIndex;
   final String? url;
   final XFile? deferredFile;
+  final bool busy;
   final VoidCallback? onEmptyTap;
+  final VoidCallback? onReplaceTap;
+  final VoidCallback? onSwapLeft;
+  final VoidCallback? onSwapRight;
   final VoidCallback? onRemove;
 
   bool get _hasPhoto =>
@@ -3420,16 +3663,24 @@ class _ManualDialogPhotoSlot extends StatelessWidget {
                             ),
                           ),
                         )
-                      : ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: url != null && url!.isNotEmpty
-                              ? Image.network(
-                                  url!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) =>
-                                      const Icon(Icons.broken_image_outlined),
-                                )
-                              : _DeferredPhotoPreview(file: deferredFile!),
+                      : Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: busy ? null : onReplaceTap,
+                            borderRadius: BorderRadius.circular(10),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: url != null && url!.isNotEmpty
+                                  ? Image.network(
+                                      url!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) => const Icon(
+                                        Icons.broken_image_outlined,
+                                      ),
+                                    )
+                                  : _DeferredPhotoPreview(file: deferredFile!),
+                            ),
+                          ),
                         ),
                 ),
               ),
@@ -3460,12 +3711,33 @@ class _ManualDialogPhotoSlot extends StatelessWidget {
             ],
           ),
         ),
-        if (slotLabel != null && _hasPhoto) ...[
+        if (slotLabel != null) ...[
           const SizedBox(height: 4),
-          Text(
-            slotLabel!,
-            style: AppTypography.productMeta(),
-            textAlign: TextAlign.center,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (onSwapLeft != null)
+                _GallerySlotArrowButton(
+                  label: '◀',
+                  busy: busy,
+                  onTap: onSwapLeft!,
+                ),
+              Expanded(
+                child: Text(
+                  slotLabel!,
+                  style: AppTypography.productMeta(),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onSwapRight != null)
+                _GallerySlotArrowButton(
+                  label: '▶',
+                  busy: busy,
+                  onTap: onSwapRight!,
+                ),
+            ],
           ),
         ],
       ],

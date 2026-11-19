@@ -76,6 +76,9 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   ScrapPayoutBreakdown? _goldBreakdown;
   ScrapPayoutBreakdown? _silverBreakdown;
 
+  /// Секция серебра на вкладке «Приёмка и расчёт» свёрнута по умолчанию.
+  bool _isSilverExpanded = false;
+
   @override
   void initState() {
     super.initState();
@@ -522,6 +525,11 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
           tradeRate: _silverTradeRate,
           purchaseGrams: _silverPurchaseGrams,
           breakdown: _silverBreakdown,
+          collapsible: true,
+          expanded: _isSilverExpanded,
+          onToggleExpanded: () =>
+              setState(() => _isSilverExpanded = !_isSilverExpanded),
+          summaryBadge: _silverSectionSummaryBadge(),
           onAddCustom: () => setState(
             () => _silverRows.add(
               ScrapFinenessRow(fineness: 800, customFineness: true),
@@ -653,6 +661,23 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     );
   }
 
+  String? _silverSectionSummaryBadge() {
+    final hasWeight = _silverRows.any((r) => r.grossWeight > 0);
+    final purchase =
+        double.tryParse(_silverPurchaseGrams.text.replaceAll(',', '.')) ?? 0;
+    if (!hasWeight && purchase <= 0 && _silverBreakdown == null) {
+      return null;
+    }
+    if (_silverBreakdown != null) {
+      final eq = _silverBreakdown!.totalEquivalent.toStringAsFixed(2);
+      return '$eq г · ${formatWon(_silverBreakdown!.payoutKrw)}';
+    }
+    final eq = ScrapMetalCalculator.sumSilverEquivalent(_silverRows);
+    if (eq > 0) return '${eq.toStringAsFixed(2)} г в 925';
+    if (purchase > 0) return 'покупка ${purchase.toStringAsFixed(2)} г';
+    return null;
+  }
+
   Widget _buildMetalSection({
     required String title,
     required List<ScrapFinenessRow> rows,
@@ -663,16 +688,13 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     required TextEditingController purchaseGrams,
     required ScrapPayoutBreakdown? breakdown,
     required VoidCallback onAddCustom,
+    bool collapsible = false,
+    bool expanded = true,
+    VoidCallback? onToggleExpanded,
+    String? summaryBadge,
   }) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: AppTypography.heading(fontSize: 16)),
-            const SizedBox(height: 8),
-            _finenessTable(rows, standardProbe, eqLabel),
+    final sectionBody = <Widget>[
+      _finenessTable(rows, standardProbe, eqLabel),
             TextButton.icon(
               onPressed: onAddCustom,
               icon: const Icon(Icons.add),
@@ -713,22 +735,102 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                 border: const OutlineInputBorder(),
               ),
             ),
-            if (breakdown != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                'Всего в ${standardProbe.toInt()} пробе: ${breakdown.totalEquivalent.toStringAsFixed(4)} г',
-                style: AppTypography.productMeta(),
+      if (breakdown != null) ...[
+        const SizedBox(height: 12),
+        Text(
+          'Всего в ${standardProbe.toInt()} пробе: ${breakdown.totalEquivalent.toStringAsFixed(4)} г',
+          style: AppTypography.productMeta(),
+        ),
+        Text(
+          'Повышенный тариф: ${breakdown.tradeinPaidGrams.toStringAsFixed(4)} г · '
+          'Стандарт: ${breakdown.standardPaidGrams.toStringAsFixed(4)} г',
+          style: AppTypography.productMeta(),
+        ),
+        Text(
+          'Сумма: ${formatWon(breakdown.payoutKrw)}',
+          style: AppTypography.price(fontSize: 15),
+        ),
+      ],
+    ];
+
+    Widget titleWidget;
+    if (collapsible) {
+      titleWidget = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggleExpanded,
+          borderRadius: BorderRadius.circular(8),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(title, style: AppTypography.heading(fontSize: 16)),
+                        if (summaryBadge != null && summaryBadge.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardBackground,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: Text(
+                              summaryBadge,
+                              style: AppTypography.productMeta().copyWith(
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.keyboard_arrow_down, size: 28),
+                  ),
+                ],
               ),
-              Text(
-                'Повышенный тариф: ${breakdown.tradeinPaidGrams.toStringAsFixed(4)} г · '
-                'Стандарт: ${breakdown.standardPaidGrams.toStringAsFixed(4)} г',
-                style: AppTypography.productMeta(),
+            ),
+          ),
+        ),
+      );
+    } else {
+      titleWidget = Text(title, style: AppTypography.heading(fontSize: 16));
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            titleWidget,
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 8),
+                  ...sectionBody,
+                ],
               ),
-              Text(
-                'Сумма: ${formatWon(breakdown.payoutKrw)}',
-                style: AppTypography.price(fontSize: 15),
-              ),
-            ],
+              crossFadeState: (!collapsible || expanded)
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 200),
+              sizeCurve: Curves.easeInOut,
+            ),
           ],
         ),
       ),

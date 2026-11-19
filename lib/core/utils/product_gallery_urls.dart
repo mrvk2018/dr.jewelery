@@ -89,14 +89,53 @@ List<String?> parseGallerySlotsJson(Object? rawSlots) {
 }
 
 List<String?> productGallerySlotsFromRow(Map<String, dynamic> row) {
-  final payload = row['raw_legacy_payload'];
-  if (payload is Map) {
-    final fromPayload = parseGallerySlotsJson(payload['gallery_slots']);
-    if (fromPayload.any((u) => (u?.trim().isNotEmpty ?? false))) {
-      return fromPayload;
-    }
+  final fromColumn = parseGallerySlotsJson(row['gallery_slots']);
+  if (fromColumn.any((u) => (u?.trim().isNotEmpty ?? false))) {
+    return fromColumn;
   }
   return _gallerySlotsInitFromMergedUrls(productGalleryImageUrlsLegacy(row));
+}
+
+/// Подстановка фото из поиска по SKU: сначала в «родные» слоты, затем в пустые.
+({int added, List<String?> slots}) mergeDiscoveredGalleryIntoSlots({
+  required List<String?> current,
+  List<String?>? sourceSlots,
+  required List<String> extraUrls,
+}) {
+  final slots = List<String?>.from(current);
+  final seen = <String>{
+    for (final u in slots)
+      if (u != null && u.trim().isNotEmpty) galleryUrlCanonical(u),
+  };
+  var added = 0;
+
+  if (sourceSlots != null) {
+    for (var i = 0; i < kProductGallerySlotCount; i++) {
+      final src = i < sourceSlots.length ? sourceSlots[i]?.trim() : null;
+      if (src == null || src.isEmpty) continue;
+      if (i >= slots.length) break;
+      if (slots[i] != null && slots[i]!.trim().isNotEmpty) continue;
+      final canon = galleryUrlCanonical(src);
+      if (canon.isNotEmpty && seen.contains(canon)) continue;
+      slots[i] = src;
+      if (canon.isNotEmpty) seen.add(canon);
+      added++;
+    }
+  }
+
+  for (final raw in extraUrls) {
+    final url = raw.trim();
+    if (url.isEmpty) continue;
+    final canon = galleryUrlCanonical(url);
+    if (canon.isNotEmpty && seen.contains(canon)) continue;
+    final slot = firstEmptyGallerySlotIndex(slots);
+    if (slot == null) break;
+    if (canon.isNotEmpty) seen.add(canon);
+    slots[slot] = url;
+    added++;
+  }
+
+  return (added: added, slots: slots);
 }
 
 List<String?> _gallerySlotsInitFromMergedUrls(List<String> urls) {

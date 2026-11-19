@@ -1,12 +1,12 @@
--- Фиксированные 4 слота галереи (raw_legacy_payload.gallery_slots).
+-- Фиксированные 4 слота галереи: public.products.gallery_slots (jsonb).
 
 BEGIN;
 
 ALTER TABLE public.products
-  ADD COLUMN IF NOT EXISTS raw_legacy_payload jsonb NOT NULL DEFAULT '{}'::jsonb;
+  ADD COLUMN IF NOT EXISTS gallery_slots jsonb;
 
-COMMENT ON COLUMN public.products.raw_legacy_payload IS
-  'Служебный JSON: gallery_slots — массив из 4 URL (или null) по индексам 0..3.';
+COMMENT ON COLUMN public.products.gallery_slots IS
+  'Фиксированная галерея: JSON-массив из 4 элементов [url|null, …] по индексам 0..3.';
 
 -- ---------------------------------------------------------------------------
 -- Канонический ключ URL (без query) для дедупликации
@@ -56,7 +56,6 @@ BEGIN
 END;
 $$;
 
--- Упорядоченный список URL для витрины: все непустые слоты 0→3
 CREATE OR REPLACE FUNCTION public._product_vitrine_urls_from_slots(p_slots jsonb)
 RETURNS text[]
 LANGUAGE plpgsql
@@ -70,7 +69,6 @@ DECLARE
 BEGIN
   v_norm := public._product_gallery_slots_normalize(p_slots);
   FOR v_i IN 0..3 LOOP
-  BEGIN
     IF jsonb_typeof(v_norm -> v_i) = 'null' THEN
       CONTINUE;
     END IF;
@@ -79,7 +77,6 @@ BEGIN
       CONTINUE;
     END IF;
     v_urls := array_append(v_urls, v_elem);
-  END;
   END LOOP;
   RETURN v_urls;
 END;
@@ -109,7 +106,6 @@ BEGIN
 END;
 $$;
 
--- Заполнить слоты 0..3 из упорядоченного списка URL (дедуп по canonical path)
 CREATE OR REPLACE FUNCTION public._product_gallery_slots_init_from_urls(p_urls text[])
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -153,14 +149,20 @@ LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
-  v_payload jsonb;
   v_slots jsonb;
   v_merged text[];
+  v_normalized jsonb;
 BEGIN
-  v_payload := COALESCE(p_row.raw_legacy_payload, '{}'::jsonb);
-  IF v_payload ? 'gallery_slots'
-    AND jsonb_typeof(v_payload -> 'gallery_slots') = 'array' THEN
-    RETURN public._product_gallery_slots_normalize(v_payload -> 'gallery_slots');
+  IF p_row.gallery_slots IS NOT NULL
+    AND jsonb_typeof(p_row.gallery_slots) = 'array' THEN
+    v_normalized := public._product_gallery_slots_normalize(p_row.gallery_slots);
+    IF EXISTS (
+      SELECT 1
+      FROM generate_series(0, 3) AS i
+      WHERE jsonb_typeof(v_normalized -> i) <> 'null'
+    ) THEN
+      RETURN v_normalized;
+    END IF;
   END IF;
 
   v_merged := public._product_gallery_urls_merged(
@@ -173,24 +175,21 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Триггер: при gallery_slots — витрина из слотов; иначе legacy merge
+-- Триггер 048+: gallery_slots → витринные поля
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.trg_products_sync_gallery_fields()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_payload jsonb;
   v_slots jsonb;
   v_urls text[];
   v_norm public.products;
 BEGIN
-  v_payload := COALESCE(NEW.raw_legacy_payload, '{}'::jsonb);
-  IF v_payload ? 'gallery_slots'
-    AND jsonb_typeof(v_payload -> 'gallery_slots') = 'array' THEN
-    v_slots := public._product_gallery_slots_normalize(v_payload -> 'gallery_slots');
-    NEW.raw_legacy_payload :=
-      jsonb_set(v_payload, '{gallery_slots}', v_slots, true);
+  IF NEW.gallery_slots IS NOT NULL
+    AND jsonb_typeof(NEW.gallery_slots) = 'array' THEN
+    v_slots := public._product_gallery_slots_normalize(NEW.gallery_slots);
+    NEW.gallery_slots := v_slots;
     v_urls := public._product_vitrine_urls_from_slots(v_slots);
     NEW.images := v_urls;
     NEW.additional_images := v_urls;
@@ -209,13 +208,13 @@ $$;
 DROP TRIGGER IF EXISTS products_sync_gallery_fields ON public.products;
 
 CREATE TRIGGER products_sync_gallery_fields
-  BEFORE INSERT OR UPDATE OF image_url, images, additional_images, raw_legacy_payload
+  BEFORE INSERT OR UPDATE OF image_url, images, additional_images, gallery_slots
   ON public.products
   FOR EACH ROW
   EXECUTE FUNCTION public.trg_products_sync_gallery_fields();
 
 -- ---------------------------------------------------------------------------
--- RPC: контекст галереи по product id (для дублей SKU)
+-- RPC: галерея по product id / sku
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.admin_get_product_gallery_context_by_id(
   p_product_id text,
@@ -286,7 +285,7 @@ BEGIN
   INTO v_row
   FROM public.products AS p
   WHERE p.sku = v_sku
-  ORDER BY p.updated_at DESC NULLS LAST
+  ORDER BY p.updated_at DESC NULLS LAST, p.id DESC
   LIMIT 1;
 
   IF NOT FOUND THEN
@@ -321,8 +320,6 @@ AS $$
 DECLARE
   v_id text := btrim(COALESCE(p_product_id, ''));
   v_slots jsonb;
-  v_payload jsonb;
-  v_urls text[];
 BEGIN
   IF v_id = '' THEN
     RETURN false;
@@ -332,25 +329,10 @@ BEGIN
   END IF;
 
   v_slots := public._product_gallery_slots_normalize(p_gallery_slots);
-  v_urls := public._product_vitrine_urls_from_slots(v_slots);
-
-  SELECT COALESCE(p.raw_legacy_payload, '{}'::jsonb)
-  INTO v_payload
-  FROM public.products AS p
-  WHERE p.id = v_id;
-
-  IF NOT FOUND THEN
-    RETURN false;
-  END IF;
-
-  v_payload := jsonb_set(v_payload, '{gallery_slots}', v_slots, true);
 
   UPDATE public.products AS p
   SET
-    raw_legacy_payload = v_payload,
-    additional_images = v_urls,
-    images = v_urls,
-    image_url = public._product_first_image_from_slots(v_slots),
+    gallery_slots = v_slots,
     updated_at = now()
   WHERE p.id = v_id;
 
@@ -373,7 +355,6 @@ DECLARE
   v_images jsonb;
   v_urls text[];
   v_slots jsonb;
-  v_payload jsonb;
 BEGIN
   IF v_id = '' THEN
     RETURN false;
@@ -392,23 +373,9 @@ BEGIN
   );
   v_slots := public._product_gallery_slots_init_from_urls(v_urls);
 
-  SELECT COALESCE(p.raw_legacy_payload, '{}'::jsonb)
-  INTO v_payload
-  FROM public.products AS p
-  WHERE p.id = v_id;
-
-  IF NOT FOUND THEN
-    RETURN false;
-  END IF;
-
-  v_payload := jsonb_set(v_payload, '{gallery_slots}', v_slots, true);
-
   UPDATE public.products AS p
   SET
-    raw_legacy_payload = v_payload,
-    additional_images = v_urls,
-    images = v_urls,
-    image_url = public._product_first_image_from_slots(v_slots),
+    gallery_slots = v_slots,
     updated_at = now()
   WHERE p.id = v_id;
 
@@ -416,45 +383,125 @@ BEGIN
 END;
 $$;
 
--- Бэкфилл gallery_slots для существующих карточек
+-- ---------------------------------------------------------------------------
+-- Поиск фото по SKU (без products.created_at)
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.find_product_images_by_sku(p_sku text)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_sku text := lower(btrim(COALESCE(p_sku, '')));
+  v_images text[] := ARRAY[]::text[];
+  v_seen text[] := ARRAY[]::text[];
+  v_row record;
+  v_url text;
+  v_elem text;
+  v_add jsonb;
+  v_i int;
+  v_primary_row public.products%ROWTYPE;
+  v_slots jsonb;
+BEGIN
+  IF v_sku = '' THEN
+    RETURN jsonb_build_object(
+      'ok', true,
+      'images', '[]'::jsonb,
+      'gallery_slots', public._product_gallery_slots_normalize('[]'::jsonb)
+    );
+  END IF;
+
+  SELECT p.*
+  INTO v_primary_row
+  FROM public.products AS p
+  WHERE lower(btrim(p.sku)) = v_sku
+  ORDER BY p.updated_at DESC NULLS LAST, p.id DESC
+  LIMIT 1;
+
+  IF FOUND THEN
+    v_slots := public._product_gallery_slots_from_row(v_primary_row);
+  ELSE
+    v_slots := public._product_gallery_slots_normalize('[]'::jsonb);
+  END IF;
+
+  FOR v_row IN
+    SELECT
+      p.image_url,
+      p.additional_images
+    FROM public.products AS p
+    WHERE lower(btrim(p.sku)) = v_sku
+    ORDER BY p.updated_at DESC NULLS LAST, p.id DESC
+  LOOP
+    v_url := NULLIF(btrim(COALESCE(v_row.image_url, '')), '');
+    IF v_url IS NOT NULL THEN
+      IF NOT (v_url = ANY (v_seen)) THEN
+        v_seen := array_append(v_seen, v_url);
+        v_images := array_append(v_images, v_url);
+      END IF;
+    END IF;
+
+    v_add := CASE
+      WHEN v_row.additional_images IS NULL THEN '[]'::jsonb
+      ELSE to_jsonb(v_row.additional_images)
+    END;
+
+    IF jsonb_typeof(v_add) = 'array' AND jsonb_array_length(v_add) > 0 THEN
+      FOR v_i IN 0 .. jsonb_array_length(v_add) - 1 LOOP
+        v_elem := NULLIF(btrim(v_add ->> v_i), '');
+        IF v_elem IS NOT NULL AND NOT (v_elem = ANY (v_seen)) THEN
+          v_seen := array_append(v_seen, v_elem);
+          v_images := array_append(v_images, v_elem);
+        END IF;
+      END LOOP;
+    END IF;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'images', COALESCE(to_jsonb(v_images), '[]'::jsonb),
+    'gallery_slots', v_slots
+  );
+END;
+$$;
+
+COMMENT ON FUNCTION public.find_product_images_by_sku(text) IS
+  'Админка: URL фото по SKU + gallery_slots свежей карточки; сортировка updated_at, id.';
+
+-- Бэкфилл gallery_slots
 UPDATE public.products AS p
 SET
-  raw_legacy_payload = jsonb_set(
-    COALESCE(p.raw_legacy_payload, '{}'::jsonb),
-    '{gallery_slots}',
-    public._product_gallery_slots_init_from_urls(
-      public._product_gallery_urls_merged(
-        p.image_url,
-        p.images,
-        p.additional_images
-      )
-    ),
-    true
+  gallery_slots = public._product_gallery_slots_init_from_urls(
+    public._product_gallery_urls_merged(
+      p.image_url,
+      p.images,
+      p.additional_images
+    )
   )
-WHERE NOT (
-  COALESCE(p.raw_legacy_payload, '{}'::jsonb) ? 'gallery_slots'
-  AND jsonb_typeof(p.raw_legacy_payload -> 'gallery_slots') = 'array'
-  AND jsonb_array_length(p.raw_legacy_payload -> 'gallery_slots') = 4
-);
-
-UPDATE public.products AS p
-SET updated_at = p.updated_at
-WHERE COALESCE(p.raw_legacy_payload, '{}'::jsonb) ? 'gallery_slots';
+WHERE p.gallery_slots IS NULL
+   OR jsonb_typeof(p.gallery_slots) IS DISTINCT FROM 'array'
+   OR jsonb_array_length(
+        public._product_gallery_slots_normalize(p.gallery_slots)
+      ) IS DISTINCT FROM 4;
 
 REVOKE ALL ON FUNCTION public.admin_get_product_gallery_context_by_id(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_set_product_gallery_slots(text, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_get_product_gallery_context_by_sku(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_set_product_additional_images(text, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.find_product_images_by_sku(text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.admin_get_product_gallery_context_by_id(text, text)
   TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.admin_set_product_gallery_slots(text, jsonb, text)
-  TO anon, authenticated;
-
-REVOKE ALL ON FUNCTION public.admin_set_product_additional_images(text, jsonb, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.admin_set_product_additional_images(text, jsonb, text)
-  TO anon, authenticated;
-
-REVOKE ALL ON FUNCTION public.admin_get_product_gallery_context_by_sku(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.admin_get_product_gallery_context_by_sku(text, text)
   TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_set_product_gallery_slots(text, jsonb, text)
+  TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_get_product_gallery_context_by_id(text, text)
+  TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.admin_set_product_additional_images(text, jsonb, text)
+  TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.find_product_images_by_sku(text)
+  TO anon, authenticated, service_role;
 
 COMMIT;

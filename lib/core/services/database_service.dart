@@ -106,6 +106,11 @@ abstract final class TransferRpc {
   static const notesParam = 'p_notes';
 }
 
+typedef ProductGallerySkuLookup = ({
+  List<String> images,
+  List<String?> sourceGallerySlots,
+});
+
 typedef ScrapMetalUpsertResult = ({bool ok, String? id, String? error});
 typedef ScrapMetalWriteOffResult = ({bool ok, int writtenOff, String? error});
 typedef ScrapMetalDeleteResult = ({bool ok, String? error});
@@ -640,6 +645,12 @@ abstract class DatabaseService {
 
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
+
+  /// Поиск галереи по SKU: плоский список URL + слоты свежей карточки.
+  Future<ProductGallerySkuLookup> findProductGalleryLookupBySku(
+    String sku, {
+    Iterable<Map<String, dynamic>>? catalogRows,
+  });
 
   /// Поиск URL галереи по артикулу (RPC, медиа по SKU, direct select; опц. кэш каталога).
   Future<List<String>> findProductImagesBySku(
@@ -2006,7 +2017,7 @@ class CloudDatabaseService implements DatabaseService {
       'id, sku, stock_quantity, weight_grams, size_value, metal_type, '
       'gem_inserts, notes, additional_images, image_url, name, price, '
       'sale_price, manufacturer, status, metal, insert, store_location, '
-      'warehouse_attributes, raw_legacy_payload';
+      'warehouse_attributes, gallery_slots';
 
   @override
   Future<List<Map<String, dynamic>>> fetchAllProductRowsForAdminCatalog() async {
@@ -2986,18 +2997,26 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     final normalizedSku = sku.trim();
     final id = productId.trim();
-    if (id.isEmpty ||
-        normalizedSku.isEmpty ||
-        bytes.isEmpty ||
-        slotIndex < 0 ||
-        slotIndex >= ProductItem.maxGalleryImages) {
-      return null;
+    if (bytes.isEmpty) {
+      throw StateError('Пустой файл');
+    }
+    if (id.isEmpty) {
+      throw StateError('RPC: не указан productId');
+    }
+    if (normalizedSku.isEmpty) {
+      throw StateError('RPC: не указан SKU');
+    }
+    if (slotIndex < 0 || slotIndex >= ProductItem.maxGalleryImages) {
+      throw StateError('RPC: недопустимый индекс слота $slotIndex');
     }
 
     try {
       final existing = await _adminProductGalleryContextById(id);
       if (existing == null) {
-        return null;
+        throw StateError(
+          'RPC: admin_get_product_gallery_context_by_id недоступен '
+          '(примените миграцию 058 или проверьте права)',
+        );
       }
 
       final uploadContentType =
@@ -3022,25 +3041,27 @@ class CloudDatabaseService implements DatabaseService {
       final objectPath =
           '$_productImagesFolder/${safeSku}_s${slotIndex}_$ts.$fileExt';
 
-      await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
-            objectPath,
-            uploadBytes,
-            fileOptions: FileOptions(
-              contentType: uploadMime,
-              upsert: false,
-            ),
-          );
+      try {
+        await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
+              objectPath,
+              uploadBytes,
+              fileOptions: FileOptions(
+                contentType: uploadMime,
+                upsert: false,
+              ),
+            );
+      } on StorageException catch (e) {
+        throw StateError('Storage: ${e.message}');
+      }
 
       final publicUrl =
           _supabaseClient.storage.from(_productImagesBucket).getPublicUrl(objectPath);
       if (publicUrl.trim().isEmpty) {
-        return null;
+        throw StateError('Storage: пустой public URL после загрузки');
       }
 
       final slots = productGallerySlotsFromRow({
-        'raw_legacy_payload': {
-          'gallery_slots': existing['gallery_slots'],
-        },
+        'gallery_slots': existing['gallery_slots'],
         'image_url': existing['image_url'],
         'additional_images': existing['additional_images'],
       });
@@ -3048,13 +3069,18 @@ class CloudDatabaseService implements DatabaseService {
 
       final saved = await _adminSetProductGallerySlots(id, slots);
       if (!saved) {
-        return null;
+        throw StateError(
+          'RPC: admin_set_product_gallery_slots вернул false '
+          '(примените миграцию 058)',
+        );
       }
       return publicUrl;
+    } on StateError {
+      rethrow;
     } catch (e, stackTrace) {
       debugPrint('CloudDatabaseService.uploadProductGallerySlotImage failed: $e');
       debugPrint('$stackTrace');
-      return null;
+      throw StateError('Загрузка фото: $e');
     }
   }
 
@@ -3157,6 +3183,7 @@ class CloudDatabaseService implements DatabaseService {
       return {
         'additional_images': ctx['additional_images'],
         'image_url': ctx['image_url'],
+        'gallery_slots': ctx['gallery_slots'],
       };
     } catch (error, stackTrace) {
       debugPrint(
@@ -3174,48 +3201,73 @@ class CloudDatabaseService implements DatabaseService {
     );
   }
 
-  Future<List<String>> _findProductImagesBySkuRpc(String sku) async {
+  Future<ProductGallerySkuLookup> _findProductGalleryLookupBySkuRpc(
+    String sku,
+  ) async {
     final trimmed = sku.trim();
-    if (trimmed.isEmpty) return const [];
+    if (trimmed.isEmpty) {
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
+    }
     try {
       final result = await _supabaseClient.rpc(
         AdminCatalogRpc.findProductImagesBySku,
         params: {AdminCatalogRpc.skuParam: trimmed},
       );
-      if (result is! Map) return const [];
-      final map = Map<String, dynamic>.from(result);
-      if (map['ok'] != true) return const [];
-      final fromRpc = _stringListFromDynamicJson(map['images']);
-      if (fromRpc.isNotEmpty) return fromRpc;
-
-      final imagesRaw = map['images'];
-      if (imagesRaw is String && imagesRaw.trim().isNotEmpty) {
-        return mergeUniqueGalleryUrls(
-          productGalleryImageUrls({'additional_images': imagesRaw}),
+      if (result is! Map) {
+        return (
+          images: const <String>[],
+          sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
         );
       }
-      return const [];
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] != true) {
+        return (
+          images: const <String>[],
+          sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+        );
+      }
+      final images = _stringListFromDynamicJson(map['images']);
+      final slots = parseGallerySlotsJson(map['gallery_slots']);
+      return (images: images, sourceGallerySlots: slots);
     } catch (error, stackTrace) {
       debugPrint(
-        'CloudDatabaseService._findProductImagesBySkuRpc failed: $error',
+        'CloudDatabaseService._findProductGalleryLookupBySkuRpc failed: $error',
       );
       debugPrint('$stackTrace');
-      return const [];
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
     }
   }
 
-  Future<List<String>> _findProductImagesBySkuDirectSelect(String sku) async {
+  Future<ProductGallerySkuLookup> _findProductGalleryLookupBySkuDirectSelect(
+    String sku,
+  ) async {
     final needle = normalizeProductSku(sku);
-    if (needle.isEmpty) return const [];
+    if (needle.isEmpty) {
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
+    }
     try {
       final trimmed = sku.trim();
       final escaped = trimmed.replaceAll('%', r'\%').replaceAll('_', r'\_');
       final rows = await _supabaseClient
           .from('products')
-          .select('sku, image_url, additional_images, updated_at, created_at')
+          .select('id, sku, image_url, additional_images, gallery_slots, updated_at')
           .ilike('sku', '%$escaped%')
           .order('updated_at', ascending: false);
-      if (rows.isEmpty) return const [];
+      if (rows.isEmpty) {
+        return (
+          images: const <String>[],
+          sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+        );
+      }
       final matching = <Map<String, dynamic>>[];
       for (final row in rows) {
         final map = Map<String, dynamic>.from(row);
@@ -3224,14 +3276,87 @@ class CloudDatabaseService implements DatabaseService {
         }
         matching.add(map);
       }
-      return mergeGalleryUrlsFromProductRows(matching);
+      if (matching.isEmpty) {
+        return (
+          images: const <String>[],
+          sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+        );
+      }
+      final images = mergeGalleryUrlsFromProductRows(matching);
+      final slots = productGallerySlotsFromRow(matching.first);
+      return (images: images, sourceGallerySlots: slots);
     } catch (error, stackTrace) {
       debugPrint(
-        'CloudDatabaseService._findProductImagesBySkuDirectSelect failed: $error',
+        'CloudDatabaseService._findProductGalleryLookupBySkuDirectSelect failed: $error',
       );
       debugPrint('$stackTrace');
-      return const [];
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
     }
+  }
+
+  ProductGallerySkuLookup _lookupGalleryFromCatalogRows(
+    String sku,
+    Iterable<Map<String, dynamic>> catalogRows,
+  ) {
+    final trimmed = sku.trim();
+    final needle = normalizeProductSku(trimmed);
+    if (needle.isEmpty) {
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
+    }
+    final images = findGalleryUrlsInCatalogRows(trimmed, catalogRows);
+    Map<String, dynamic>? primary;
+    for (final row in catalogRows) {
+      if (normalizeProductSku(row['sku']?.toString() ?? '') != needle) {
+        continue;
+      }
+      primary = row;
+      break;
+    }
+    final slots = primary == null
+        ? List<String?>.filled(kProductGallerySlotCount, null)
+        : productGallerySlotsFromRow(primary);
+    return (images: images, sourceGallerySlots: slots);
+  }
+
+  @override
+  Future<ProductGallerySkuLookup> findProductGalleryLookupBySku(
+    String sku, {
+    Iterable<Map<String, dynamic>>? catalogRows,
+  }) async {
+    final trimmed = sku.trim();
+    if (trimmed.isEmpty) {
+      return (
+        images: const <String>[],
+        sourceGallerySlots: List<String?>.filled(kProductGallerySlotCount, null),
+      );
+    }
+
+    if (catalogRows != null) {
+      final fromCatalog = _lookupGalleryFromCatalogRows(trimmed, catalogRows);
+      if (fromCatalog.images.isNotEmpty) return fromCatalog;
+    }
+
+    final fromRpc = await _findProductGalleryLookupBySkuRpc(trimmed);
+    if (fromRpc.images.isNotEmpty) return fromRpc;
+
+    final media = await fetchProductMediaFieldsBySku(trimmed);
+    if (media != null) {
+      final fromMedia = productGalleryImageUrls(media);
+      if (fromMedia.isNotEmpty) {
+        return (
+          images: fromMedia,
+          sourceGallerySlots: productGallerySlotsFromRow(media),
+        );
+      }
+    }
+
+    return _findProductGalleryLookupBySkuDirectSelect(trimmed);
   }
 
   @override
@@ -3239,24 +3364,11 @@ class CloudDatabaseService implements DatabaseService {
     String sku, {
     Iterable<Map<String, dynamic>>? catalogRows,
   }) async {
-    final trimmed = sku.trim();
-    if (trimmed.isEmpty) return const [];
-
-    if (catalogRows != null) {
-      final fromCatalog = findGalleryUrlsInCatalogRows(trimmed, catalogRows);
-      if (fromCatalog.isNotEmpty) return fromCatalog;
-    }
-
-    final fromRpc = await _findProductImagesBySkuRpc(trimmed);
-    if (fromRpc.isNotEmpty) return fromRpc;
-
-    final media = await fetchProductMediaFieldsBySku(trimmed);
-    if (media != null) {
-      final fromMedia = productGalleryImageUrls(media);
-      if (fromMedia.isNotEmpty) return fromMedia;
-    }
-
-    return _findProductImagesBySkuDirectSelect(trimmed);
+    final lookup = await findProductGalleryLookupBySku(
+      sku,
+      catalogRows: catalogRows,
+    );
+    return lookup.images;
   }
 
   @override

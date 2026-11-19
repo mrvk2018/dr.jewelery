@@ -199,18 +199,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       if (selected == null) return;
       if (_productId(selected) != productId) return;
 
-      final payload = Map<String, dynamic>.from(
-        selected['raw_legacy_payload'] is Map
-            ? Map<String, dynamic>.from(
-                selected['raw_legacy_payload'] as Map,
-              )
-            : <String, dynamic>{},
-      )
-        ..['gallery_slots'] = media['gallery_slots'];
-
       setState(() {
         _selected = Map<String, dynamic>.from(selected)
-          ..['raw_legacy_payload'] = payload
+          ..['gallery_slots'] = media['gallery_slots']
           ..['additional_images'] = media['additional_images']
           ..['image_url'] = media['image_url'];
       });
@@ -281,7 +272,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       );
       if (!mounted) return;
       if (url == null) {
-        _snack('Не удалось загрузить фото (Storage / RPC)', error: true);
+        _snack('Не удалось загрузить фото (неизвестная ошибка)', error: true);
         return;
       }
       final label = kProductGallerySlotLabels[slotIndex];
@@ -291,6 +282,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         await _fetchAndMergeProductMedia(productId: productId);
       }
       await _refreshCatalog();
+    } on StateError catch (error) {
+      if (!mounted) return;
+      _snack(error.message, error: true);
     } catch (error) {
       if (!mounted) return;
       _snack('Ошибка загрузки: $error', error: true);
@@ -2299,9 +2293,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           await widget.database.fetchProductMediaFieldsByProductId(productId);
       if (!mounted || media == null) return;
       final merged = Map<String, dynamic>.from(widget.editProduct!)
-        ..['raw_legacy_payload'] = {
-          'gallery_slots': media['gallery_slots'],
-        }
+        ..['gallery_slots'] = media['gallery_slots']
         ..addAll(media);
       final slots = productGallerySlotsFromRow(merged);
       if (!slots.any((u) => (u?.trim().isNotEmpty ?? false))) return;
@@ -2517,28 +2509,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     });
   }
 
-  int _mergeDiscoveredImageUrls(List<String> found) {
-    final slots = List<String?>.from(_gallerySlots);
-    final seen = <String>{
-      for (final u in slots)
-        if (u != null && u.trim().isNotEmpty) galleryUrlCanonical(u),
-    };
-    var added = 0;
-    for (final raw in found) {
-      final url = raw.trim();
-      if (url.isEmpty) continue;
-      final canon = galleryUrlCanonical(url);
-      if (canon.isNotEmpty && seen.contains(canon)) continue;
-      final slot = firstEmptyGallerySlotIndex(slots);
-      if (slot == null) break;
-      if (canon.isNotEmpty) seen.add(canon);
-      slots[slot] = url;
-      added++;
-    }
-    setState(() => _gallerySlots = slots);
-    return added;
-  }
-
   Future<void> _lookupPhotosBySku() async {
     if (_skuPhotoLookupInProgress || _saving) return;
     final sku = _skuController.text.trim();
@@ -2552,19 +2522,25 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
     setState(() => _skuPhotoLookupInProgress = true);
     try {
-      final found = await widget.database.findProductImagesBySku(
+      final lookup = await widget.database.findProductGalleryLookupBySku(
         sku,
         catalogRows: widget.catalogRows,
       );
       if (!mounted) return;
-      if (found.isEmpty) {
+      if (lookup.images.isEmpty) {
         _showPhotoLookupNotice(
           message: 'Фото по артикулу «$sku» в базе не найдены',
           success: false,
         );
         return;
       }
-      final added = _mergeDiscoveredImageUrls(found);
+      final merge = mergeDiscoveredGalleryIntoSlots(
+        current: _gallerySlots,
+        sourceSlots: lookup.sourceGallerySlots,
+        extraUrls: lookup.images,
+      );
+      final added = merge.added;
+      setState(() => _gallerySlots = merge.slots);
       if (added == 0) {
         _showPhotoLookupNotice(
           message: 'Все найденные фото уже добавлены в карточку',

@@ -17,6 +17,7 @@ import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
 import '../utils/product_gallery_urls.dart';
+import '../utils/product_size_utils.dart';
 import '../utils/store_location_utils.dart';
 import '../../features/profile/domain/models/order_item.dart';
 import '../../features/profile/domain/models/user_profile.dart';
@@ -2014,9 +2015,9 @@ class CloudDatabaseService implements DatabaseService {
   static const _postgrestPageSize = 1000;
 
   static const _adminCatalogProductColumns =
-      'id, sku, stock_quantity, weight_grams, size_value, metal_type, '
-      'gem_inserts, notes, additional_images, image_url, name, price, '
-      'sale_price, manufacturer, status, metal, insert, store_location, '
+      'id, sku, stock_quantity, weight_grams, size_value, available_sizes, '
+      'metal_type, gem_inserts, notes, additional_images, image_url, name, '
+      'price, sale_price, manufacturer, status, metal, insert, store_location, '
       'warehouse_attributes, gallery_slots';
 
   @override
@@ -2678,9 +2679,7 @@ class CloudDatabaseService implements DatabaseService {
         payload['store_location'] = locValue;
       }
       payload['stock_quantity'] = isDraft ? 0 : 1;
-      if (sizeValue != null) {
-        payload['size_value'] = sizeValue;
-      }
+      payload.addAll(productSizeDbFieldsFromInput(sizeValue));
       final qr = qrCodePayload?.trim();
       if (qr != null && qr.isNotEmpty) {
         payload['qr_code_payload'] = qr;
@@ -2732,9 +2731,7 @@ class CloudDatabaseService implements DatabaseService {
       'sale_price': priceKrw,
       'old_price': priceKrw,
     };
-    if (sizeValue != null) {
-      patch['size_value'] = sizeValue;
-    }
+    patch.addAll(productSizeDbFieldsFromInput(sizeValue));
     if (stockQuantity != null) {
       patch['stock_quantity'] = stockQuantity.clamp(0, 999999);
     }

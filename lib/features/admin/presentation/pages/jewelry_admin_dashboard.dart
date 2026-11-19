@@ -25,6 +25,7 @@ import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../../../../core/utils/product_gallery_urls.dart';
+import '../../../../core/utils/product_size_utils.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
@@ -169,9 +170,7 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return (row['weight_grams'] as num?)?.toDouble() ?? 0;
   }
 
-  double _size(Map<String, dynamic> row) {
-    return (row['size_value'] as num?)?.toDouble() ?? 0;
-  }
+  double _size(Map<String, dynamic> row) => productDisplaySizeFromRow(row);
 
   List<String?> _gallerySlots(Map<String, dynamic> row) =>
       productGallerySlotsFromRow(row);
@@ -2089,7 +2088,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
     _skuController.text = edit['sku']?.toString().trim() ?? '';
     _weightController.text = _formatNumField(edit['weight_grams']);
-    _sizeController.text = _formatNumField(edit['size_value']);
+    final editSize = productDisplaySizeFromRow(edit);
+    _sizeController.text =
+        editSize > 0 ? _formatNumField(editSize) : '';
     final parsed = parseGemInsertsFromProductField(
       edit['gem_inserts'] ?? edit['insert'],
     );
@@ -2691,7 +2692,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
             legacy: _legacyGemValues,
           ),
           'weight_grams': weight,
-          if (size != null) 'size_value': size,
+          ...productSizeDbFieldsFromInput(size),
           'notes': notes,
           'manufacturer': manufacturer,
           'sale_price': price,

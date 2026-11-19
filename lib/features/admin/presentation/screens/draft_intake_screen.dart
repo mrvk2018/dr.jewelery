@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/utils/product_size_utils.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
@@ -133,9 +134,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     return (row['weight_grams'] as num?)?.toDouble() ?? 0;
   }
 
-  static double _size(Map<String, dynamic> row) {
-    return (row['size_value'] as num?)?.toDouble() ?? 0;
-  }
+  static double _size(Map<String, dynamic> row) =>
+      productDisplaySizeFromRow(row);
 
   /// Как витрина админки: `sale_price`, затем legacy `price` (KRW).
   static int? _salePriceKrw(Map<String, dynamic> row) {

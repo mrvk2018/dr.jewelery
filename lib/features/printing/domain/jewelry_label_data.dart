@@ -1,3 +1,4 @@
+import '../../../core/utils/product_size_utils.dart';
 import '../../../core/utils/won_format.dart';
 
 /// DTO данных для печати бирки и превью.
@@ -25,7 +26,8 @@ class JewelryLabelData {
     final sku = (map['sku'] ?? '').toString().trim();
 
     final probe = _probeFromMap(map);
-    final size = _formatNum(map['size_value']);
+    final sizeNum = productDisplaySizeFromRow(map);
+    final size = sizeNum > 0 ? _formatNum(sizeNum) : '';
     final weight = _formatNum(map['weight_grams']);
     final probeLine = [probe, size, weight]
         .where((part) => part.isNotEmpty)

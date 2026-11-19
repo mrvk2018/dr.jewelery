@@ -239,7 +239,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public.archive_admin_pos_sale(jsonb, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.archive_admin_pos_sale(jsonb, text, text, text)
-  TO authenticated, service_role;
+  TO anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- 3) Бэкфилл seller_code / комиссии (ноябрь 2026+, без seller_code)

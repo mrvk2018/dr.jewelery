@@ -128,6 +128,10 @@ abstract final class AdminCatalogRpc {
       'admin_get_product_gallery_context_by_sku';
   static const adminSetProductAdditionalImages =
       'admin_set_product_additional_images';
+  static const adminSetProductGallerySlots = 'admin_set_product_gallery_slots';
+  static const adminGetProductGalleryContextById =
+      'admin_get_product_gallery_context_by_id';
+  static const gallerySlotsParam = 'p_gallery_slots';
   static const findProductImagesBySku = 'find_product_images_by_sku';
   static const deleteDraftBySku = 'delete_draft_product_by_sku';
   static const deleteDraftProduct = 'delete_draft_product';
@@ -611,13 +615,28 @@ abstract class DatabaseService {
   /// Обновление поля `notes` по уникальному `products.id`.
   Future<bool> updateProductNotesById(String id, String notes);
 
-  /// Загрузка фото в Storage `product-images` и append в `additional_images` (макс. 4).
-  /// Возвращает public URL или null при ошибке / лимите.
+  /// Загрузка фото в Storage и запись в фиксированный слот `0..3` по `productId`.
+  Future<String?> uploadProductGallerySlotImage({
+    required String productId,
+    required String sku,
+    required int slotIndex,
+    required Uint8List bytes,
+    required String contentType,
+  });
+
+  /// Legacy-обёртка: первый свободный слот; предпочтительно передавать [productId].
   Future<String?> uploadProductAdditionalImage({
     required String sku,
     required Uint8List bytes,
     required String contentType,
+    String? productId,
+    int? slotIndex,
   });
+
+  /// Админка: медиа и `gallery_slots` по выбранной строке `products.id`.
+  Future<Map<String, dynamic>?> fetchProductMediaFieldsByProductId(
+    String productId,
+  );
 
   /// Админка: точечная догрузка `additional_images` / `image_url` по SKU.
   Future<Map<String, dynamic>?> fetchProductMediaFieldsBySku(String sku);
@@ -630,6 +649,12 @@ abstract class DatabaseService {
 
   /// Строка `products` для печати бирки после ручного сохранения (в т.ч. `id`).
   Future<Map<String, dynamic>?> fetchProductRowForLabelBySku(String sku);
+
+  /// Админка: замена 4 фиксированных слотов по `products.id`.
+  Future<bool> updateProductGallerySlotsByProductId({
+    required String productId,
+    required List<String?> gallerySlots,
+  });
 
   /// Админка: замена галереи `additional_images` (+ синхрон `image_url`) по `products.id`.
   Future<bool> updateProductGalleryByProductId({
@@ -1981,7 +2006,7 @@ class CloudDatabaseService implements DatabaseService {
       'id, sku, stock_quantity, weight_grams, size_value, metal_type, '
       'gem_inserts, notes, additional_images, image_url, name, price, '
       'sale_price, manufacturer, status, metal, insert, store_location, '
-      'warehouse_attributes';
+      'warehouse_attributes, raw_legacy_payload';
 
   @override
   Future<List<Map<String, dynamic>>> fetchAllProductRowsForAdminCatalog() async {
@@ -2770,7 +2795,6 @@ class CloudDatabaseService implements DatabaseService {
 
   static const _productImagesBucket = 'product-images';
   static const _productImagesFolder = 'products';
-  static const _gallerySlotSuffixes = ['', '_1', '_2', '_3'];
   static const _productImageMaxSidePx = 1600;
   static const _productImageWebpContentType = 'image/webp';
 
@@ -2804,6 +2828,65 @@ class CloudDatabaseService implements DatabaseService {
       );
       debugPrint('$stackTrace');
       return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _adminProductGalleryContextById(
+    String productId,
+  ) async {
+    final id = productId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.adminGetProductGalleryContextById,
+        params: {
+          AdminCatalogRpc.productIdParam: id,
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      if (result is! Map) return null;
+      final map = Map<String, dynamic>.from(result);
+      if (map['ok'] != true) return null;
+      return map;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._adminProductGalleryContextById failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  static List<dynamic> _gallerySlotsToRpcParam(List<String?> slots) {
+    final normalized = productGallerySlotsToRpcJson(slots);
+    return normalized
+        .map((url) {
+          final trimmed = url?.trim() ?? '';
+          return trimmed.isEmpty ? null : trimmed;
+        })
+        .toList();
+  }
+
+  Future<bool> _adminSetProductGallerySlots(
+    String productId,
+    List<String?> gallerySlots,
+  ) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        AdminCatalogRpc.adminSetProductGallerySlots,
+        params: {
+          AdminCatalogRpc.productIdParam: productId,
+          AdminCatalogRpc.gallerySlotsParam: _gallerySlotsToRpcParam(gallerySlots),
+          AdminOrdersRpc.adminEmailParam: AdminOrdersRpc.adminEmail,
+        },
+      );
+      return result == true;
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService._adminSetProductGallerySlots failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return false;
     }
   }
 
@@ -2894,44 +2977,26 @@ class CloudDatabaseService implements DatabaseService {
   }
 
   @override
-  Future<String?> uploadProductAdditionalImage({
+  Future<String?> uploadProductGallerySlotImage({
+    required String productId,
     required String sku,
+    required int slotIndex,
     required Uint8List bytes,
     required String contentType,
   }) async {
     final normalizedSku = sku.trim();
-    if (normalizedSku.isEmpty || bytes.isEmpty) {
-      print(
-        '!!! UPLOAD FAILED AT: empty sku or bytes '
-        '(sku="$normalizedSku", bytes=${bytes.length})',
-      );
+    final id = productId.trim();
+    if (id.isEmpty ||
+        normalizedSku.isEmpty ||
+        bytes.isEmpty ||
+        slotIndex < 0 ||
+        slotIndex >= ProductItem.maxGalleryImages) {
       return null;
     }
 
     try {
-      final existing = await _adminProductGalleryContextBySku(normalizedSku);
+      final existing = await _adminProductGalleryContextById(id);
       if (existing == null) {
-        print(
-          '!!! UPLOAD FAILED AT: rows empty (no product for sku=$normalizedSku, RLS/hidden?)',
-        );
-        return null;
-      }
-
-      final productId = existing['id']?.toString().trim() ?? '';
-      if (productId.isEmpty) {
-        print('!!! UPLOAD FAILED AT: productId is null or empty');
-        return null;
-      }
-
-      final currentRaw = existing['additional_images'];
-      final current = currentRaw is List
-          ? currentRaw.map((e) => e.toString()).where((u) => u.isNotEmpty).toList()
-          : <String>[];
-      if (current.length >= ProductItem.maxGalleryImages) {
-        print(
-          '!!! UPLOAD FAILED AT: gallery limit reached '
-          '(${current.length}/${ProductItem.maxGalleryImages})',
-        );
         return null;
       }
 
@@ -2949,50 +3014,111 @@ class CloudDatabaseService implements DatabaseService {
           fileExt = 'webp';
         }
       } catch (e) {
-        print('!!! WEB CONVERTER FAILED, FALLBACK TO ORIGINAL !!!: $e');
+        debugPrint('webp convert fallback: $e');
       }
 
-      final slot = current.length;
+      final ts = DateTime.now().millisecondsSinceEpoch;
       final safeSku = _safeStorageSku(normalizedSku);
-      final suffix = _gallerySlotSuffixes[slot];
-      final objectPath = '$_productImagesFolder/$safeSku$suffix.$fileExt';
+      final objectPath =
+          '$_productImagesFolder/${safeSku}_s${slotIndex}_$ts.$fileExt';
 
       await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
             objectPath,
             uploadBytes,
             fileOptions: FileOptions(
               contentType: uploadMime,
-              upsert: true,
+              upsert: false,
             ),
           );
 
       final publicUrl =
           _supabaseClient.storage.from(_productImagesBucket).getPublicUrl(objectPath);
       if (publicUrl.trim().isEmpty) {
-        print('!!! UPLOAD FAILED AT: publicUrl empty (objectPath=$objectPath)');
         return null;
       }
 
-      final versionedUrl = '$publicUrl?v=${DateTime.now().millisecondsSinceEpoch}';
-      final nextImages = [...current, versionedUrl];
+      final slots = productGallerySlotsFromRow({
+        'raw_legacy_payload': {
+          'gallery_slots': existing['gallery_slots'],
+        },
+        'image_url': existing['image_url'],
+        'additional_images': existing['additional_images'],
+      });
+      slots[slotIndex] = publicUrl;
 
-      final saved = await _adminSetProductAdditionalImages(productId, nextImages);
+      final saved = await _adminSetProductGallerySlots(id, slots);
       if (!saved) {
-        print(
-          '!!! UPLOAD FAILED AT: admin_set_product_additional_images '
-          '(productId=$productId)',
-        );
         return null;
       }
-      return versionedUrl;
+      return publicUrl;
     } catch (e, stackTrace) {
-      print('!!! UPLOAD ERROR !!!: $e');
-      if (e is StorageException) {
-        print('!!! STORAGE ERROR MESSAGE !!!: ${e.message}');
-        print('!!! STORAGE ERROR STATUS !!!: ${e.statusCode}');
-      }
-      print('STACKTRACE: $stackTrace');
-      debugPrint('CloudDatabaseService.uploadProductAdditionalImage failed: $e');
+      debugPrint('CloudDatabaseService.uploadProductGallerySlotImage failed: $e');
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> uploadProductAdditionalImage({
+    required String sku,
+    required Uint8List bytes,
+    required String contentType,
+    String? productId,
+    int? slotIndex,
+  }) async {
+    final normalizedSku = sku.trim();
+    if (normalizedSku.isEmpty || bytes.isEmpty) {
+      return null;
+    }
+
+    final resolvedId = productId?.trim();
+    Map<String, dynamic>? ctx;
+    if (resolvedId != null && resolvedId.isNotEmpty) {
+      ctx = await _adminProductGalleryContextById(resolvedId);
+    } else {
+      ctx = await _adminProductGalleryContextBySku(normalizedSku);
+    }
+    if (ctx == null) return null;
+
+    final id = ctx['id']?.toString().trim() ?? '';
+    if (id.isEmpty) return null;
+
+    var targetSlot = slotIndex;
+    if (targetSlot == null) {
+      final slots = parseGallerySlotsJson(ctx['gallery_slots']);
+      targetSlot = firstEmptyGallerySlotIndex(slots);
+      if (targetSlot == null) return null;
+    }
+
+    return uploadProductGallerySlotImage(
+      productId: id,
+      sku: normalizedSku,
+      slotIndex: targetSlot,
+      bytes: bytes,
+      contentType: contentType,
+    );
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProductMediaFieldsByProductId(
+    String productId,
+  ) async {
+    final id = productId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final ctx = await _adminProductGalleryContextById(id);
+      if (ctx == null) return null;
+      return {
+        'id': ctx['id'],
+        'sku': ctx['sku'],
+        'gallery_slots': ctx['gallery_slots'],
+        'additional_images': ctx['additional_images'],
+        'image_url': ctx['image_url'],
+      };
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchProductMediaFieldsByProductId failed: $error',
+      );
       debugPrint('$stackTrace');
       return null;
     }
@@ -3131,6 +3257,27 @@ class CloudDatabaseService implements DatabaseService {
     }
 
     return _findProductImagesBySkuDirectSelect(trimmed);
+  }
+
+  @override
+  Future<bool> updateProductGallerySlotsByProductId({
+    required String productId,
+    required List<String?> gallerySlots,
+  }) async {
+    final id = productId.trim();
+    if (id.isEmpty) return false;
+    try {
+      return await _adminSetProductGallerySlots(
+        id,
+        productGallerySlotsToRpcJson(gallerySlots),
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.updateProductGallerySlotsByProductId failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return false;
+    }
   }
 
   @override

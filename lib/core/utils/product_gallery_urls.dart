@@ -2,7 +2,25 @@ import 'dart:convert';
 
 import '../../shared/models/product_item.dart';
 
+/// Число фиксированных слотов галереи (совпадает с SQL `gallery_slots`).
+const int kProductGallerySlotCount = ProductItem.maxGalleryImages;
+
+const List<String> kProductGallerySlotLabels = [
+  '1 · Главное',
+  '2',
+  '3',
+  '4',
+];
+
 String normalizeProductSku(String sku) => sku.trim().toLowerCase();
+
+String galleryUrlCanonical(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return '';
+  final q = trimmed.indexOf('?');
+  if (q <= 0) return trimmed;
+  return trimmed.substring(0, q);
+}
 
 List<String> parseAdditionalImagesField(Object? raw) {
   if (raw == null) return const [];
@@ -56,7 +74,83 @@ Map<String, dynamic> productGalleryDbFieldsFromUrls(
   };
 }
 
-List<String> productGalleryImageUrls(Map<String, dynamic> row) {
+List<String?> parseGallerySlotsJson(Object? rawSlots) {
+  final out = List<String?>.filled(kProductGallerySlotCount, null);
+  if (rawSlots is! List) return out;
+  for (var i = 0; i < kProductGallerySlotCount && i < rawSlots.length; i++) {
+    final elem = rawSlots[i];
+    if (elem == null) continue;
+    final url = elem.toString().trim();
+    if (url.isNotEmpty && url.toLowerCase() != 'null') {
+      out[i] = url;
+    }
+  }
+  return out;
+}
+
+List<String?> productGallerySlotsFromRow(Map<String, dynamic> row) {
+  final payload = row['raw_legacy_payload'];
+  if (payload is Map) {
+    final fromPayload = parseGallerySlotsJson(payload['gallery_slots']);
+    if (fromPayload.any((u) => (u?.trim().isNotEmpty ?? false))) {
+      return fromPayload;
+    }
+  }
+  return _gallerySlotsInitFromMergedUrls(productGalleryImageUrlsLegacy(row));
+}
+
+List<String?> _gallerySlotsInitFromMergedUrls(List<String> urls) {
+  final slots = List<String?>.filled(kProductGallerySlotCount, null);
+  final seen = <String>{};
+  var slot = 0;
+  for (final raw in urls) {
+    if (slot >= kProductGallerySlotCount) break;
+    final url = raw.trim();
+    if (url.isEmpty) continue;
+    final canon = galleryUrlCanonical(url);
+    if (canon.isNotEmpty && seen.contains(canon)) continue;
+    if (canon.isNotEmpty) seen.add(canon);
+    slots[slot] = url;
+    slot++;
+  }
+  return slots;
+}
+
+int countFilledGallerySlots(List<String?> slots) {
+  var n = 0;
+  for (final url in slots) {
+    if (url != null && url.trim().isNotEmpty) n++;
+  }
+  return n;
+}
+
+int? firstEmptyGallerySlotIndex(List<String?> slots) {
+  for (var i = 0; i < slots.length; i++) {
+    final url = slots[i];
+    if (url == null || url.trim().isEmpty) return i;
+  }
+  return null;
+}
+
+/// Витринный список URL (без «дыр», порядок слотов 0→3).
+List<String> productGalleryVitrineUrlsFromSlots(List<String?> slots) {
+  final out = <String>[];
+  for (final raw in slots) {
+    final url = raw?.trim() ?? '';
+    if (url.isNotEmpty) out.add(url);
+  }
+  return out;
+}
+
+String? productGalleryPrimaryUrlFromSlots(List<String?> slots) {
+  for (final raw in slots) {
+    final url = raw?.trim() ?? '';
+    if (url.isNotEmpty) return url;
+  }
+  return null;
+}
+
+List<String> productGalleryImageUrlsLegacy(Map<String, dynamic> row) {
   final primary = row['image_url']?.toString().trim() ?? '';
   final fromImages = parseAdditionalImagesField(row['images']);
   final fromAdditional = parseAdditionalImagesField(row['additional_images']);
@@ -65,6 +159,23 @@ List<String> productGalleryImageUrls(Map<String, dynamic> row) {
     ...fromImages,
     ...fromAdditional,
   ]);
+}
+
+List<String> productGalleryImageUrls(Map<String, dynamic> row) {
+  final slots = productGallerySlotsFromRow(row);
+  if (slots.any((u) => u != null && u.isNotEmpty)) {
+    return productGalleryVitrineUrlsFromSlots(slots);
+  }
+  return productGalleryImageUrlsLegacy(row);
+}
+
+List<String?> productGallerySlotsToRpcJson(List<String?> slots) {
+  final normalized = List<String?>.filled(kProductGallerySlotCount, null);
+  for (var i = 0; i < kProductGallerySlotCount; i++) {
+    final url = i < slots.length ? slots[i]?.trim() : null;
+    normalized[i] = (url != null && url.isNotEmpty) ? url : null;
+  }
+  return normalized;
 }
 
 List<String> productGalleryImageUrlsFromClientJson(Map<String, dynamic> json) {

@@ -174,33 +174,43 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     return (row['size_value'] as num?)?.toDouble() ?? 0;
   }
 
+  List<String?> _gallerySlots(Map<String, dynamic> row) =>
+      productGallerySlotsFromRow(row);
+
   List<String> _imageUrls(Map<String, dynamic> row) =>
       productGalleryImageUrls(row);
 
   String? _thumbnailUrlForRow(Map<String, dynamic> row) {
-    final urls = _imageUrls(row);
-    return urls.isEmpty ? null : urls.first;
+    return productGalleryPrimaryUrlFromSlots(_gallerySlots(row)) ??
+        (_imageUrls(row).isEmpty ? null : _imageUrls(row).first);
   }
 
   Future<void> _fetchAndMergeProductMedia({
-    required String sku,
-    required String? expectedProductId,
+    required String productId,
   }) async {
-    if (sku.isEmpty) return;
+    if (productId.isEmpty) return;
 
     try {
-      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      final media =
+          await widget.database.fetchProductMediaFieldsByProductId(productId);
       if (!mounted || media == null) return;
 
       final selected = _selected;
       if (selected == null) return;
-      if (expectedProductId != null &&
-          _productId(selected) != expectedProductId) {
-        return;
-      }
+      if (_productId(selected) != productId) return;
+
+      final payload = Map<String, dynamic>.from(
+        selected['raw_legacy_payload'] is Map
+            ? Map<String, dynamic>.from(
+                selected['raw_legacy_payload'] as Map,
+              )
+            : <String, dynamic>{},
+      )
+        ..['gallery_slots'] = media['gallery_slots'];
 
       setState(() {
         _selected = Map<String, dynamic>.from(selected)
+          ..['raw_legacy_payload'] = payload
           ..['additional_images'] = media['additional_images']
           ..['image_url'] = media['image_url'];
       });
@@ -211,20 +221,23 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   }
 
   Future<void> _selectProductRow(Map<String, dynamic> row) async {
-    final sku = row['sku']?.toString().trim() ?? '';
     final productId = _productId(row);
     setState(() => _selected = row);
-    await _fetchAndMergeProductMedia(
-      sku: sku,
-      expectedProductId: productId,
-    );
+    if (productId != null) {
+      await _fetchAndMergeProductMedia(productId: productId);
+    }
   }
 
-  Future<void> _openSelectedPhotoPreview(int index) async {
+  Future<void> _openSelectedPhotoPreview(int slotIndex) async {
     final row = _selected;
     if (row == null) return;
-    final urls = _imageUrls(row);
-    if (index < 0 || index >= urls.length) return;
+    final slots = _gallerySlots(row);
+    if (slotIndex < 0 || slotIndex >= slots.length) return;
+    final urls = productGalleryVitrineUrlsFromSlots(slots);
+    final tapped = slots[slotIndex]?.trim();
+    if (tapped == null || tapped.isEmpty) return;
+    final index = urls.indexOf(tapped);
+    if (index < 0) return;
     final sku = _cell(row, 'sku');
     final subtitle =
         '${_weight(row).toStringAsFixed(2)} г · ${storeLocationDisplayLabelForRow(row)}';
@@ -237,15 +250,16 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     );
   }
 
-  Future<void> _addPhotoToSelected() async {
+  Future<void> _uploadPhotoToSelectedSlot(int slotIndex) async {
     final row = _selected;
     if (row == null) return;
     final sku = _cell(row, 'sku');
-    if (sku == '—') return;
+    final productId = _productId(row);
+    if (sku == '—' || productId == null) return;
 
-    final currentCount = _imageUrls(row).length;
-    if (currentCount >= ProductItem.maxGalleryImages) {
-      _snack('Достигнут лимит ${ProductItem.maxGalleryImages} фото', error: true);
+    final slots = _gallerySlots(row);
+    if (slotIndex < 0 || slotIndex >= slots.length) return;
+    if (slots[slotIndex] != null && slots[slotIndex]!.trim().isNotEmpty) {
       return;
     }
 
@@ -258,21 +272,92 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     setState(() => _photoUploadBusy = true);
     try {
       final bytes = await picked.readAsBytes();
-      final url = await widget.database.uploadProductAdditionalImage(
+      final url = await widget.database.uploadProductGallerySlotImage(
+        productId: productId,
         sku: sku,
+        slotIndex: slotIndex,
         bytes: bytes,
         contentType: picked.mimeType ?? 'image/jpeg',
       );
       if (!mounted) return;
       if (url == null) {
-        _snack('Не удалось загрузить фото (Storage / RLS)', error: true);
+        _snack('Не удалось загрузить фото (Storage / RPC)', error: true);
         return;
       }
-      _snack('Фото ${currentCount + 1}/${ProductItem.maxGalleryImages} загружено');
+      final label = kProductGallerySlotLabels[slotIndex];
+      _snack('Слот $label: фото загружено');
+      final stillSelected = _productId(_selected) == productId;
+      if (stillSelected) {
+        await _fetchAndMergeProductMedia(productId: productId);
+      }
       await _refreshCatalog();
     } catch (error) {
       if (!mounted) return;
       _snack('Ошибка загрузки: $error', error: true);
+    } finally {
+      if (mounted) setState(() => _photoUploadBusy = false);
+    }
+  }
+
+  Future<void> _addPhotoToSelected() async {
+    final row = _selected;
+    if (row == null) return;
+    final slots = _gallerySlots(row);
+    final slot = firstEmptyGallerySlotIndex(slots);
+    if (slot == null) {
+      _snack('Достигнут лимит ${ProductItem.maxGalleryImages} фото', error: true);
+      return;
+    }
+    await _uploadPhotoToSelectedSlot(slot);
+  }
+
+  Future<void> _removePhotoFromSelectedSlot(int slotIndex) async {
+    final row = _selected;
+    if (row == null) return;
+    final productId = _productId(row);
+    if (productId == null) return;
+
+    final slots = List<String?>.from(_gallerySlots(row));
+    if (slotIndex < 0 ||
+        slotIndex >= slots.length ||
+        slots[slotIndex] == null ||
+        slots[slotIndex]!.trim().isEmpty) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Удалить фото из слота ${kProductGallerySlotLabels[slotIndex]}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.saleRed),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    slots[slotIndex] = null;
+    setState(() => _photoUploadBusy = true);
+    try {
+      final ok = await widget.database.updateProductGallerySlotsByProductId(
+        productId: productId,
+        gallerySlots: slots,
+      );
+      if (!mounted) return;
+      if (!ok) {
+        _snack('Не удалось обновить галерею', error: true);
+        return;
+      }
+      await _fetchAndMergeProductMedia(productId: productId);
+      await _refreshCatalog();
     } finally {
       if (mounted) setState(() => _photoUploadBusy = false);
     }
@@ -295,16 +380,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _products = active;
       _selected = selected;
     });
-    if (selected != null) {
-      final sku = _cell(selected, 'sku');
-      if (sku != '—') {
-        unawaited(
-          _fetchAndMergeProductMedia(
-            sku: sku,
-            expectedProductId: _productId(selected),
-          ),
-        );
-      }
+    final selectedId = _productId(selected);
+    if (selectedId != null) {
+      unawaited(_fetchAndMergeProductMedia(productId: selectedId));
     }
   }
 
@@ -480,12 +558,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       return;
     }
     final currentRow = _selected ?? row;
-    final sku = row['sku']?.toString().trim() ?? '';
-    if (sku.isNotEmpty) {
-      await _fetchAndMergeProductMedia(
-        sku: sku,
-        expectedProductId: _productId(currentRow),
-      );
+    final productId = _productId(currentRow);
+    if (productId != null) {
+      await _fetchAndMergeProductMedia(productId: productId);
     }
     try {
       final product = ProductItem.fromJson(
@@ -824,12 +899,14 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     const SizedBox(height: 8),
                     _SelectedProductMediaBar(
                       selected: _selected!,
-                      imageUrls: _imageUrls(_selected!),
+                      gallerySlots: _gallerySlots(_selected!),
                       cell: _cell,
                       weight: _weight,
                       photoUploadBusy: _photoUploadBusy,
                       onAddPhoto: _addPhotoToSelected,
-                      onPhotoTap: _openSelectedPhotoPreview,
+                      onEmptySlotTap: _uploadPhotoToSelectedSlot,
+                      onFilledSlotTap: _openSelectedPhotoPreview,
+                      onRemoveSlot: _removePhotoFromSelectedSlot,
                     ),
                   ],
                   const SizedBox(height: 8),
@@ -1381,25 +1458,30 @@ class _KpiCompactChip extends StatelessWidget {
 class _SelectedProductMediaBar extends StatelessWidget {
   const _SelectedProductMediaBar({
     required this.selected,
-    required this.imageUrls,
+    required this.gallerySlots,
     required this.cell,
     required this.weight,
     required this.photoUploadBusy,
     required this.onAddPhoto,
-    required this.onPhotoTap,
+    required this.onEmptySlotTap,
+    required this.onFilledSlotTap,
+    required this.onRemoveSlot,
   });
 
   final Map<String, dynamic> selected;
-  final List<String> imageUrls;
+  final List<String?> gallerySlots;
   final String Function(Map<String, dynamic>, String) cell;
   final double Function(Map<String, dynamic>) weight;
   final bool photoUploadBusy;
   final VoidCallback onAddPhoto;
-  final ValueChanged<int> onPhotoTap;
+  final ValueChanged<int> onEmptySlotTap;
+  final ValueChanged<int> onFilledSlotTap;
+  final ValueChanged<int> onRemoveSlot;
 
   @override
   Widget build(BuildContext context) {
     final sku = cell(selected, 'sku');
+    final filled = countFilledGallerySlots(gallerySlots);
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
@@ -1428,17 +1510,15 @@ class _SelectedProductMediaBar extends StatelessWidget {
                     index < ProductItem.maxGalleryImages;
                     index++) ...[
                   if (index > 0) const SizedBox(width: 6),
-                  SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: _PhotoSlot(
-                      url: index < imageUrls.length
-                          ? imageUrls[index]
-                          : null,
-                      onTap: index < imageUrls.length
-                          ? () => onPhotoTap(index)
-                          : null,
-                    ),
+                  _FixedGallerySlotThumb(
+                    label: kProductGallerySlotLabels[index],
+                    url: index < gallerySlots.length
+                        ? gallerySlots[index]
+                        : null,
+                    busy: photoUploadBusy,
+                    onEmptyTap: () => onEmptySlotTap(index),
+                    onFilledTap: () => onFilledSlotTap(index),
+                    onRemove: () => onRemoveSlot(index),
                   ),
                 ],
               ],
@@ -1446,7 +1526,7 @@ class _SelectedProductMediaBar extends StatelessWidget {
             const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: photoUploadBusy ||
-                      imageUrls.length >= ProductItem.maxGalleryImages
+                      filled >= ProductItem.maxGalleryImages
                   ? null
                   : onAddPhoto,
               style: ButtonStyle(
@@ -1466,12 +1546,101 @@ class _SelectedProductMediaBar extends StatelessWidget {
                     )
                   : const Icon(Icons.add_photo_alternate_outlined, size: 16),
               label: Text(
-                'Добавить (${imageUrls.length}/${ProductItem.maxGalleryImages})',
+                'Добавить ($filled/${ProductItem.maxGalleryImages})',
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _FixedGallerySlotThumb extends StatelessWidget {
+  const _FixedGallerySlotThumb({
+    required this.label,
+    required this.url,
+    required this.busy,
+    required this.onEmptyTap,
+    required this.onFilledTap,
+    required this.onRemove,
+  });
+
+  final String label;
+  final String? url;
+  final bool busy;
+  final VoidCallback onEmptyTap;
+  final VoidCallback onFilledTap;
+  final VoidCallback onRemove;
+
+  bool get _filled => url != null && url!.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 48,
+          height: 48,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: _filled
+                    ? AdminClickableNetworkThumbnail(
+                        imageUrl: url,
+                        size: 48,
+                        onTap: busy ? null : onFilledTap,
+                      )
+                    : Material(
+                        color: AppColors.cardBackground,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: const BorderSide(color: AppColors.border),
+                        ),
+                        child: InkWell(
+                          onTap: busy ? null : onEmptyTap,
+                          borderRadius: BorderRadius.circular(8),
+                          child: const Icon(
+                            Icons.add,
+                            size: 22,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+              ),
+              if (_filled)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Material(
+                    color: AppColors.saleRed,
+                    shape: const CircleBorder(),
+                    elevation: 2,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: busy ? null : onRemove,
+                      customBorder: const CircleBorder(),
+                      child: const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Icon(Icons.close, size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: AppTypography.productMeta().copyWith(fontSize: 9),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }
@@ -1503,36 +1672,6 @@ class _StoreLocationBadge extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-    );
-  }
-}
-
-class _PhotoSlot extends StatelessWidget {
-  const _PhotoSlot({this.url, this.onTap});
-
-  final String? url;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    if (url == null) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Icon(
-          Icons.image_not_supported_outlined,
-          size: 18,
-          color: AppColors.textSecondary.withValues(alpha: 0.5),
-        ),
-      );
-    }
-    return AdminClickableNetworkThumbnail(
-      imageUrl: url,
-      size: 44,
-      onTap: onTap,
     );
   }
 }
@@ -1715,8 +1854,13 @@ class _ManualFormSnapshot {
     final priceDigits = state._priceController.text
         .replaceAll(RegExp(r'[^\d]'), '')
         .trim();
-    final deferredKeys = state._deferredPhotos
-        .map((f) => '${f.name}|${f.path}|${f.hashCode}')
+    final deferredKeys = state._deferredBySlot.entries
+        .map((e) => '${e.key}|${e.value.name}|${e.value.hashCode}')
+        .toList()
+      ..sort();
+    final slotUrls = state._gallerySlots
+        .map((u) => u?.trim() ?? '')
+        .where((u) => u.isNotEmpty)
         .toList()
       ..sort();
     return _ManualFormSnapshot(
@@ -1736,7 +1880,7 @@ class _ManualFormSnapshot {
       catalogGems: state._selectedCatalogGems.toList()..sort(),
       legacyGems: List<String>.from(state._legacyGemValues)..sort(),
       notes: state._notesController.text.trim(),
-      imageUrls: List<String>.from(state._imageUrls)..sort(),
+      imageUrls: slotUrls,
       deferredPhotoKeys: deferredKeys,
     );
   }
@@ -1970,8 +2114,9 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   int _photoLookupPulse = 0;
   bool? _photoLookupSuccess;
 
-  List<String> _imageUrls = [];
-  final List<XFile> _deferredPhotos = [];
+  List<String?> _gallerySlots =
+      List<String?>.filled(kProductGallerySlotCount, null);
+  final Map<int, XFile> _deferredBySlot = {};
 
   static const _goldTypes = [
     '585 красное',
@@ -1990,7 +2135,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
   bool get _isEditMode => widget.isEditMode;
 
-  int get _totalPhotoCount => _imageUrls.length + _deferredPhotos.length;
+  int get _totalPhotoCount =>
+      countFilledGallerySlots(_gallerySlots) + _deferredBySlot.length;
 
   String get _resolvedMetalType =>
       _metalCategory == 'gold' ? _goldType : _silverType;
@@ -2083,7 +2229,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     _applyMetalFromStored(
       (edit['metal_type'] ?? edit['metal'])?.toString() ?? '',
     );
-    _imageUrls = List<String>.from(productGalleryImageUrls(edit));
+    _gallerySlots = List<String?>.from(productGallerySlotsFromRow(edit));
     _initCategoryFields(edit);
     _initManufacturerFields(edit['manufacturer']?.toString().trim() ?? '');
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2146,16 +2292,20 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
   Future<void> _hydrateGalleryFromServer() async {
     if (!_isEditMode) return;
-    final sku = _skuController.text.trim();
-    if (sku.isEmpty) return;
+    final productId = widget.editProduct?['id']?.toString().trim() ?? '';
+    if (productId.isEmpty) return;
     try {
-      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
+      final media =
+          await widget.database.fetchProductMediaFieldsByProductId(productId);
       if (!mounted || media == null) return;
       final merged = Map<String, dynamic>.from(widget.editProduct!)
+        ..['raw_legacy_payload'] = {
+          'gallery_slots': media['gallery_slots'],
+        }
         ..addAll(media);
-      final urls = productGalleryImageUrls(merged);
-      if (urls.isEmpty) return;
-      setState(() => _imageUrls = List<String>.from(urls));
+      final slots = productGallerySlotsFromRow(merged);
+      if (!slots.any((u) => (u?.trim().isNotEmpty ?? false))) return;
+      setState(() => _gallerySlots = List<String?>.from(slots));
     } catch (error, stackTrace) {
       debugPrint('_ManualProductDialog._hydrateGalleryFromServer: $error');
       debugPrint('$stackTrace');
@@ -2260,11 +2410,11 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    if (index < 0 || index >= _imageUrls.length) return;
-    setState(() => _imageUrls = List<String>.from(_imageUrls)..removeAt(index));
+    if (index < 0 || index >= _gallerySlots.length) return;
+    setState(() => _gallerySlots[index] = null);
   }
 
-  Future<void> _confirmRemoveDeferredPhoto(int index) async {
+  Future<void> _confirmRemoveDeferredPhoto(int slotIndex) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -2285,8 +2435,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    if (index < 0 || index >= _deferredPhotos.length) return;
-    setState(() => _deferredPhotos.removeAt(index));
+    setState(() => _deferredBySlot.remove(slotIndex));
   }
 
   @override
@@ -2369,18 +2518,24 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 
   int _mergeDiscoveredImageUrls(List<String> found) {
-    final seen = {..._imageUrls};
-    final merged = List<String>.from(_imageUrls);
+    final slots = List<String?>.from(_gallerySlots);
+    final seen = <String>{
+      for (final u in slots)
+        if (u != null && u.trim().isNotEmpty) galleryUrlCanonical(u),
+    };
     var added = 0;
     for (final raw in found) {
       final url = raw.trim();
-      if (url.isEmpty || seen.contains(url)) continue;
-      if (merged.length >= ProductItem.maxGalleryImages) break;
-      seen.add(url);
-      merged.add(url);
+      if (url.isEmpty) continue;
+      final canon = galleryUrlCanonical(url);
+      if (canon.isNotEmpty && seen.contains(canon)) continue;
+      final slot = firstEmptyGallerySlotIndex(slots);
+      if (slot == null) break;
+      if (canon.isNotEmpty) seen.add(canon);
+      slots[slot] = url;
       added++;
     }
-    setState(() => _imageUrls = merged);
+    setState(() => _gallerySlots = slots);
     return added;
   }
 
@@ -2432,11 +2587,13 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     }
   }
 
-  Future<void> _pickPhoto() async {
-    if (_totalPhotoCount >= ProductItem.maxGalleryImages) {
-      _snack('Лимит ${ProductItem.maxGalleryImages} фото', error: true);
+  Future<void> _pickPhotoForSlot(int slotIndex) async {
+    if (slotIndex < 0 || slotIndex >= kProductGallerySlotCount) return;
+  if (_gallerySlots[slotIndex] != null &&
+        _gallerySlots[slotIndex]!.trim().isNotEmpty) {
       return;
     }
+    if (_deferredBySlot.containsKey(slotIndex)) return;
 
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -2444,71 +2601,70 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     );
     if (picked == null || !mounted) return;
 
-    setState(() => _deferredPhotos.add(picked));
+    setState(() => _deferredBySlot[slotIndex] = picked);
   }
 
-  Future<List<String>> _uploadDeferredPhotos(String sku) async {
-    final uploaded = <String>[];
-    for (final file in _deferredPhotos) {
-      final bytes = await file.readAsBytes();
-      final url = await widget.database.uploadProductAdditionalImage(
+  Future<void> _pickPhotoToFirstEmptySlot() async {
+    if (_totalPhotoCount >= ProductItem.maxGalleryImages) {
+      _snack('Лимит ${ProductItem.maxGalleryImages} фото', error: true);
+      return;
+    }
+    final slots = List<String?>.from(_gallerySlots);
+    for (final e in _deferredBySlot.keys) {
+      if (e >= 0 && e < slots.length) slots[e] = 'deferred';
+    }
+    final slot = firstEmptyGallerySlotIndex(slots);
+    if (slot == null) return;
+    await _pickPhotoForSlot(slot);
+  }
+
+  Future<List<String?>> _uploadDeferredPhotosBySlot({
+    required String sku,
+    required String productId,
+  }) async {
+    final slots = List<String?>.from(_gallerySlots);
+    final entries = _deferredBySlot.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in entries) {
+      final bytes = await entry.value.readAsBytes();
+      final url = await widget.database.uploadProductGallerySlotImage(
+        productId: productId,
         sku: sku,
+        slotIndex: entry.key,
         bytes: bytes,
-        contentType: file.mimeType ?? 'image/jpeg',
+        contentType: entry.value.mimeType ?? 'image/jpeg',
       );
       if (url == null) {
-        throw StateError('Не удалось загрузить ${file.name}');
+        throw StateError('Не удалось загрузить ${entry.value.name}');
       }
-      uploaded.add(url);
+      slots[entry.key] = url;
     }
-    return uploaded;
+    return slots;
   }
 
-  List<String> _mergeManualGalleryUrls({
-    required List<String> retained,
-    required List<String> uploaded,
-  }) {
-    final seen = <String>{};
-    final merged = <String>[];
-    for (final raw in [...retained, ...uploaded]) {
-      final url = raw.trim();
-      if (url.isEmpty || seen.contains(url)) continue;
-      seen.add(url);
-      merged.add(url);
-      if (merged.length >= ProductItem.maxGalleryImages) break;
-    }
-    return merged;
-  }
-
-  /// После insert: локальные файлы → Storage; удерживаемые URL из предыдущего
-  /// сохранения пишем в новую строку через ту же галерею, что и при редактировании.
+  /// После insert: локальные файлы → Storage; слоты пишем по `productId`.
   Future<void> _attachGalleryForNewManualProduct(String sku) async {
-    final retained = List<String>.from(_imageUrls);
-    var uploaded = <String>[];
-    if (_deferredPhotos.isNotEmpty) {
-      uploaded = await _uploadDeferredPhotos(sku);
-      if (mounted) setState(() => _deferredPhotos.clear());
-    }
-
-    final merged = _mergeManualGalleryUrls(
-      retained: retained,
-      uploaded: uploaded,
-    );
-    if (merged.isEmpty) return;
-
     final row = await widget.database.fetchProductRowForLabelBySku(sku);
     final productId = row?['id']?.toString().trim() ?? '';
     if (productId.isEmpty) return;
 
-    final galleryOk = await widget.database.updateProductGalleryByProductId(
+    var slots = List<String?>.from(_gallerySlots);
+    if (_deferredBySlot.isNotEmpty) {
+      slots = await _uploadDeferredPhotosBySlot(sku: sku, productId: productId);
+      if (mounted) setState(() => _deferredBySlot.clear());
+    }
+
+    if (!slots.any((u) => (u?.trim().isNotEmpty ?? false))) return;
+
+    final galleryOk = await widget.database.updateProductGallerySlotsByProductId(
       productId: productId,
-      additionalImages: merged,
+      gallerySlots: slots,
     );
     if (!galleryOk && mounted) {
       _snack('Товар сохранён, но галерея фото не обновилась', error: true);
     }
     if (mounted) {
-      setState(() => _imageUrls = merged);
+      setState(() => _gallerySlots = slots);
     }
   }
 
@@ -2563,16 +2719,6 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     await _submit(asDraft: asDraft);
   }
 
-  Future<void> _refreshGalleryAfterSave(String sku) async {
-    try {
-      final media = await widget.database.fetchProductMediaFieldsBySku(sku);
-      if (!mounted || media == null) return;
-      final urls = productGalleryImageUrls(media);
-      if (urls.isEmpty) return;
-      setState(() => _imageUrls = List<String>.from(urls));
-    } catch (_) {}
-  }
-
   void _onSaveSucceeded({required bool asDraft, required String sku}) {
     _sessionSaveCount++;
     _lastSavedSnapshot = _ManualFormSnapshot.fromState(this);
@@ -2619,12 +2765,20 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           _snack('Нет id черновика', error: true);
           return;
         }
-        if (_deferredPhotos.isNotEmpty) {
-          await _uploadDeferredPhotos(sku);
-          if (mounted) setState(() => _deferredPhotos.clear());
-          await _refreshGalleryAfterSave(sku);
+        if (_deferredBySlot.isNotEmpty) {
+          final slots = await _uploadDeferredPhotosBySlot(
+            sku: sku,
+            productId: productId,
+          );
+          if (mounted) {
+            setState(() {
+              _deferredBySlot.clear();
+              _gallerySlots = slots;
+            });
+          }
         }
-        final gallery = List<String>.from(_imageUrls);
+        final gallery =
+            productGalleryVitrineUrlsFromSlots(_gallerySlots);
         final galleryFields = productGalleryDbFieldsFromUrls(gallery);
         final storeCode = _storeLocationCode == StoreLocationCode.unselected
             ? ''
@@ -2657,6 +2811,10 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           _snack(result.error ?? 'Не удалось обновить черновик', error: true);
           return;
         }
+        await widget.database.updateProductGallerySlotsByProductId(
+          productId: productId,
+          gallerySlots: _gallerySlots,
+        );
         await widget.onSaved(asDraft: true);
         if (!mounted) return;
         Navigator.pop(context, true);
@@ -2719,21 +2877,29 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
       if (_isEditMode) {
         final productId = widget.editProduct!['id']?.toString().trim() ?? '';
-        final galleryOk = await widget.database.updateProductGalleryByProductId(
+        var slots = List<String?>.from(_gallerySlots);
+        if (_deferredBySlot.isNotEmpty && productId.isNotEmpty) {
+          slots = await _uploadDeferredPhotosBySlot(
+            sku: sku,
+            productId: productId,
+          );
+          if (mounted) {
+            setState(() {
+              _deferredBySlot.clear();
+              _gallerySlots = slots;
+            });
+          }
+        }
+        final galleryOk =
+            await widget.database.updateProductGallerySlotsByProductId(
           productId: productId,
-          additionalImages: _imageUrls,
+          gallerySlots: slots,
         );
         if (!galleryOk) {
           _snack('Карточка сохранена, но галерея фото не обновилась', error: true);
         }
-      }
-
-      if (!_isEditMode) {
+      } else {
         await _attachGalleryForNewManualProduct(sku);
-      } else if (_deferredPhotos.isNotEmpty) {
-        await _uploadDeferredPhotos(sku);
-        setState(() => _deferredPhotos.clear());
-        await _refreshGalleryAfterSave(sku);
       }
 
       await widget.onSaved(asDraft: asDraft);
@@ -2794,24 +2960,26 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       crossAxisCount: 2,
       mainAxisSpacing: 8,
       crossAxisSpacing: 8,
-      childAspectRatio: 1,
+      childAspectRatio: 0.92,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: List.generate(ProductItem.maxGalleryImages, (index) {
-        if (index < _imageUrls.length) {
-          return _ManualDialogPhotoSlot(
-            url: _imageUrls[index],
-            onRemove: () => _confirmRemoveNetworkPhoto(index),
-          );
-        }
-        final deferredIndex = index - _imageUrls.length;
-        if (deferredIndex < _deferredPhotos.length) {
-          return _ManualDialogPhotoSlot(
-            deferredFile: _deferredPhotos[deferredIndex],
-            onRemove: () => _confirmRemoveDeferredPhoto(deferredIndex),
-          );
-        }
-        return const _ManualDialogPhotoSlot();
+      children: List.generate(kProductGallerySlotCount, (index) {
+        final deferred = _deferredBySlot[index];
+        final url = _gallerySlots[index];
+        final filled = url != null && url.trim().isNotEmpty;
+        return _ManualDialogPhotoSlot(
+          slotLabel: kProductGallerySlotLabels[index],
+          url: filled ? url : null,
+          deferredFile: deferred,
+          onEmptyTap: _saving
+              ? null
+              : () => unawaited(_pickPhotoForSlot(index)),
+          onRemove: filled
+              ? () => _confirmRemoveNetworkPhoto(index)
+              : (deferred != null
+                  ? () => _confirmRemoveDeferredPhoto(index)
+                  : null),
+        );
       }),
     );
   }
@@ -3080,7 +3248,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               _buildManualPhotoGrid(),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: _saving ? null : _pickPhoto,
+                onPressed: _saving ? null : _pickPhotoToFirstEmptySlot,
                 icon: const Icon(Icons.add_photo_alternate_outlined),
                 label: Text(
                   'Добавить фото ($_totalPhotoCount/${ProductItem.maxGalleryImages})',
@@ -3219,13 +3387,17 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
 
 class _ManualDialogPhotoSlot extends StatelessWidget {
   const _ManualDialogPhotoSlot({
+    this.slotLabel,
     this.url,
     this.deferredFile,
+    this.onEmptyTap,
     this.onRemove,
   });
 
+  final String? slotLabel;
   final String? url;
   final XFile? deferredFile;
+  final VoidCallback? onEmptyTap;
   final VoidCallback? onRemove;
 
   bool get _hasPhoto =>
@@ -3233,43 +3405,58 @@ class _ManualDialogPhotoSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppColors.cardBackground,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: !_hasPhoto
-                  ? Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.image_not_supported_outlined,
-                          color: AppColors.textSecondary.withValues(alpha: 0.5),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AspectRatio(
+          aspectRatio: 1,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.cardBackground,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: !_hasPhoto
+                      ? Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: onEmptyTap,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.add,
+                                  color: AppColors.textSecondary
+                                      .withValues(alpha: 0.75),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  slotLabel ?? 'Слот',
+                                  style: AppTypography.productMeta(),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: url != null && url!.isNotEmpty
+                              ? Image.network(
+                                  url!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      const Icon(Icons.broken_image_outlined),
+                                )
+                              : _DeferredPhotoPreview(file: deferredFile!),
                         ),
-                        const SizedBox(height: 4),
-                        Text('Нет фото', style: AppTypography.productMeta()),
-                      ],
-                    )
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: url != null && url!.isNotEmpty
-                          ? Image.network(
-                              url!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.broken_image_outlined),
-                            )
-                          : _DeferredPhotoPreview(file: deferredFile!),
-                    ),
-            ),
-          ),
+                ),
+              ),
           if (_hasPhoto && onRemove != null)
             Positioned(
               top: 6,
@@ -3294,8 +3481,18 @@ class _ManualDialogPhotoSlot extends StatelessWidget {
                 ),
               ),
             ),
+            ],
+          ),
+        ),
+        if (slotLabel != null && _hasPhoto) ...[
+          const SizedBox(height: 4),
+          Text(
+            slotLabel!,
+            style: AppTypography.productMeta(),
+            textAlign: TextAlign.center,
+          ),
         ],
-      ),
+      ],
     );
   }
 }

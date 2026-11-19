@@ -13,6 +13,7 @@ import '../screens/draft_intake_screen.dart';
 import '../screens/product_transfers_screen.dart';
 import '../screens/scrap_metal_intake_screen.dart';
 import '../screens/staff_management_screen.dart';
+import '../../../seller/presentation/screens/seller_my_payroll_screen.dart';
 import '../../../seller/presentation/screens/seller_terminal_screen.dart';
 import '../../application/product_transfers_in_transit_counter.dart';
 import '../widgets/admin_nav_count_badge.dart';
@@ -108,6 +109,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
               label: 'Витрина / Касса',
             ),
             (
+              icon: Icons.payments_outlined,
+              selectedIcon: Icons.account_balance_wallet,
+              label: 'Моя зарплата',
+            ),
+            (
               icon: Icons.scale_outlined,
               selectedIcon: Icons.scale,
               label: 'Приёмка лома',
@@ -134,9 +140,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
     if (sellerMode) {
       return switch (safe) {
         0 => 'Касса · витрина',
-        1 => 'Приёмка и журнал лома',
-        2 => 'Трансферы ICN ↔ ANS',
-        3 => 'Приёмка черновиков',
+        1 => 'Моя зарплата и продажи',
+        2 => 'Приёмка и журнал лома',
+        3 => 'Трансферы ICN ↔ ANS',
+        4 => 'Приёмка черновиков',
         _ => 'Смена продавца',
       };
     }
@@ -185,6 +192,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
           presetSellerName: session.name,
           onPosSaleArchived: _scheduleSalesHistoryReload,
           onProductTransfersChanged: _refreshTransfersBadge,
+        ),
+        SellerMyPayrollScreen(
+          promoCode: session.promoCode,
+          sellerName: session.name,
+          database: _database,
         ),
         ScrapMetalIntakeScreen(
           database: _database,

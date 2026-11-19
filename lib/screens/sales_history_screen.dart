@@ -20,7 +20,7 @@ String _isoDateKst(DateTime date) {
 
 DateTimeRange defaultSalesHistoryRangeKst() {
   final kst = _kstNow();
-  final start = DateTime(kst.year, kst.month, 1);
+  final start = DateTime(kst.year, kst.month, kst.day);
   final end = DateTime(kst.year, kst.month, kst.day);
   return DateTimeRange(start: start, end: end);
 }

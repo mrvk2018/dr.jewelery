@@ -174,6 +174,9 @@ abstract final class SellerPayrollRpc {
   static const dateToParam = 'p_date_to';
   static const getSellerSalesDetails = 'get_seller_sales_details';
   static const detailSellerCodeParam = 'p_seller_code';
+  static const getMySellerPayrollSummary = 'get_my_seller_payroll_summary';
+  static const getMySellerSalesDetails = 'get_my_seller_sales_details';
+  static const myPromoCodeParam = 'p_promo_code';
 }
 
 /// RPC витрины и приёмки черновиков (Supabase Pro, схема products SSOT).
@@ -391,6 +394,20 @@ abstract class DatabaseService {
   /// Детализация продаж продавца за период.
   Future<List<Map<String, dynamic>>> fetchSellerSalesDetails({
     required String sellerCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  });
+
+  /// Личный кабинет: сводка зарплаты только для [promoCode] (RPC 055).
+  Future<Map<String, dynamic>?> fetchMySellerPayrollSummary({
+    required String promoCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  });
+
+  /// Личный кабинет: операции продавца за период (RPC 055).
+  Future<List<Map<String, dynamic>>> fetchMySellerSalesDetails({
+    required String promoCode,
     required DateTime dateFrom,
     required DateTime dateTo,
   });
@@ -1434,6 +1451,65 @@ class CloudDatabaseService implements DatabaseService {
           .toList(growable: false);
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.fetchSellerSalesDetails failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchMySellerPayrollSummary({
+    required String promoCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    final code = SellerItem.normalizePromoCode(promoCode);
+    if (code.isEmpty) return null;
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPayrollRpc.getMySellerPayrollSummary,
+        params: {
+          SellerPayrollRpc.myPromoCodeParam: code,
+          SellerPayrollRpc.dateFromParam: _payrollDateOnly(dateFrom),
+          SellerPayrollRpc.dateToParam: _payrollDateOnly(dateTo),
+        },
+      );
+      if (result is List && result.isNotEmpty) {
+        return Map<String, dynamic>.from(result.first as Map);
+      }
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return null;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchMySellerPayrollSummary failed: $error');
+      debugPrint('$stackTrace');
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMySellerSalesDetails({
+    required String promoCode,
+    required DateTime dateFrom,
+    required DateTime dateTo,
+  }) async {
+    final code = SellerItem.normalizePromoCode(promoCode);
+    if (code.isEmpty) return const [];
+    try {
+      final result = await _supabaseClient.rpc(
+        SellerPayrollRpc.getMySellerSalesDetails,
+        params: {
+          SellerPayrollRpc.myPromoCodeParam: code,
+          SellerPayrollRpc.dateFromParam: _payrollDateOnly(dateFrom),
+          SellerPayrollRpc.dateToParam: _payrollDateOnly(dateTo),
+        },
+      );
+      if (result is! List) return const [];
+      return result
+          .map((row) => Map<String, dynamic>.from(row as Map))
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.fetchMySellerSalesDetails failed: $error');
       debugPrint('$stackTrace');
       rethrow;
     }

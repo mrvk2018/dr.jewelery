@@ -81,10 +81,12 @@ class SellerSaleDetailRow {
     required this.commissionKrw,
     required this.isReturn,
     this.imageUrl,
+    this.soldDateKst,
   });
 
   final String saleId;
   final DateTime? soldAt;
+  final String? soldDateKst;
   final String sku;
   final String productName;
   final String metalCategory;
@@ -124,6 +126,7 @@ class SellerSaleDetailRow {
       commissionKrw: (map['commission_krw'] as num?)?.toInt() ?? 0,
       isReturn: map['is_return'] == true,
       imageUrl: map['image_url']?.toString().trim(),
+      soldDateKst: map['sold_date_kst']?.toString().trim(),
     );
   }
 }

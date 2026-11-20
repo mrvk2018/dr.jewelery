@@ -11,6 +11,7 @@ import '../../../../core/utils/store_location_utils.dart';
 import '../../../../core/utils/won_format.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
+import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_print_dialog.dart';
 import '../pages/jewelry_admin_dashboard.dart';
 import '../widgets/admin_product_photo_preview.dart';
@@ -68,13 +69,18 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }).toList();
   }
 
+  /// Трансфер ICN→ANS: черновик на Инчхоне (или без точки = ICN), не в пути.
   static bool _canSendDraftToAnsan(Map<String, dynamic> row) {
     final status = row['status']?.toString();
-    final store = row['store_location']?.toString();
     final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
-    return stock == 0 &&
-        store == 'ANS' &&
-        (status == 'hidden' || status == 'active');
+    if (stock != 0) return false;
+    if (status != 'hidden' && status != 'active') return false;
+    if (isStoreLocationUnsetInDatabase(row)) return true;
+    final loc = normalizeStoreLocationCode(
+      storeLocation: row['store_location']?.toString(),
+      productRow: row,
+    );
+    return loc == StoreLocationCode.icn;
   }
 
   static bool _canActivateDraft(Map<String, dynamic> row) {
@@ -378,9 +384,10 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   void _safeFireAndForgetPrint(Map<String, dynamic> productRow) {
     Future.microtask(() async {
       try {
-        await _printLabelForProduct(productRow, userFeedback: false);
+        final data = JewelryLabelData.fromProductMap(productRow);
+        await printJewelryLabelsPlatform([data]);
       } catch (error, stackTrace) {
-        debugPrint('Тихая ошибка печати в песочнице: $error');
+        debugPrint('Тихая ошибка печати бирки 12×60: $error');
         debugPrint('$stackTrace');
       }
     });
@@ -613,7 +620,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     final skipped = selected.length - sendable.length;
     if (sendable.isEmpty) {
       _showSnack(
-        'Среди выбранных нет позиций ANS (hidden/active, stock=0)',
+        'Среди выбранных нет черновиков Инчхона (stock=0, hidden/active). '
+        'Позиции Ансана или уже «в пути» не отправляются этой кнопкой.',
         isError: true,
       );
       return;
@@ -624,9 +632,11 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         title: const Text('Отправить в Ансан?'),
         content: Text(
           skipped > 0
-              ? 'Отправить ${sendable.length} изделий в Ансан и распечатать бирки? '
-                  '(ещё $skipped в выборе не подходят для отправки и будут пропущены.)'
-              : 'Отправить ${sendable.length} изделий в Ансан и распечатать бирки?',
+              ? 'Создать трансферы ICN→ANS для ${sendable.length} черновиков и '
+                  'распечатать бирки 12×60 мм? '
+                  '(ещё $skipped в выборе не с Инчхона и будут пропущены.)'
+              : 'Создать трансферы ICN→ANS для ${sendable.length} черновиков и '
+                  'распечатать бирки 12×60 мм?',
           style: AppTypography.productMeta(),
         ),
         actions: [
@@ -664,8 +674,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         _safeFireAndForgetPrint(row);
       }
       _showSnack(
-        'Отправлено в трансфер: $count поз. — буфер печати сформирован',
+        'Трансферы ICN→ANS: $count поз. — бирки отправлены на печать',
       );
+      widget.onTransfersMutated?.call();
       _clearDraftSelection();
       await _runSearch(_searchController.text);
     } catch (error) {

@@ -6,9 +6,7 @@ import '../../domain/jewelry_label_data.dart';
 import '../../domain/jewelry_label_layout.dart';
 import '../../infrastructure/browser_label_print.dart';
 import 'jewelry_label_preview.dart';
-import 'jewelry_retail_tag_preview.dart';
-
-/// Предпросмотр ценника + печать (Web: диалог браузера, иначе TSPL/ZPL).
+/// Предпросмотр гантельки + печать PDF 12×60 mm.
 class JewelryLabelPrintDialog extends StatelessWidget {
   const JewelryLabelPrintDialog({
     super.key,
@@ -64,7 +62,7 @@ class JewelryLabelPrintDialog extends StatelessWidget {
 
     return AlertDialog(
       title: Text(
-        suffix != null ? '$suffix · $sku' : 'Печать ценника · $sku',
+        suffix != null ? '$suffix · $sku' : 'Печать бирки · $sku',
         style: AppTypography.heading(fontSize: 18),
       ),
       content: SizedBox(
@@ -74,13 +72,11 @@ class JewelryLabelPrintDialog extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              JewelryRetailTagPreview(data: data),
-              const SizedBox(height: 16),
-              JewelryLabelPreview(data: data, scale: 2.8),
+              Center(child: JewelryLabelPreview(data: data, scale: 3.2)),
               const SizedBox(height: 8),
               Text(
-                'Термобирка 23×11,5 mm — для принтера TSPL; '
-                'розничный ценник 30×20 mm — через печать браузера.',
+                'PDF 12×60 mm: лицо (категория, вид, вес, размер, витринная цена) '
+                'и оборот (QR, вставки, описание). Перемычка 20–40 mm — под отрез.',
                 style: AppTypography.productMeta(),
               ),
             ],

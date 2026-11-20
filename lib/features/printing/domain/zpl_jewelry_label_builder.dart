@@ -1,7 +1,7 @@
 import 'jewelry_label_data.dart';
 import 'jewelry_label_layout.dart';
 
-/// Генератор ZPL II для бирки 23×11,5 mm (UTF-8 через ^CI28).
+/// ZPL для гантельки 12×60 mm (лицевая полоса, UTF-8 ^CI28).
 abstract final class ZplJewelryLabelBuilder {
   static String build(JewelryLabelData data) {
     final buffer = StringBuffer()
@@ -11,45 +11,33 @@ abstract final class ZplJewelryLabelBuilder {
       ..writeln('^LL${JewelryLabelLayout.labelHeightDots}')
       ..writeln('^LH0,0');
 
-    _textLine(
-      buffer,
-      y: JewelryLabelLayout.line1Y,
-      text: _escapeZpl(data.productName),
-      height: JewelryLabelLayout.fontHeightPrimary,
-    );
-    _textLine(
-      buffer,
-      y: JewelryLabelLayout.line2Y,
-      text: _escapeZpl(data.sku),
-      height: JewelryLabelLayout.fontHeightSecondary,
-    );
-    _textLine(
-      buffer,
-      y: JewelryLabelLayout.line3Y,
-      text: _escapeZpl(data.probeSizeWeightLine),
-      height: JewelryLabelLayout.fontHeightSecondary,
-    );
-    _textLine(
-      buffer,
-      y: JewelryLabelLayout.line4Y,
-      text: _escapeZpl(data.priceLine),
-      height: JewelryLabelLayout.fontHeightSecondary,
-    );
+    var y = 30;
+    const step = 55;
+    const h = 18;
+
+    _line(buffer, y, data.category, h);
+    y += step;
+    if (data.subtype.isNotEmpty) {
+      _line(buffer, y, data.subtype, h - 2);
+      y += step;
+    }
+    _line(buffer, y, data.weightLine, h);
+    y += step;
+    if (data.sizeLine.isNotEmpty) {
+      _line(buffer, y, data.sizeLine, h - 2);
+      y += step;
+    }
+    _line(buffer, y, data.showroomPriceLine, h);
 
     buffer.writeln('^XZ');
     return buffer.toString();
   }
 
-  static void _textLine(
-    StringBuffer buffer, {
-    required int y,
-    required String text,
-    required int height,
-  }) {
+  static void _line(StringBuffer buffer, int y, String text, int height) {
     buffer.writeln(
       '^FO${JewelryLabelLayout.textOriginXDots},$y'
       '^A0N,$height,$height'
-      '^FD$text^FS',
+      '^FD${_escapeZpl(text)}^FS',
     );
   }
 

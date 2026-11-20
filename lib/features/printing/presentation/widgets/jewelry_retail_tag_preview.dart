@@ -77,7 +77,7 @@ class JewelryRetailTagPreview extends StatelessWidget {
                 style: TextStyle(fontSize: 6.5 * scale, height: 1.05),
               ),
               Text(
-                formatWon(data.priceKrw),
+                formatWon(data.showroomPriceKrw),
                 style: TextStyle(
                   fontSize: 8 * scale,
                   fontWeight: FontWeight.w700,

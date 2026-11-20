@@ -79,7 +79,7 @@ List<AdminCatalogItem> createDefaultAdminCatalog() {
       ),
       price: 11990,
       discountPercent: 57,
-      category: 'Подвески',
+      category: 'Подвеска',
       photoLabel: 'pendant_heart.jpg',
     ),
   ];

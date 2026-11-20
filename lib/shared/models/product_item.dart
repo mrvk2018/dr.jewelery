@@ -335,7 +335,7 @@ final demoRecommendedProducts = <ProductItem>[
     oldPrice: 938000,
     discountPercent: 52,
     iconIndex: 2,
-    category: 'Подвески',
+    category: 'Подвеска',
     insert: 'Сапфир',
   ),
   _demoProduct(
@@ -363,7 +363,7 @@ final demoRecommendedProducts = <ProductItem>[
     oldPrice: 744000,
     discountPercent: 57,
     iconIndex: 4,
-    category: 'Подвески',
+    category: 'Подвеска',
     insert: 'Без вставок',
   ),
   _demoProduct(

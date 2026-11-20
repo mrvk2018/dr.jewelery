@@ -47,7 +47,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   bool _searchLoading = false;
   bool _bulkBusy = false;
   bool _batchSendBusy = false;
-  _AdminDraftFilter _adminDraftFilter = _AdminDraftFilter.all;
+  _AdminDraftFilter _adminDraftFilter = _AdminDraftFilter.onShelf;
   final Set<String> _rowBusyIds = {};
   final Set<String> _selectedDraftIds = {};
 

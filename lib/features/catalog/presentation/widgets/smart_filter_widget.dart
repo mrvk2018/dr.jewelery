@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../../core/constants/jewelry_category_subtypes.dart';
 import '../../../../core/constants/jewelry_gem_inserts.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
@@ -115,6 +116,14 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
     return q;
   }
 
+  List<String> _advancedTagsForRpc() {
+    final tags = <String>{};
+    for (final tag in _selectedSlangTags) {
+      tags.addAll(jewelrySubtypeAdvancedSearchTerms(tag));
+    }
+    return tags.toList(growable: false);
+  }
+
   void _submitFilterField(String _) => unawaited(_applyFilter());
 
   Future<void> _applyFilter() async {
@@ -124,7 +133,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       final products = await widget.database.fetchFacetedProducts(
         metalTags: _selectedMetalTags.toList(),
         categoryTags: _selectedCategoryTags.toList(),
-        advancedTags: _selectedSlangTags.toList(),
+        advancedTags: _advancedTagsForRpc(),
         minPrice: _parsePrice(_minPriceController.text),
         maxPrice: _parsePrice(_maxPriceController.text),
         goldGramPrice: widget.goldGramPrice,

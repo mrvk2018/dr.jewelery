@@ -1048,13 +1048,14 @@ class CloudDatabaseService implements DatabaseService {
     }
 
     if (categoryIlikePatterns.isNotEmpty) {
-      final orParts = categoryIlikePatterns
-          .map((p) {
-            final escaped = p.replaceAll(',', r'\,');
-            return 'category.ilike.$escaped';
-          })
-          .join(',');
-      filtered = filtered.or(orParts);
+      final orParts = <String>[];
+      for (final pattern in categoryIlikePatterns) {
+        final escaped = pattern.replaceAll(',', r'\,');
+        orParts.add('category.ilike.$escaped');
+        orParts.add('name->>ru.ilike.$escaped');
+        orParts.add('name->>ko.ilike.$escaped');
+      }
+      filtered = filtered.or(orParts.join(','));
     }
 
     if (metalIlikePatterns.isNotEmpty) {

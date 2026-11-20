@@ -133,6 +133,17 @@ String formatJewelryProductDisplayName({
   return '$cat$kJewelryCategorySubtypeSeparator$sub';
 }
 
+/// Подстроки для ILIKE / advanced_tags (пусеты: DrJaw «гвоздики», опечатка Latin c).
+List<String> jewelrySubtypeAdvancedSearchTerms(String subtype) {
+  final key = subtype.trim().toLowerCase();
+  if (key.isEmpty) return const [];
+  return switch (key) {
+    'пусеты' => const ['пусеты', 'пусет', 'пуссет', 'гвозд'],
+    'продёвки' => const ['продёвки', 'продёв', 'продев'],
+    _ => [subtype.trim()],
+  };
+}
+
 String? subtypeForCategory(String category, String subtypeOrCustom) {
   final list = kJewelryCategorySubtypes[category];
   if (list == null) return null;

@@ -14,7 +14,19 @@ List<String> categoryToIlikePatterns(Set<String> categories) {
       case CatalogCategories.rings:
         patterns.addAll(['%Кольц%', '%Обручальное%']);
       case CatalogCategories.earrings:
-        patterns.addAll(['%Серьг%', '%Пусcет%', '%Кафф%', '%Конго%']);
+        patterns.addAll([
+          '%Серьг%',
+          '%пусет%',
+          '%пуссет%',
+          '%Пуссет%',
+          // DrJaw / старый sync: «Пусcеты» с Latin c (U+0063) между «с» и «е».
+          '%пусcет%',
+          '%гвозд%',
+          '%Кафф%',
+          '%Конго%',
+          '%продёв%',
+          '%продев%',
+        ]);
       case CatalogCategories.pendants:
         patterns.addAll(['%Подвес%', '%Крест%', '%Икона%']);
       case CatalogCategories.chains:

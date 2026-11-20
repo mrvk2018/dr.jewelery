@@ -10,6 +10,7 @@ import '../../../../core/constants/jewelry_category_subtypes.dart';
 import '../../../../core/constants/jewelry_gem_inserts.dart';
 import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/services/database_service.dart';
+import '../../../../core/utils/round_krw_up_1000.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
@@ -2655,11 +2656,12 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       _snack('Укажите SKU и вес (г)', error: true);
       return;
     }
-    final price = int.tryParse(_priceController.text.replaceAll(RegExp(r'[^\d]'), ''));
-    if (price == null || price <= 0) {
+    final priceRaw = int.tryParse(_priceController.text.replaceAll(RegExp(r'[^\d]'), ''));
+    if (priceRaw == null || priceRaw <= 0) {
       _snack('Укажите цену продажи (₩) больше 0', error: true);
       return;
     }
+    final price = roundKrwUpTo1000(priceRaw);
 
     setState(() => _saving = true);
     try {

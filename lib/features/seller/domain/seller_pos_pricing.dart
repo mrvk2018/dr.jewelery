@@ -1,3 +1,5 @@
+import '../../../core/utils/round_krw_up_1000.dart';
+
 /// Корейские правила доставки POS: порог 100 000 ₩.
 class SellerPosPricing {
   const SellerPosPricing({
@@ -20,8 +22,9 @@ class SellerPosPricing {
     required int discountPercent,
   }) {
     final clamped = discountPercent.clamp(0, 100);
-    final discounted =
-        (basePriceKrw * (100 - clamped) / 100).round().clamp(0, basePriceKrw);
+    final discounted = roundKrwUpTo1000(
+      basePriceKrw * (100 - clamped) / 100,
+    ).clamp(0, basePriceKrw);
     final delivery = discounted >= freeDeliveryThresholdKrw
         ? 0
         : standardDeliveryFeeKrw;

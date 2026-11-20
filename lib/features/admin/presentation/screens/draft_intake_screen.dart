@@ -48,6 +48,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   bool _batchSendBusy = false;
   _AdminDraftFilter _adminDraftFilter = _AdminDraftFilter.all;
   final Set<String> _rowBusyIds = {};
+  final Set<String> _selectedDraftIds = {};
 
   List<Map<String, dynamic>> get _visibleDrafts {
     if (widget.sellerStaffMode) {
@@ -67,14 +68,83 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }).toList();
   }
 
-  int get _ansanBatchCount => _drafts.where((row) {
-        final status = row['status']?.toString();
-        final store = row['store_location']?.toString();
-        final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
-        return stock == 0 &&
-            store == 'ANS' &&
-            (status == 'hidden' || status == 'active');
-      }).length;
+  static bool _canSendDraftToAnsan(Map<String, dynamic> row) {
+    final status = row['status']?.toString();
+    final store = row['store_location']?.toString();
+    final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
+    return stock == 0 &&
+        store == 'ANS' &&
+        (status == 'hidden' || status == 'active');
+  }
+
+  static bool _canActivateDraft(Map<String, dynamic> row) {
+    final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
+    if (stock != 0) return false;
+    final status = row['status']?.toString();
+    if (status != 'hidden' &&
+        status != 'active' &&
+        status != 'in_transfer') {
+      return false;
+    }
+    if (isStoreLocationUnsetInDatabase(row)) return false;
+    final loc = normalizeStoreLocationCode(
+      storeLocation: row['store_location']?.toString(),
+      productRow: row,
+    );
+    return loc == StoreLocationCode.icn || loc == StoreLocationCode.ans;
+  }
+
+  List<Map<String, dynamic>> get _selectedVisibleRows => _visibleDrafts
+      .where((row) {
+        final id = _productId(row);
+        return id != null && _selectedDraftIds.contains(id);
+      })
+      .toList();
+
+  int get _selectedAnsanSendCount =>
+      _selectedVisibleRows.where(_canSendDraftToAnsan).length;
+
+  int get _selectedAcceptCount =>
+      _selectedVisibleRows.where(_canActivateDraft).length;
+
+  Iterable<String> get _visibleSelectableIds => _visibleDrafts
+      .map(_productId)
+      .whereType<String>();
+
+  bool? get _masterCheckboxValue {
+    final ids = _visibleSelectableIds.toList();
+    if (ids.isEmpty) return false;
+    final selected = ids.where(_selectedDraftIds.contains).length;
+    if (selected == 0) return false;
+    if (selected == ids.length) return true;
+    return null;
+  }
+
+  void _clearDraftSelection() {
+    if (_selectedDraftIds.isEmpty) return;
+    setState(() => _selectedDraftIds.clear());
+  }
+
+  void _onMasterCheckboxChanged(bool? value) {
+    final visibleIds = _visibleSelectableIds.toSet();
+    setState(() {
+      if (value == true) {
+        _selectedDraftIds.addAll(visibleIds);
+      } else {
+        _selectedDraftIds.removeAll(visibleIds);
+      }
+    });
+  }
+
+  void _onRowSelectionChanged(String id, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedDraftIds.add(id);
+      } else {
+        _selectedDraftIds.remove(id);
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -104,7 +174,10 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     try {
       final rows = await widget.database.searchDraftProducts(query);
       if (!mounted) return;
-      setState(() => _drafts = rows);
+      setState(() {
+        _drafts = rows;
+        _selectedDraftIds.clear();
+      });
     } catch (error) {
       if (!mounted) return;
       _showSnack('Ошибка поиска: $error', isError: true);
@@ -494,6 +567,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         _drafts = _drafts
             .where((draft) => _productId(draft) != productId)
             .toList(growable: false);
+        _selectedDraftIds.remove(productId);
       });
       _showSnack('Черновик $sku удалён');
       await _runSearch(_searchController.text);
@@ -529,17 +603,31 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   }
 
   Future<void> _sendBatchToAnsan() async {
-    if (_ansanBatchCount == 0) {
-      _showSnack('Нет черновиков ANS для отправки', isError: true);
+    final selected = _selectedVisibleRows;
+    if (selected.isEmpty) {
+      _showSnack('Отметьте черновики для отправки', isError: true);
+      return;
+    }
+    final sendable =
+        selected.where(_canSendDraftToAnsan).toList(growable: false);
+    final skipped = selected.length - sendable.length;
+    if (sendable.isEmpty) {
+      _showSnack(
+        'Среди выбранных нет позиций ANS (hidden/active, stock=0)',
+        isError: true,
+      );
       return;
     }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Отправить партию в Ансан?'),
+        title: const Text('Отправить выбранное в Ансан?'),
         content: Text(
-          'Будет переведено в трансфер: $_ansanBatchCount поз. '
-          '(store_location=ANS, черновики).',
+          skipped > 0
+              ? 'Будет переведено в трансфер: ${sendable.length} поз. '
+                  '(ещё $skipped в выборе не подходят для отправки и будут пропущены).'
+              : 'Будет переведено в трансфер: ${sendable.length} поз. '
+                  '(store_location=ANS, черновики).',
         ),
         actions: [
           TextButton(
@@ -556,8 +644,13 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     if (confirmed != true || !mounted) return;
     setState(() => _batchSendBusy = true);
     try {
-      final result = await widget.database.sendDraftsBatchToAnsan(
+      final ids = sendable
+          .map(_productId)
+          .whereType<String>()
+          .toList(growable: false);
+      final result = await widget.database.sendDraftsToAnsanByIds(
         actorCode: widget.actorCode,
+        productIds: ids,
       );
       if (result['ok'] != true) {
         _showSnack(
@@ -566,8 +659,9 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         );
         return;
       }
-      final count = (result['sent_count'] as num?)?.toInt() ?? _ansanBatchCount;
+      final count = (result['sent_count'] as num?)?.toInt() ?? sendable.length;
       _showSnack('Отправлено в трансфер: $count поз.');
+      _clearDraftSelection();
       await _runSearch(_searchController.text);
     } catch (error) {
       _showSnack('Ошибка: $error', isError: true);
@@ -576,14 +670,36 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }
   }
 
-  Future<void> _acceptEntireShipment() async {
+  Future<void> _acceptSelectedDrafts() async {
+    final selected = _selectedVisibleRows;
+    if (selected.isEmpty) {
+      _showSnack('Отметьте черновики для приёмки', isError: true);
+      return;
+    }
+    final activatable =
+        selected.where(_canActivateDraft).toList(growable: false);
+    final skipped = selected.length - activatable.length;
+    if (activatable.isEmpty) {
+      _showSnack(
+        'Среди выбранных нет позиций для приёмки (нужен магазин ICN/ANS)',
+        isError: true,
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Принять всю поставку?', style: AppTypography.heading(fontSize: 18)),
+        title: Text(
+          'Принять выбранное?',
+          style: AppTypography.heading(fontSize: 18),
+        ),
         content: Text(
-          'Все черновики (stock_quantity = 0) будут активированы и '
-          'отправлены в общий буфер печати этикеток.',
+          skipped > 0
+              ? 'Будет активировано: ${activatable.length} поз. '
+                  '(ещё $skipped в выборе будут пропущены). '
+                  'Этикетки уйдут в буфер печати.'
+              : 'Будет активировано: ${activatable.length} поз. '
+                  'и отправлено в общий буфер печати этикеток.',
           style: AppTypography.productMeta(),
         ),
         actions: [
@@ -593,7 +709,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Принять всё'),
+            child: const Text('Принять'),
           ),
         ],
       ),
@@ -602,20 +718,26 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
 
     setState(() => _bulkBusy = true);
     try {
-      final snapshot = List<Map<String, dynamic>>.from(_drafts);
-      final activated = await widget.database.activateAllDraftProducts();
+      final ids = activatable
+          .map(_productId)
+          .whereType<String>()
+          .toList(growable: false);
+      final activated = await widget.database.activateDraftProductsByIds(ids);
       if (!mounted) return;
 
       if (activated <= 0) {
-        _showSnack('Нет черновиков для активации', isError: true);
+        _showSnack('Не удалось активировать выбранные черновики', isError: true);
         return;
       }
 
-      for (final row in snapshot) {
+      widget.onTransfersMutated?.call();
+
+      for (final row in activatable) {
         _safeFireAndForgetPrint(row);
       }
 
       _showSnack('Активировано $activated поз. — буфер печати сформирован');
+      _clearDraftSelection();
       await _runSearch(_searchController.text);
     } catch (error) {
       if (!mounted) return;
@@ -654,14 +776,17 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                   searchLoading: _searchLoading,
                   bulkBusy: _bulkBusy,
                   batchSendBusy: _batchSendBusy,
-                  ansaanBatchCount: _ansanBatchCount,
+                  selectedAnsanSendCount: _selectedAnsanSendCount,
+                  selectedAcceptCount: _selectedAcceptCount,
                   adminDraftFilter: _adminDraftFilter,
                   onSubmitted: (value) => _runSearch(value),
-                  onBulkAccept: _acceptEntireShipment,
+                  onBulkAccept: _acceptSelectedDrafts,
                   onBatchReconcile: _showBatchReconcile,
                   onSendBatchToAnsan: _sendBatchToAnsan,
-                  onAdminFilterChanged: (filter) =>
-                      setState(() => _adminDraftFilter = filter),
+                  onAdminFilterChanged: (filter) => setState(() {
+                    _adminDraftFilter = filter;
+                    _selectedDraftIds.clear();
+                  }),
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -670,6 +795,11 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     loading: _searchLoading,
                     busyIds: _rowBusyIds,
                     showAdminActions: !widget.sellerStaffMode,
+                    selectionEnabled: !widget.sellerStaffMode,
+                    selectedIds: _selectedDraftIds,
+                    masterCheckboxValue: _masterCheckboxValue,
+                    onMasterCheckboxChanged: _onMasterCheckboxChanged,
+                    onRowSelectionChanged: _onRowSelectionChanged,
                     onAcceptRow: _acceptSingle,
                     onPrintRow: _printLabelForProduct,
                     onEditRow: _editSingle,
@@ -694,7 +824,8 @@ class _Toolbar extends StatelessWidget {
     required this.searchLoading,
     required this.bulkBusy,
     required this.batchSendBusy,
-    required this.ansaanBatchCount,
+    required this.selectedAnsanSendCount,
+    required this.selectedAcceptCount,
     required this.adminDraftFilter,
     required this.onSubmitted,
     required this.onBulkAccept,
@@ -708,7 +839,8 @@ class _Toolbar extends StatelessWidget {
   final bool searchLoading;
   final bool bulkBusy;
   final bool batchSendBusy;
-  final int ansaanBatchCount;
+  final int selectedAnsanSendCount;
+  final int selectedAcceptCount;
   final _AdminDraftFilter adminDraftFilter;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onBulkAccept;
@@ -753,8 +885,9 @@ class _Toolbar extends StatelessWidget {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed:
-                          batchSendBusy ? null : onSendBatchToAnsan,
+                      onPressed: batchSendBusy || selectedAnsanSendCount == 0
+                          ? null
+                          : onSendBatchToAnsan,
                       icon: batchSendBusy
                           ? const SizedBox(
                               width: 18,
@@ -763,7 +896,7 @@ class _Toolbar extends StatelessWidget {
                             )
                           : const Icon(Icons.flight_takeoff_outlined),
                       label: Text(
-                        'Отправить партию в Ансан ($ansaanBatchCount)',
+                        'Отправить партию в Ансан ($selectedAnsanSendCount)',
                       ),
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primary,
@@ -784,7 +917,8 @@ class _Toolbar extends StatelessWidget {
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: bulkBusy ? null : onBulkAccept,
+                    onPressed:
+                        bulkBusy || selectedAcceptCount == 0 ? null : onBulkAccept,
                     icon: bulkBusy
                         ? const SizedBox(
                             width: 18,
@@ -792,8 +926,8 @@ class _Toolbar extends StatelessWidget {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.inventory_2_outlined),
-                    label: const Text(
-                      'Принять всю поставку',
+                    label: Text(
+                      'Принять выбранное ($selectedAcceptCount)',
                       textAlign: TextAlign.center,
                     ),
                     style: FilledButton.styleFrom(
@@ -860,6 +994,7 @@ class _Toolbar extends StatelessWidget {
 abstract final class _DraftTableLayout {
   static const narrowBreakpoint = 680.0;
   static const photoSize = 40.0;
+  static const checkboxColumnWidth = 36.0;
   static const actionsWidth = 164.0;
   static const horizontalPadding = 12.0;
   static const rowVerticalPadding = 10.0;
@@ -877,12 +1012,22 @@ class _DraftTable extends StatelessWidget {
     required this.onCycleStoreLocation,
     required this.onOpenGallery,
     this.showAdminActions = true,
+    this.selectionEnabled = false,
+    this.selectedIds = const {},
+    this.masterCheckboxValue,
+    this.onMasterCheckboxChanged,
+    this.onRowSelectionChanged,
   });
 
   final List<Map<String, dynamic>> drafts;
   final bool loading;
   final Set<String> busyIds;
   final bool showAdminActions;
+  final bool selectionEnabled;
+  final Set<String> selectedIds;
+  final bool? masterCheckboxValue;
+  final ValueChanged<bool?>? onMasterCheckboxChanged;
+  final void Function(String id, bool selected)? onRowSelectionChanged;
   final Future<void> Function(Map<String, dynamic> row) onAcceptRow;
   final Future<void> Function(Map<String, dynamic> row) onPrintRow;
   final Future<void> Function(Map<String, dynamic> row) onEditRow;
@@ -918,7 +1063,12 @@ class _DraftTable extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _DraftTableHeader(narrow: narrow),
+              _DraftTableHeader(
+                narrow: narrow,
+                selectionEnabled: selectionEnabled,
+                masterCheckboxValue: masterCheckboxValue,
+                onMasterCheckboxChanged: onMasterCheckboxChanged,
+              ),
               const Divider(height: 1, color: AppColors.border),
               Expanded(
                 child: ListView.separated(
@@ -931,11 +1081,20 @@ class _DraftTable extends StatelessWidget {
                     final rowId =
                         _DraftIntakeScreenState._productId(row) ?? '';
                     final busy = busyIds.contains(rowId);
+                    final selected =
+                        rowId.isNotEmpty && selectedIds.contains(rowId);
                     return narrow
                         ? _DraftTableNarrowRow(
                             row: row,
                             sku: sku,
                             busy: busy,
+                            rowId: rowId,
+                            selectionEnabled: selectionEnabled,
+                            selected: selected,
+                            onSelectionChanged: rowId.isEmpty
+                                ? null
+                                : (value) => onRowSelectionChanged
+                                    ?.call(rowId, value),
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
                             onEdit: () => onEditRow(row),
@@ -948,6 +1107,13 @@ class _DraftTable extends StatelessWidget {
                             row: row,
                             sku: sku,
                             busy: busy,
+                            rowId: rowId,
+                            selectionEnabled: selectionEnabled,
+                            selected: selected,
+                            onSelectionChanged: rowId.isEmpty
+                                ? null
+                                : (value) => onRowSelectionChanged
+                                    ?.call(rowId, value),
                             onAccept: () => onAcceptRow(row),
                             onPrint: () => onPrintRow(row),
                             onEdit: () => onEditRow(row),
@@ -968,9 +1134,17 @@ class _DraftTable extends StatelessWidget {
 }
 
 class _DraftTableHeader extends StatelessWidget {
-  const _DraftTableHeader({required this.narrow});
+  const _DraftTableHeader({
+    required this.narrow,
+    this.selectionEnabled = false,
+    this.masterCheckboxValue,
+    this.onMasterCheckboxChanged,
+  });
 
   final bool narrow;
+  final bool selectionEnabled;
+  final bool? masterCheckboxValue;
+  final ValueChanged<bool?>? onMasterCheckboxChanged;
 
   static TextStyle get _labelStyle =>
       AppTypography.caption(fontWeight: FontWeight.w700);
@@ -985,7 +1159,24 @@ class _DraftTableHeader extends StatelessWidget {
       return Container(
         color: AppColors.cardBackground,
         padding: pad,
-        child: Text('Черновики', style: _labelStyle),
+        child: Row(
+          children: [
+            if (selectionEnabled) ...[
+              SizedBox(
+                width: _DraftTableLayout.checkboxColumnWidth,
+                child: Checkbox(
+                  tristate: true,
+                  value: masterCheckboxValue,
+                  onChanged: onMasterCheckboxChanged,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Expanded(child: Text('Черновики', style: _labelStyle)),
+          ],
+        ),
       );
     }
     return Container(
@@ -993,6 +1184,18 @@ class _DraftTableHeader extends StatelessWidget {
       padding: pad,
       child: Row(
         children: [
+          if (selectionEnabled)
+            SizedBox(
+              width: _DraftTableLayout.checkboxColumnWidth,
+              child: Checkbox(
+                tristate: true,
+                value: masterCheckboxValue,
+                onChanged: onMasterCheckboxChanged,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          if (selectionEnabled) const SizedBox(width: 4),
           const SizedBox(width: _DraftTableLayout.photoSize),
           const SizedBox(width: 8),
           const Expanded(flex: 3, child: _DraftHeaderCell('SKU')),
@@ -1035,6 +1238,10 @@ class _DraftTableWideRow extends StatelessWidget {
     required this.row,
     required this.sku,
     required this.busy,
+    required this.rowId,
+    this.selectionEnabled = false,
+    this.selected = false,
+    this.onSelectionChanged,
     required this.onAccept,
     required this.onPrint,
     required this.onEdit,
@@ -1047,6 +1254,10 @@ class _DraftTableWideRow extends StatelessWidget {
   final Map<String, dynamic> row;
   final String sku;
   final bool busy;
+  final String rowId;
+  final bool selectionEnabled;
+  final bool selected;
+  final ValueChanged<bool>? onSelectionChanged;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
@@ -1068,6 +1279,20 @@ class _DraftTableWideRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          if (selectionEnabled) ...[
+            SizedBox(
+              width: _DraftTableLayout.checkboxColumnWidth,
+              child: Checkbox(
+                value: selected,
+                onChanged: busy || onSelectionChanged == null
+                    ? null
+                    : (value) => onSelectionChanged!(value ?? false),
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
           _DraftThumbnail(
             url: thumbUrl,
             size: _DraftTableLayout.photoSize,
@@ -1145,6 +1370,10 @@ class _DraftTableNarrowRow extends StatelessWidget {
     required this.row,
     required this.sku,
     required this.busy,
+    required this.rowId,
+    this.selectionEnabled = false,
+    this.selected = false,
+    this.onSelectionChanged,
     required this.onAccept,
     required this.onPrint,
     required this.onEdit,
@@ -1157,6 +1386,10 @@ class _DraftTableNarrowRow extends StatelessWidget {
   final Map<String, dynamic> row;
   final String sku;
   final bool busy;
+  final String rowId;
+  final bool selectionEnabled;
+  final bool selected;
+  final ValueChanged<bool>? onSelectionChanged;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
@@ -1187,6 +1420,19 @@ class _DraftTableNarrowRow extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              if (selectionEnabled)
+                SizedBox(
+                  width: _DraftTableLayout.checkboxColumnWidth,
+                  child: Checkbox(
+                    value: selected,
+                    onChanged: busy || onSelectionChanged == null
+                        ? null
+                        : (value) => onSelectionChanged!(value ?? false),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              if (selectionEnabled) const SizedBox(width: 6),
               _DraftThumbnail(
                 url: thumbUrl,
                 size: _DraftTableLayout.photoSize,

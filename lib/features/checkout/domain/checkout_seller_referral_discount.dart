@@ -1,4 +1,5 @@
 import '../../../core/utils/jewelry_metal_category.dart';
+import '../../../core/utils/round_krw_up_1000.dart';
 import '../../cart/domain/models/cart_item.dart';
 
 /// Скидка по промокоду продавца с учётом металла позиций (после промо/бонусов корзины).
@@ -49,6 +50,6 @@ int sellerReferralPayableProductsTotal({
 }) {
   if (referralDiscountKrw <= 0) return liveProductsTotal;
   final intermediateTotal = liveProductsTotal - referralDiscountKrw;
-  final finalPayable = ((intermediateTotal + 99) ~/ 100) * 100;
+  final finalPayable = roundKrwUpTo1000(intermediateTotal);
   return finalPayable > liveProductsTotal ? liveProductsTotal : finalPayable;
 }

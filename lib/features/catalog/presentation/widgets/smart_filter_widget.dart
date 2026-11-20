@@ -324,6 +324,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                     onTap: _isApplying
                         ? null
                         : () => _selectStoreFilter(StoreLocationCode.icn),
+                    tone: _ShowroomFilterChipTone.storeIcn,
                   ),
                   _CompactFilterChip(
                     label: 'Ансан',
@@ -331,6 +332,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                     onTap: _isApplying
                         ? null
                         : () => _selectStoreFilter(StoreLocationCode.ans),
+                    tone: _ShowroomFilterChipTone.storeAns,
                   ),
                   Container(
                     width: 1,
@@ -346,11 +348,20 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
                     ),
                   ),
                   ...SmartFilterWidget.metalFilterLabels.map(
-                    (label) => _CompactFilterChip(
-                      label: label,
-                      selected: _selectedMetalTags.contains(label),
-                      onTap: _isApplying ? null : () => _toggleMetalTag(label),
-                    ),
+                    (label) {
+                      final tone = switch (label) {
+                        SmartFilterWidget.goldUmbrella =>
+                          _ShowroomFilterChipTone.goldMetal,
+                        'Серебро' => _ShowroomFilterChipTone.silverMetal,
+                        _ => _ShowroomFilterChipTone.neutral,
+                      };
+                      return _CompactFilterChip(
+                        label: label,
+                        selected: _selectedMetalTags.contains(label),
+                        onTap: _isApplying ? null : () => _toggleMetalTag(label),
+                        tone: tone,
+                      );
+                    },
                   ),
                 ],
               ),
@@ -519,23 +530,122 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   }
 }
 
+enum _ShowroomFilterChipTone {
+  neutral,
+  storeIcn,
+  storeAns,
+  goldMetal,
+  silverMetal,
+}
+
+class _ShowroomFilterChipPalette {
+  const _ShowroomFilterChipPalette({
+    required this.unselectedFill,
+    required this.selectedFill,
+    required this.borderUnselected,
+    required this.borderSelected,
+    required this.labelUnselected,
+    required this.labelSelected,
+    required this.checkmark,
+  });
+
+  final Color unselectedFill;
+  final Color selectedFill;
+  final Color borderUnselected;
+  final Color borderSelected;
+  final Color labelUnselected;
+  final Color labelSelected;
+  final Color checkmark;
+
+  static _ShowroomFilterChipPalette forTone(_ShowroomFilterChipTone tone) {
+    switch (tone) {
+      case _ShowroomFilterChipTone.storeIcn:
+        final badge = storeLocationBadgeColors(StoreLocationCode.icn);
+        return _ShowroomFilterChipPalette(
+          unselectedFill: badge.bg,
+          selectedFill: Color.lerp(badge.bg, badge.fg, 0.22)!,
+          borderUnselected: badge.fg.withValues(alpha: 0.38),
+          borderSelected: badge.fg.withValues(alpha: 0.85),
+          labelUnselected: badge.fg,
+          labelSelected: badge.fg,
+          checkmark: badge.fg,
+        );
+      case _ShowroomFilterChipTone.storeAns:
+        final badge = storeLocationBadgeColors(StoreLocationCode.ans);
+        return _ShowroomFilterChipPalette(
+          unselectedFill: badge.bg,
+          selectedFill: Color.lerp(badge.bg, badge.fg, 0.22)!,
+          borderUnselected: badge.fg.withValues(alpha: 0.38),
+          borderSelected: badge.fg.withValues(alpha: 0.85),
+          labelUnselected: badge.fg,
+          labelSelected: badge.fg,
+          checkmark: badge.fg,
+        );
+      case _ShowroomFilterChipTone.goldMetal:
+        return _ShowroomFilterChipPalette(
+          unselectedFill: AppColors.accent.withValues(alpha: 0.14),
+          selectedFill: AppColors.accent.withValues(alpha: 0.38),
+          borderUnselected: AppColors.accent.withValues(alpha: 0.55),
+          borderSelected: AppColors.accent,
+          labelUnselected: AppColors.textPrimary,
+          labelSelected: AppColors.textOnAccent,
+          checkmark: AppColors.textPrimary,
+        );
+      case _ShowroomFilterChipTone.silverMetal:
+        const fill = Color(0xFFE8EAED);
+        const fillSel = Color(0xFFC9CED6);
+        const borderSel = Color(0xFF4B5563);
+        const label = Color(0xFF374151);
+        return const _ShowroomFilterChipPalette(
+          unselectedFill: fill,
+          selectedFill: fillSel,
+          borderUnselected: Color(0x996B7280),
+          borderSelected: borderSel,
+          labelUnselected: label,
+          labelSelected: Color(0xFF111827),
+          checkmark: borderSel,
+        );
+      case _ShowroomFilterChipTone.neutral:
+        return _ShowroomFilterChipPalette(
+          unselectedFill: AppColors.background,
+          selectedFill: AppColors.accent.withValues(alpha: 0.22),
+          borderUnselected: AppColors.border,
+          borderSelected: AppColors.accent.withValues(alpha: 0.65),
+          labelUnselected: AppColors.textPrimary,
+          labelSelected: AppColors.textPrimary,
+          checkmark: AppColors.accent,
+        );
+    }
+  }
+}
+
 class _CompactFilterChip extends StatelessWidget {
   const _CompactFilterChip({
     required this.label,
     required this.selected,
     required this.onTap,
+    this.tone = _ShowroomFilterChipTone.neutral,
   });
 
   final String label;
   final bool selected;
   final VoidCallback? onTap;
+  final _ShowroomFilterChipTone tone;
 
   @override
   Widget build(BuildContext context) {
+    final palette = _ShowroomFilterChipPalette.forTone(tone);
+    final border = selected ? palette.borderSelected : palette.borderUnselected;
+    final labelColor = selected ? palette.labelSelected : palette.labelUnselected;
+
     return FilterChip(
       label: Text(
         label,
-        style: const TextStyle(fontSize: 11),
+        style: TextStyle(
+          fontSize: 11,
+          color: labelColor,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+        ),
       ),
       visualDensity: VisualDensity.compact,
       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -543,9 +653,11 @@ class _CompactFilterChip extends StatelessWidget {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       selected: selected,
       onSelected: onTap == null ? null : (_) => onTap!(),
-      selectedColor: AppColors.accent.withValues(alpha: 0.22),
-      checkmarkColor: AppColors.accent,
-      side: const BorderSide(color: AppColors.border),
+      backgroundColor: palette.unselectedFill,
+      selectedColor: palette.selectedFill,
+      checkmarkColor: palette.checkmark,
+      side: BorderSide(color: border, width: selected ? 1.25 : 1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     );
   }
 }

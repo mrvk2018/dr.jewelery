@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/services/database_service.dart';
+import '../../../core/utils/round_krw_up_1000.dart';
 import '../../../shared/models/product_item.dart';
 import '../data/local_cart_service.dart';
 import '../../payment/domain/models/toss_payment_request.dart';
@@ -87,7 +88,8 @@ class CartController extends ChangeNotifier {
     final promo = promoDiscountForSubtotal(sale);
     final bonus = bonusDeductionForSubtotal(sale);
     final result = sale - promo - bonus;
-    return result < 0 ? 0 : result;
+    if (result < 0) return 0;
+    return roundKrwUpTo1000(result);
   }
 
   Future<void> load() async {

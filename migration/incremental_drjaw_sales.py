@@ -288,11 +288,18 @@ def storage_webp_url_for_sku(sku: str, supabase_url: str) -> str | None:
     return None
 
 
+def _commission_base_krw(price_krw: int, list_price_krw: int | None) -> int:
+    listed = abs(int(list_price_krw or 0))
+    sold = abs(int(price_krw))
+    return listed if listed > 0 else sold
+
+
 def resolve_seller_payroll_fields(
     sb: Client,
     seller_name: str | None,
     price_krw: int,
     metal_category: str | None,
+    list_price_krw: int | None = None,
 ) -> dict[str, Any]:
     name = str(seller_name or "").strip()
     if not name:
@@ -320,7 +327,9 @@ def resolve_seller_payroll_fields(
         pct = silver
     else:
         pct = 0.0
-    commission_krw = int(round(price_krw * pct / 100.0))
+    base = _commission_base_krw(price_krw, list_price_krw)
+    sign = -1 if price_krw < 0 else 1
+    commission_krw = sign * int(round(base * pct / 100.0))
     out: dict[str, Any] = {
         "seller_code": code,
         "commission_percent": pct,
@@ -356,6 +365,7 @@ def enrich_drjaw_insert_row(
         row.get("seller_name"),
         int(row.get("price_krw") or 0),
         row.get("metal_category"),
+        int(row.get("list_price_krw") or 0) or None,
     )
     row.update(payroll)
     return row

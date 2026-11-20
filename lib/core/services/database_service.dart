@@ -17,6 +17,7 @@ import '../../features/admin/domain/admin_pos_sale_exception.dart';
 
 import '../constants/supabase_config.dart';
 import '../utils/product_gallery_urls.dart';
+import '../utils/round_krw_up_1000.dart';
 import '../utils/product_size_utils.dart';
 import '../utils/store_location_utils.dart';
 import '../../features/profile/domain/models/order_item.dart';
@@ -99,6 +100,8 @@ abstract final class TransferRpc {
   static const cancelProductTransferById = 'cancel_product_transfer_by_id';
   static const listProductTransfers = 'list_product_transfers';
   static const sendDraftsBatchToAnsan = 'send_drafts_batch_to_ansan';
+  static const sendDraftsToAnsanByIds = 'send_drafts_to_ansan_by_ids';
+  static const draftProductIdsParam = 'p_ids';
   static const productIdParam = 'p_product_id';
   static const transferIdParam = 'p_transfer_id';
   static const actorCodeParam = 'p_actor_code';
@@ -762,6 +765,11 @@ abstract class DatabaseService {
 
   Future<Map<String, dynamic>> sendDraftsBatchToAnsan({
     required String actorCode,
+  });
+
+  Future<Map<String, dynamic>> sendDraftsToAnsanByIds({
+    required String actorCode,
+    required List<String> productIds,
   });
 
   Future<Map<String, dynamic>> initiateScrapTransfer({
@@ -2644,7 +2652,7 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
-    final priceKrw = price.clamp(0, 999999999);
+    final priceKrw = roundKrwUpTo1000(price.clamp(0, 999999999));
     final displayName = name.trim();
     final categoryValue = (productCategory ?? displayName).trim();
     final metalLabel = metalType.trim();
@@ -2711,7 +2719,7 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     final normalizedSku = sku.trim();
     if (normalizedSku.isEmpty) return false;
-    final priceKrw = price.clamp(0, 999999999);
+    final priceKrw = roundKrwUpTo1000(price.clamp(0, 999999999));
 
     final displayName = name.trim();
     final categoryValue = (productCategory ?? displayName).trim();
@@ -3710,6 +3718,34 @@ class CloudDatabaseService implements DatabaseService {
       return _rpcJsonMap(result);
     } catch (error, stackTrace) {
       debugPrint('CloudDatabaseService.sendDraftsBatchToAnsan failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> sendDraftsToAnsanByIds({
+    required String actorCode,
+    required List<String> productIds,
+  }) async {
+    final ids = productIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+    if (ids.isEmpty) {
+      return {'ok': false, 'error': 'Пустой список id'};
+    }
+    try {
+      final result = await _supabaseClient.rpc(
+        TransferRpc.sendDraftsToAnsanByIds,
+        params: {
+          TransferRpc.actorCodeParam: actorCode.trim().toUpperCase(),
+          TransferRpc.draftProductIdsParam: ids,
+        },
+      );
+      return _rpcJsonMap(result);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.sendDraftsToAnsanByIds failed: $error');
       debugPrint('$stackTrace');
       return {'ok': false, 'error': error.toString()};
     }

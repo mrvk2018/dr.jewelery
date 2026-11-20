@@ -1,3 +1,4 @@
+import '../../../../core/utils/round_krw_up_1000.dart';
 import '../../../../shared/models/product_item.dart';
 
 /// Допустимые POS-скидки на строку (согласовано с `pos_sale_line_input`).
@@ -18,7 +19,9 @@ class PosCartItem {
 
   int get finalPriceKrw {
     final discount = discountPercent.clamp(0, 100);
-    return (originalPriceKrw * (100 - discount) / 100).round();
+    return roundKrwUpTo1000(
+      originalPriceKrw * (100 - discount) / 100,
+    );
   }
 
   Map<String, dynamic> toSaleLineInput() => {

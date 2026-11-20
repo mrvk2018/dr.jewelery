@@ -69,27 +69,22 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     }).toList();
   }
 
-  /// Трансфер ICN→ANS: черновик на Инчхоне (или без точки = ICN), не в пути.
+  /// Трансфер ICN→ANS: непринятый черновик (бейдж магазина не важен).
   static bool _canSendDraftToAnsan(Map<String, dynamic> row) {
     final status = row['status']?.toString();
     final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
-    if (stock != 0) return false;
-    if (status != 'hidden' && status != 'active') return false;
-    if (isStoreLocationUnsetInDatabase(row)) return true;
-    final loc = normalizeStoreLocationCode(
-      storeLocation: row['store_location']?.toString(),
-      productRow: row,
-    );
-    return loc == StoreLocationCode.icn;
+    return stock == 0 && (status == 'hidden' || status == 'active');
+  }
+
+  static bool _isDraftInTransitToAnsan(Map<String, dynamic> row) {
+    return row['status']?.toString() == 'in_transfer';
   }
 
   static bool _canActivateDraft(Map<String, dynamic> row) {
     final stock = (row['stock_quantity'] as num?)?.toInt() ?? 0;
     if (stock != 0) return false;
     final status = row['status']?.toString();
-    if (status != 'hidden' &&
-        status != 'active' &&
-        status != 'in_transfer') {
+    if (status != 'hidden' && status != 'active') {
       return false;
     }
     if (isStoreLocationUnsetInDatabase(row)) return false;
@@ -620,8 +615,8 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     final skipped = selected.length - sendable.length;
     if (sendable.isEmpty) {
       _showSnack(
-        'Среди выбранных нет черновиков Инчхона (stock=0, hidden/active). '
-        'Позиции Ансана или уже «в пути» не отправляются этой кнопкой.',
+        'Среди выбранных нет непринятых черновиков (stock=0, hidden/active). '
+        'Уже «в пути» или принятые позиции пропускаются.',
         isError: true,
       );
       return;
@@ -634,7 +629,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
           skipped > 0
               ? 'Создать трансферы ICN→ANS для ${sendable.length} черновиков и '
                   'распечатать бирки 12×60 мм? '
-                  '(ещё $skipped в выборе не с Инчхона и будут пропущены.)'
+                  '(ещё $skipped уже в пути или не подходят.)'
               : 'Создать трансферы ICN→ANS для ${sendable.length} черновиков и '
                   'распечатать бирки 12×60 мм?',
           style: AppTypography.productMeta(),
@@ -1368,6 +1363,8 @@ class _DraftTableWideRow extends StatelessWidget {
             width: _DraftTableLayout.actionsWidth,
             child: _DraftRowActions(
               busy: busy,
+              showInTransitBadge:
+                  _DraftIntakeScreenState._isDraftInTransitToAnsan(row),
               onAccept: onAccept,
               onPrint: onPrint,
               onEdit: onEdit,
@@ -1479,6 +1476,8 @@ class _DraftTableNarrowRow extends StatelessWidget {
               const SizedBox(width: 4),
               _DraftRowActions(
                 busy: busy,
+                showInTransitBadge:
+                    _DraftIntakeScreenState._isDraftInTransitToAnsan(row),
                 onAccept: onAccept,
                 onPrint: onPrint,
                 onEdit: onEdit,
@@ -1550,9 +1549,11 @@ class _DraftRowActions extends StatelessWidget {
     required this.onDelete,
     this.showAdminActions = true,
     this.compact = false,
+    this.showInTransitBadge = false,
   });
 
   final bool busy;
+  final bool showInTransitBadge;
   final VoidCallback onAccept;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
@@ -1580,17 +1581,41 @@ class _DraftRowActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        FilledButton.tonal(
-          onPressed: busy ? null : onAccept,
-          style: acceptStyle,
-          child: busy
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(compact ? 'Прин.' : 'Принять'),
-        ),
+        if (showInTransitBadge)
+          Tooltip(
+            message: 'Трансфер ICN→ANS; приёмка — в Ансане по QR',
+            child: Chip(
+              label: Text(
+                compact ? 'В пути' : 'В пути → ANS',
+                style: AppTypography.productMeta().copyWith(
+                  fontSize: compact ? 10 : 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              avatar: Icon(
+                Icons.local_shipping_outlined,
+                size: compact ? 14 : 16,
+                color: AppColors.textSecondary,
+              ),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6),
+              backgroundColor: AppColors.border.withValues(alpha: 0.35),
+              side: const BorderSide(color: AppColors.border),
+            ),
+          )
+        else
+          FilledButton.tonal(
+            onPressed: busy ? null : onAccept,
+            style: acceptStyle,
+            child: busy
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(compact ? 'Прин.' : 'Принять'),
+          ),
         if (showAdminActions)
           IconButton(
             tooltip: 'Редактировать черновик',

@@ -621,13 +621,13 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Отправить выбранное в Ансан?'),
+        title: const Text('Отправить в Ансан?'),
         content: Text(
           skipped > 0
-              ? 'Будет переведено в трансфер: ${sendable.length} поз. '
-                  '(ещё $skipped в выборе не подходят для отправки и будут пропущены).'
-              : 'Будет переведено в трансфер: ${sendable.length} поз. '
-                  '(store_location=ANS, черновики).',
+              ? 'Отправить ${sendable.length} изделий в Ансан и распечатать бирки? '
+                  '(ещё $skipped в выборе не подходят для отправки и будут пропущены.)'
+              : 'Отправить ${sendable.length} изделий в Ансан и распечатать бирки?',
+          style: AppTypography.productMeta(),
         ),
         actions: [
           TextButton(
@@ -660,7 +660,12 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
         return;
       }
       final count = (result['sent_count'] as num?)?.toInt() ?? sendable.length;
-      _showSnack('Отправлено в трансфер: $count поз.');
+      for (final row in sendable) {
+        _safeFireAndForgetPrint(row);
+      }
+      _showSnack(
+        'Отправлено в трансфер: $count поз. — буфер печати сформирован',
+      );
       _clearDraftSelection();
       await _runSearch(_searchController.text);
     } catch (error) {

@@ -205,6 +205,7 @@ abstract final class CatalogFacetedRpc {
   static const silverGramPriceParam = 'silver_gram_price';
   static const exactWeightParam = 'exact_weight';
   static const skuQueryParam = 'sku_query';
+  static const sizeQueryParam = 'size_query';
   static const storeLocationParam = 'p_store_location';
   static const searchQueryParam = 'search_query';
   static const searchSoldProducts = 'search_sold_products';
@@ -516,6 +517,7 @@ abstract class DatabaseService {
     double goldGramPrice = 95000.0,
     double silverGramPrice = 3500.0,
     double? exactWeight,
+    String? sizeQuery,
     String? skuQuery,
     String? storeLocation,
   });
@@ -2067,11 +2069,13 @@ class CloudDatabaseService implements DatabaseService {
     double goldGramPrice = 95000.0,
     double silverGramPrice = 3500.0,
     double? exactWeight,
+    String? sizeQuery,
     String? skuQuery,
     String? storeLocation,
   }) async {
     try {
       final skuTrimmed = skuQuery?.trim();
+      final sizeTrimmed = sizeQuery?.trim().replaceAll(',', '.');
       final store = storeLocation?.trim().toUpperCase();
       final response = await _supabaseClient.rpc(
         CatalogFacetedRpc.getAdvancedFacetedProducts,
@@ -2084,6 +2088,8 @@ class CloudDatabaseService implements DatabaseService {
           CatalogFacetedRpc.goldGramPriceParam: goldGramPrice,
           CatalogFacetedRpc.silverGramPriceParam: silverGramPrice,
           CatalogFacetedRpc.exactWeightParam: exactWeight,
+          CatalogFacetedRpc.sizeQueryParam:
+              (sizeTrimmed == null || sizeTrimmed.isEmpty) ? null : sizeTrimmed,
           CatalogFacetedRpc.skuQueryParam:
               (skuTrimmed == null || skuTrimmed.isEmpty) ? null : skuTrimmed,
           CatalogFacetedRpc.storeLocationParam:

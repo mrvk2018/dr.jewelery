@@ -99,6 +99,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
             selectedIcon: Icons.scale,
             label: 'Приёмка лома',
           ),
+        (
+          icon: Icons.logout_outlined,
+          selectedIcon: Icons.logout,
+          label: 'Выйти из админки',
+        ),
       ];
 
   List<({IconData icon, IconData selectedIcon, String label})>
@@ -223,6 +228,17 @@ class _AdminWebShellState extends State<AdminWebShell> {
     Navigator.of(context).pop();
   }
 
+  void _exitAdminPanel() {
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
+  static const _exitAdminNavLabel = 'Выйти из админки';
+
+  bool _isExitAdminRailIndex(int index, List<dynamic> destinations) =>
+      index == destinations.length - 1 &&
+      destinations[index].label == _exitAdminNavLabel;
+
   Future<void> _openQrTerminal() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -300,7 +316,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
 
     final destinations =
         sellerMode ? _sellerDestinations() : _adminDestinations(isSuperAdmin);
-    final safeIndex = _selectedIndex.clamp(0, destinations.length - 1);
+    final pageCount = sellerMode
+        ? destinations.length
+        : destinations.length - 1; // последний пункт — выход
+    final safeIndex = _selectedIndex.clamp(0, pageCount - 1);
     if (safeIndex != _selectedIndex) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _selectedIndex = safeIndex);
@@ -319,6 +338,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text(
           _title(
             isSuperAdmin: isSuperAdmin,
@@ -373,6 +393,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
                     AppTypography.caption(fontWeight: FontWeight.w700),
                 unselectedLabelTextStyle: AppTypography.productMeta(),
                 onDestinationSelected: (index) {
+                  if (!sellerMode && _isExitAdminRailIndex(index, destinations)) {
+                    _exitAdminPanel();
+                    return;
+                  }
                   setState(() => _selectedIndex = index);
                   if (!sellerMode && index == _salesHistoryTabIndex) {
                     _scheduleSalesHistoryReload();

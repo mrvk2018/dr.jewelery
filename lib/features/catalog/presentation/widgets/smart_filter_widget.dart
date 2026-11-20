@@ -32,11 +32,11 @@ class SmartFilterWidget extends StatefulWidget {
   static const String goldUmbrella = 'Золото';
 
   static const List<String> metalFilterLabels = [
+    'Серебро',
     goldUmbrella,
     'Красное золото',
     'Жёлтое золото',
     'Белое золото',
-    'Серебро',
   ];
 
   static const List<String> goldColorMetalLabels = [
@@ -67,6 +67,7 @@ class SmartFilterWidget extends StatefulWidget {
 class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   final _minPriceController = TextEditingController();
   final _maxPriceController = TextEditingController();
+  final _sizeController = TextEditingController();
   final _skuController = TextEditingController();
   final _weightController = TextEditingController();
 
@@ -84,6 +85,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
   void dispose() {
     _minPriceController.dispose();
     _maxPriceController.dispose();
+    _sizeController.dispose();
     _skuController.dispose();
     _weightController.dispose();
     super.dispose();
@@ -107,6 +109,12 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
     return q;
   }
 
+  String? _parseSizeQuery() {
+    final q = _sizeController.text.trim().replaceAll(',', '.');
+    if (q.isEmpty) return null;
+    return q;
+  }
+
   void _submitFilterField(String _) => unawaited(_applyFilter());
 
   Future<void> _applyFilter() async {
@@ -122,6 +130,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
         goldGramPrice: widget.goldGramPrice,
         silverGramPrice: widget.silverGramPrice,
         exactWeight: _parseExactWeight(_weightController.text),
+        sizeQuery: _parseSizeQuery(),
         skuQuery: _parseSkuQuery(),
         storeLocation: _selectedStoreLocation,
       );
@@ -168,6 +177,7 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       _selectedSlangTags.clear();
       _minPriceController.clear();
       _maxPriceController.clear();
+      _sizeController.clear();
       _skuController.clear();
       _weightController.clear();
       _selectedStoreLocation = null;
@@ -209,15 +219,50 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       _selectedSlangTags.length +
       (_selectedStoreLocation != null ? 1 : 0);
 
+  Widget _buildActionButtons() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      alignment: WrapAlignment.end,
+      children: [
+        _CompactActionButton(
+          icon: Icons.tune_rounded,
+          label: _selectedSlangTags.isEmpty
+              ? 'Дополнительно'
+              : 'Доп. (${_selectedSlangTags.length})',
+          onPressed: _isApplying ? null : _openAdditionalFilterDialog,
+          outlined: true,
+        ),
+        _CompactActionButton(
+          icon: Icons.refresh_rounded,
+          label: 'Сбросить',
+          onPressed: _isApplying ? null : _resetFilter,
+          outlined: true,
+        ),
+        _CompactActionButton(
+          icon: Icons.search_rounded,
+          label: _isApplying ? 'Загрузка…' : 'Показать',
+          onPressed: _isApplying ? null : _applyFilter,
+          loading: _isApplying,
+          filled: true,
+        ),
+      ],
+    );
+  }
+
   Widget _buildCompactFilterBody(double maxWidth) {
-    final fourInRow = maxWidth >= 560;
-    final twoInRow = maxWidth >= 360 && !fourInRow;
+    final fiveInRow = maxWidth >= 680;
+    final twoInRow = maxWidth >= 360 && !fiveInRow;
+    final categoryRowWithActions = maxWidth >= 840;
 
     Widget fieldRow(List<Widget> fields) {
-      if (fourInRow) {
+      if (fiveInRow && fields.length <= 2) {
         return Row(children: fields);
       }
       if (twoInRow) {
+        if (fields.length == 1) {
+          return Row(children: [Expanded(child: fields[0])]);
+        }
         return Row(
           children: [
             Expanded(child: fields[0]),
@@ -253,6 +298,16 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       onSubmitted: _submitFilterField,
     );
+    final sizeField = _FilterTextField(
+      controller: _sizeController,
+      label: 'Размер',
+      compact: true,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+      ],
+      onSubmitted: _submitFilterField,
+    );
     final skuField = _FilterTextField(
       controller: _skuController,
       label: 'Артикул (SKU)',
@@ -272,12 +327,14 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
 
     Widget paddedExpanded(Widget child) => Expanded(child: child);
 
-    final inputs = fourInRow
+    final inputs = fiveInRow
         ? Row(
             children: [
               paddedExpanded(minField),
               const SizedBox(width: 8),
               paddedExpanded(maxField),
+              const SizedBox(width: 8),
+              paddedExpanded(sizeField),
               const SizedBox(width: 8),
               paddedExpanded(skuField),
               const SizedBox(width: 8),
@@ -288,9 +345,33 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
             children: [
               fieldRow([minField, maxField]),
               const SizedBox(height: 6),
-              fieldRow([skuField, weightField]),
+              fieldRow([sizeField, skuField]),
+              const SizedBox(height: 6),
+              fieldRow([weightField]),
             ],
           );
+
+    final categoryChips = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        Text(
+          'Категория',
+          style: AppTypography.productMeta().copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        ...SmartFilterWidget.categoryFilterLabels.map(
+          (label) => _CompactFilterChip(
+            label: label,
+            selected: _selectedCategoryTags.contains(label),
+            onTap: _isApplying ? null : () => _toggleCategoryTag(label),
+          ),
+        ),
+      ],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -369,27 +450,23 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
           ],
         ),
         const SizedBox(height: 6),
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 4,
-          children: [
-            Text(
-              'Категория',
-              style: AppTypography.productMeta().copyWith(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            ...SmartFilterWidget.categoryFilterLabels.map(
-              (label) => _CompactFilterChip(
-                label: label,
-                selected: _selectedCategoryTags.contains(label),
-                onTap: _isApplying ? null : () => _toggleCategoryTag(label),
-              ),
-            ),
-          ],
-        ),
+        if (categoryRowWithActions)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: categoryChips),
+              const SizedBox(width: 8),
+              _buildActionButtons(),
+            ],
+          )
+        else ...[
+          categoryChips,
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _buildActionButtons(),
+          ),
+        ],
         if (_selectedSlangTags.isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(
@@ -399,35 +476,6 @@ class _SmartFilterWidgetState extends State<SmartFilterWidget> {
             overflow: TextOverflow.ellipsis,
           ),
         ],
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          alignment: WrapAlignment.end,
-          children: [
-            _CompactActionButton(
-              icon: Icons.tune_rounded,
-              label: _selectedSlangTags.isEmpty
-                  ? 'Дополнительно'
-                  : 'Доп. (${_selectedSlangTags.length})',
-              onPressed: _isApplying ? null : _openAdditionalFilterDialog,
-              outlined: true,
-            ),
-            _CompactActionButton(
-              icon: Icons.refresh_rounded,
-              label: 'Сбросить',
-              onPressed: _isApplying ? null : _resetFilter,
-              outlined: true,
-            ),
-            _CompactActionButton(
-              icon: Icons.search_rounded,
-              label: _isApplying ? 'Загрузка…' : 'Показать',
-              onPressed: _isApplying ? null : _applyFilter,
-              loading: _isApplying,
-              filled: true,
-            ),
-          ],
-        ),
       ],
     );
   }

@@ -2807,14 +2807,16 @@ class CloudDatabaseService implements DatabaseService {
   static const _productImageWebpContentType = 'image/webp';
 
   static String _safeStorageSku(String sku) {
-    return sku.replaceAll(RegExp(r'[^\w.-]+'), '_');
+    return sku.replaceAll(RegExp(r'[^a-zA-Z0-9_.-]+'), '_');
   }
 
-  static String _extensionForContentType(String contentType) {
-    final lower = contentType.toLowerCase();
-    if (lower.contains('webp')) return 'webp';
-    if (lower.contains('png')) return 'png';
-    return 'jpg';
+  static String _gallerySlotStorageSuffix(int slotIndex) {
+    if (slotIndex <= 0) return '';
+    return '_$slotIndex';
+  }
+
+  static String _productGalleryObjectPath(String safeSku, int slotIndex) {
+    return '$_productImagesFolder/$safeSku${_gallerySlotStorageSuffix(slotIndex)}.webp';
   }
 
   Future<Map<String, dynamic>?> _adminProductGalleryContextBySku(String sku) async {
@@ -2943,9 +2945,19 @@ class CloudDatabaseService implements DatabaseService {
 
       return Uint8List.fromList(img.encodeWebP(toEncode));
     } catch (e) {
-      print('!!! WEB CONVERTER FAILED, FALLBACK TO ORIGINAL !!!: $e');
+      debugPrint('CloudDatabaseService._productImageBytesAsWebp failed: $e');
       return null;
     }
+  }
+
+  static Uint8List _requireProductImageWebpBytes(Uint8List raw) {
+    final webp = _productImageBytesAsWebp(raw);
+    if (webp == null || webp.isEmpty) {
+      throw StateError(
+        'Не удалось сжать фото в WebP. Выберите другое изображение (JPEG/PNG).',
+      );
+    }
+    return webp;
   }
 
   static const _scrapIntakeImagesPrefix = 'scrap-intake';
@@ -2957,18 +2969,10 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     if (bytes.isEmpty) return null;
     try {
-      var uploadBytes = bytes;
-      var uploadMime = contentType.trim().isNotEmpty ? contentType.trim() : 'image/jpeg';
-      var fileExt = _extensionForContentType(uploadMime);
-      final webpBytes = _productImageBytesAsWebp(bytes);
-      if (webpBytes != null && webpBytes.isNotEmpty) {
-        uploadBytes = webpBytes;
-        uploadMime = _productImageWebpContentType;
-        fileExt = 'webp';
-      }
+      final uploadBytes = _requireProductImageWebpBytes(bytes);
+      const uploadMime = _productImageWebpContentType;
       final stamp = DateTime.now().microsecondsSinceEpoch;
-      final objectPath =
-          '$_scrapIntakeImagesPrefix/scrap_$stamp.${fileExt.toLowerCase()}';
+      final objectPath = '$_scrapIntakeImagesPrefix/scrap_$stamp.webp';
       await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
             objectPath,
             uploadBytes,
@@ -3016,27 +3020,11 @@ class CloudDatabaseService implements DatabaseService {
         );
       }
 
-      final uploadContentType =
-          contentType.trim().isNotEmpty ? contentType.trim() : 'image/jpeg';
-      var uploadBytes = bytes;
-      var uploadMime = uploadContentType;
-      var fileExt = _extensionForContentType(uploadContentType);
-
-      try {
-        final webpBytes = _productImageBytesAsWebp(bytes);
-        if (webpBytes != null && webpBytes.isNotEmpty) {
-          uploadBytes = webpBytes;
-          uploadMime = _productImageWebpContentType;
-          fileExt = 'webp';
-        }
-      } catch (e) {
-        debugPrint('webp convert fallback: $e');
-      }
-
-      final ts = DateTime.now().millisecondsSinceEpoch;
+      final uploadBytes = _requireProductImageWebpBytes(bytes);
+      const uploadMime = _productImageWebpContentType;
       final safeSku = _safeStorageSku(normalizedSku);
-      final objectPath =
-          '$_productImagesFolder/${safeSku}_s${slotIndex}_$ts.$fileExt';
+      final objectPath = _productGalleryObjectPath(safeSku, slotIndex);
+      final ts = DateTime.now().millisecondsSinceEpoch;
 
       try {
         await _supabaseClient.storage.from(_productImagesBucket).uploadBinary(
@@ -3044,15 +3032,20 @@ class CloudDatabaseService implements DatabaseService {
               uploadBytes,
               fileOptions: FileOptions(
                 contentType: uploadMime,
-                upsert: false,
+                upsert: true,
               ),
             );
       } on StorageException catch (e) {
         throw StateError('Storage: ${e.message}');
       }
 
-      final publicUrl =
+      var publicUrl =
           _supabaseClient.storage.from(_productImagesBucket).getPublicUrl(objectPath);
+      if (publicUrl.contains('?')) {
+        publicUrl = '${publicUrl.split('?').first}?v=$ts';
+      } else {
+        publicUrl = '$publicUrl?v=$ts';
+      }
       if (publicUrl.trim().isEmpty) {
         throw StateError('Storage: пустой public URL после загрузки');
       }

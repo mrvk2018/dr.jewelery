@@ -1,5 +1,8 @@
 /// Запись картотеки продавцов / блогеров (промокод реферальной системы).
 class SellerItem {
+  /// Системная учётка администратора (код короче 6 символов).
+  static const systemAdminPromoCode = 'ADMIN';
+
   SellerItem({
     required this.promoCode,
     required this.name,
@@ -27,6 +30,9 @@ class SellerItem {
   final double appGoldBuyerDiscountPercent;
   final double appSilverBuyerDiscountPercent;
   final DateTime createdAt;
+
+  bool get isSystemAdmin =>
+      normalizePromoCode(promoCode) == systemAdminPromoCode;
 
   SellerItem copyWith({
     String? promoCode,

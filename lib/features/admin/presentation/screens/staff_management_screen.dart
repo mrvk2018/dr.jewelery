@@ -802,6 +802,11 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
 
   static final _codePattern = RegExp(r'^[A-Z0-9]{6}$');
 
+  bool get _isSystemAdmin =>
+      widget.existing?.isSystemAdmin ??
+      SellerItem.normalizePromoCode(_codeController.text) ==
+          SellerItem.systemAdminPromoCode;
+
   @override
   void initState() {
     super.initState();
@@ -874,7 +879,7 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
       setState(() => _error = 'Укажите имя');
       return;
     }
-    if (!_codePattern.hasMatch(code)) {
+    if (code != SellerItem.systemAdminPromoCode && !_codePattern.hasMatch(code)) {
       setState(
         () => _error = 'Код: ровно 6 латинских букв или цифр (A–Z, 0–9)',
       );
@@ -899,7 +904,7 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
       await widget.database.upsertSellerByAdmin(
         promoCode: code,
         name: name,
-        isActive: _isActive,
+        isActive: _isSystemAdmin ? true : _isActive,
         goldCommissionPercent: gold!,
         silverCommissionPercent: silver!,
         appGoldCommissionPercent: appGoldComm!,
@@ -945,11 +950,15 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _codeController,
-              enabled: !widget.isEdit,
-              decoration: const InputDecoration(
-                labelText: 'Код сотрудника (6 символов)',
-                border: OutlineInputBorder(),
-                helperText: 'Например: AEU256',
+              enabled: !widget.isEdit && !_isSystemAdmin,
+              decoration: InputDecoration(
+                labelText: _isSystemAdmin
+                    ? 'Код сотрудника'
+                    : 'Код сотрудника (6 символов)',
+                border: const OutlineInputBorder(),
+                helperText: _isSystemAdmin
+                    ? 'Системный код ADMIN не изменяется'
+                    : 'Например: AEU256',
               ),
               textCapitalization: TextCapitalization.characters,
               maxLength: 6,
@@ -1050,8 +1059,11 @@ class _StaffUpsertDialogState extends State<_StaffUpsertDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Активен'),
-              value: _isActive,
-              onChanged: _saving
+              subtitle: _isSystemAdmin
+                  ? const Text('Для ADMIN всегда включён')
+                  : null,
+              value: _isSystemAdmin ? true : _isActive,
+              onChanged: _saving || _isSystemAdmin
                   ? null
                   : (value) => setState(() => _isActive = value),
             ),

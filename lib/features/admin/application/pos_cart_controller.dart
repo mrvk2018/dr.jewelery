@@ -2,11 +2,15 @@ import 'package:flutter/foundation.dart';
 
 import '../../../shared/models/product_item.dart';
 import '../domain/models/pos_cart_item.dart';
+import '../domain/pos_cart_gold_utils.dart';
+import '../domain/trade_in_scrap_draft.dart';
 
 class PosCartController extends ChangeNotifier {
   final List<PosCartItem> _items = [];
+  TradeInScrapDraft? _tradeInDraft;
 
   List<PosCartItem> get items => List.unmodifiable(_items);
+  TradeInScrapDraft? get tradeInDraft => _tradeInDraft;
 
   int get lineCount => _items.length;
 
@@ -28,6 +32,28 @@ class PosCartController extends ChangeNotifier {
     notifyListeners();
   }
 
+  double get cartGoldWeightGrams => sumPosCartGoldWeightGrams(_items);
+
+  bool get hasGoldInCart => countPosCartGoldLines(_items) > 0;
+
+  bool get tradeInGoldWeightStale {
+    final draft = _tradeInDraft;
+    if (draft == null) return false;
+  final current = cartGoldWeightGrams;
+    return (current - draft.cartGoldWeightGrams).abs() > 0.0001;
+  }
+
+  void attachTradeInDraft(TradeInScrapDraft draft) {
+    _tradeInDraft = draft;
+    notifyListeners();
+  }
+
+  void clearTradeInDraft() {
+    if (_tradeInDraft == null) return;
+    _tradeInDraft = null;
+    notifyListeners();
+  }
+
   void setLineDiscount(String productId, int discountPercent) {
     if (!PosCartDiscountOptions.values.contains(discountPercent)) return;
     for (final line in _items) {
@@ -40,8 +66,9 @@ class PosCartController extends ChangeNotifier {
   }
 
   void clearCart() {
-    if (_items.isEmpty) return;
+    if (_items.isEmpty && _tradeInDraft == null) return;
     _items.clear();
+    _tradeInDraft = null;
     notifyListeners();
   }
 

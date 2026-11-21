@@ -123,6 +123,9 @@ abstract final class AdminCatalogRpc {
   static const markProductSoldManual = 'mark_product_sold_manual';
   static const archiveAdminPosSale = 'archive_admin_pos_sale';
   static const posSaleLinesParam = 'p_lines';
+  static const posScrapPayloadParam = 'p_scrap_payload';
+  static const posTradeInNetDeltaParam = 'p_trade_in_net_cash_delta_krw';
+  static const posTradeInScrapTotalParam = 'p_trade_in_scrap_total_krw';
   static const posSellerNameParam = 'p_seller_name';
   static const posPaymentMethodParam = 'p_payment_method';
   static const posSellerCodeParam = 'p_seller_code';
@@ -691,6 +694,9 @@ abstract class DatabaseService {
     required String sellerName,
     required String paymentMethod,
     String? sellerCode,
+    Map<String, dynamic>? scrapTradeInPayload,
+    int? tradeInNetCashDeltaKrw,
+    int? tradeInScrapTotalKrw,
   });
 
   /// POS: карточка товара по `qr_code_payload`.
@@ -3515,6 +3521,9 @@ class CloudDatabaseService implements DatabaseService {
     required String sellerName,
     required String paymentMethod,
     String? sellerCode,
+    Map<String, dynamic>? scrapTradeInPayload,
+    int? tradeInNetCashDeltaKrw,
+    int? tradeInScrapTotalKrw,
   }) async {
     if (lines.isEmpty) {
       return AdminPosArchiveResult.failure(
@@ -3544,6 +3553,16 @@ class CloudDatabaseService implements DatabaseService {
       };
       if (code != null && code.isNotEmpty) {
         params[AdminCatalogRpc.posSellerCodeParam] = code;
+      }
+      if (scrapTradeInPayload != null && scrapTradeInPayload.isNotEmpty) {
+        params[AdminCatalogRpc.posScrapPayloadParam] = scrapTradeInPayload;
+        if (tradeInNetCashDeltaKrw != null) {
+          params[AdminCatalogRpc.posTradeInNetDeltaParam] = tradeInNetCashDeltaKrw;
+        }
+        if (tradeInScrapTotalKrw != null) {
+          params[AdminCatalogRpc.posTradeInScrapTotalParam] =
+              tradeInScrapTotalKrw;
+        }
       }
       final result = await _supabaseClient.rpc(
         AdminCatalogRpc.archiveAdminPosSale,

@@ -12,6 +12,7 @@ import '../../../profile/domain/models/user_profile.dart';
 import '../../../../shared/models/seller_item.dart';
 import '../../data/scrap_metal_storage.dart';
 import '../../domain/scrap_metal_calculator.dart';
+import '../../domain/trade_in_scrap_draft.dart';
 
 /// Приёмка лома: расчёт 585/925, журнал, списание со склада.
 class ScrapMetalIntakeScreen extends StatefulWidget {
@@ -22,6 +23,11 @@ class ScrapMetalIntakeScreen extends StatefulWidget {
     this.initialSellerName,
     this.hideJournalBulkWriteOff = false,
     this.actorCode = 'ADMIN',
+    this.tradeInMode = false,
+    this.cartTotalAmountKrw,
+    this.initialPurchasedGoldWeightG,
+    this.initialStoreLocation,
+    this.initialTradeInDraft,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
@@ -29,6 +35,13 @@ class ScrapMetalIntakeScreen extends StatefulWidget {
   final String? initialSellerName;
   final bool hideJournalBulkWriteOff;
   final String actorCode;
+
+  /// POS Trade-In: без записи в БД, возврат [TradeInScrapDraft].
+  final bool tradeInMode;
+  final int? cartTotalAmountKrw;
+  final double? initialPurchasedGoldWeightG;
+  final String? initialStoreLocation;
+  final TradeInScrapDraft? initialTradeInDraft;
 
   @override
   State<ScrapMetalIntakeScreen> createState() => _ScrapMetalIntakeScreenState();
@@ -83,17 +96,32 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
-    _tabs.addListener(() {
-      if (_tabs.index == 1 && _tabs.indexIsChanging == false) {
-        _loadJournal();
-      }
-    });
-  if (widget.initialSellerCode != null &&
+    final tabCount = widget.tradeInMode ? 1 : 2;
+    _tabs = TabController(length: tabCount, vsync: this);
+    if (!widget.tradeInMode) {
+      _tabs.addListener(() {
+        if (_tabs.index == 1 && _tabs.indexIsChanging == false) {
+          _loadJournal();
+        }
+      });
+    }
+    if (widget.initialSellerCode != null &&
         widget.initialSellerName != null) {
       _acceptKey = widget.initialSellerCode!;
     }
-    _bootstrap();
+    if (widget.initialStoreLocation != null) {
+      _storeLocation = widget.initialStoreLocation!.trim().toUpperCase();
+    }
+    if (widget.initialPurchasedGoldWeightG != null &&
+        widget.initialPurchasedGoldWeightG! > 0) {
+      _goldPurchaseGrams.text =
+          widget.initialPurchasedGoldWeightG!.toStringAsFixed(4);
+    }
+    _bootstrap().then((_) {
+      if (!mounted) return;
+      final seed = widget.initialTradeInDraft;
+      if (seed != null) _applyTradeInDraft(seed);
+    });
   }
 
   @override
@@ -169,6 +197,60 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   double _parseDouble(TextEditingController c) =>
       double.tryParse(c.text.replaceAll(',', '.')) ?? 0;
 
+  int get _scrapTotalKrw {
+    final g = _goldBreakdown?.payoutKrw ?? 0;
+    final s = _silverBreakdown?.payoutKrw ?? 0;
+    return ScrapMetalCalculator.floorKrwTo1000(g + s);
+  }
+
+  int? get _tradeInNetDelta {
+    final cart = widget.cartTotalAmountKrw;
+    if (cart == null || !widget.tradeInMode) return null;
+    return cart - _scrapTotalKrw;
+  }
+
+  void _applyTradeInDraft(TradeInScrapDraft draft) {
+    final payload = draft.scrapPayload;
+    _storeLocation =
+        payload['store_location']?.toString().trim().toUpperCase() == 'ANS'
+            ? StoreLocationCode.ans
+            : StoreLocationCode.icn;
+    final code = payload['accepted_by_code']?.toString();
+    if (code != null && code.isNotEmpty) _acceptKey = code;
+    _notesController.text = payload['notes']?.toString() ?? '';
+    _goldStdRate.text = '${payload['gold_standard_rate_krw'] ?? ''}';
+    _goldTradeRate.text = '${payload['gold_tradein_rate_krw'] ?? ''}';
+    _goldPurchaseGrams.text =
+        '${payload['gold_purchase_offset_grams'] ?? draft.cartGoldWeightGrams}';
+    _silverStdRate.text = '${payload['silver_standard_rate_krw'] ?? ''}';
+    _silverTradeRate.text = '${payload['silver_tradein_rate_krw'] ?? ''}';
+    _silverPurchaseGrams.text =
+        '${payload['silver_purchase_offset_grams'] ?? '0'}';
+    final goldItems = payload['gold_items'];
+    if (goldItems is List) {
+      for (final item in goldItems) {
+        if (item is! Map) continue;
+        final f = (item['fineness'] as num?)?.toDouble();
+        if (f == null) continue;
+        for (final row in _goldRows) {
+          if ((row.fineness - f).abs() < 0.01) {
+            row.grossWeight = (item['gross_weight'] as num?)?.toDouble() ?? 0;
+            row.stoneDiscountPercent =
+                (item['stone_discount_percent'] as num?)?.toDouble() ?? 0;
+          }
+        }
+      }
+    }
+    final urls = payload['photo_urls'];
+    if (urls is List) {
+      _photoUrls
+        ..clear()
+        ..addAll(urls.map((e) => e.toString()).where((u) => u.isNotEmpty));
+    }
+    _runCalculate();
+    setState(() {});
+  }
+
   void _runCalculate() {
     final goldEq = ScrapMetalCalculator.sumGoldEquivalent(_goldRows);
     final silverEq = ScrapMetalCalculator.sumSilverEquivalent(_silverRows);
@@ -188,8 +270,10 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       _goldBreakdown = gold;
       _silverBreakdown = silver;
       _calculated = true;
-      _highlightPayout =
-          'Итого: ${formatWon(gold.payoutKrw + silver.payoutKrw)}';
+      final total = ScrapMetalCalculator.floorKrwTo1000(
+        gold.payoutKrw + silver.payoutKrw,
+      );
+      _highlightPayout = 'Итого: ${formatWon(total)}';
     });
   }
 
@@ -273,6 +357,27 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       await _persistRates();
       final uploadedUrls = await _uploadPendingPhotos();
       final payload = _buildPayload()..['photo_urls'] = uploadedUrls;
+
+      if (widget.tradeInMode) {
+        final cartTotal = widget.cartTotalAmountKrw ?? 0;
+        final scrapTotal = _scrapTotalKrw;
+        final net = cartTotal - scrapTotal;
+        final goldEq = ScrapMetalCalculator.sumGoldEquivalent(_goldRows);
+        if (!mounted) return;
+        Navigator.of(context).pop(
+          TradeInScrapDraft(
+            scrapPayload: payload,
+            scrapTotalKrw: scrapTotal,
+            cartTotalKrw: cartTotal,
+            cartGoldWeightGrams: _parseDouble(_goldPurchaseGrams),
+            netCashDeltaKrw: net,
+            goldEquivalent585: goldEq,
+            storeLocation: _storeLocation,
+          ),
+        );
+        return;
+      }
+
       final result = await widget.database.upsertScrapMetalIntake(payload);
       if (!result.ok) {
         _snack(result.error ?? 'Не удалось сохранить', error: true);
@@ -473,25 +578,33 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final tradeIn = widget.tradeInMode;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text('Приёмка лома', style: AppTypography.heading(fontSize: 20)),
-        bottom: TabBar(
-          controller: _tabs,
-          tabs: const [
-            Tab(text: 'Приёмка и расчёт'),
-            Tab(text: 'Журнал и архив'),
-          ],
+        title: Text(
+          tradeIn ? 'Приёмка лома (Trade-In)' : 'Приёмка лома',
+          style: AppTypography.heading(fontSize: 20),
         ),
+        bottom: tradeIn
+            ? null
+            : TabBar(
+                controller: _tabs,
+                tabs: const [
+                  Tab(text: 'Приёмка и расчёт'),
+                  Tab(text: 'Журнал и архив'),
+                ],
+              ),
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          _buildIntakeTab(),
-          _buildJournalTab(),
-        ],
-      ),
+      body: tradeIn
+          ? _buildIntakeTab()
+          : TabBarView(
+              controller: _tabs,
+              children: [
+                _buildIntakeTab(),
+                _buildJournalTab(),
+              ],
+            ),
     );
   }
 
@@ -579,6 +692,8 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                   ),
                 ),
               ),
+            if (widget.tradeInMode && _calculated && _tradeInNetDelta != null)
+              _TradeInDeltaBanner(netDeltaKrw: _tradeInNetDelta!),
             SizedBox(height: wide ? 8 : 12),
             Wrap(
               spacing: 8,
@@ -611,9 +726,11 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(
-                          _editingId == null
-                              ? 'Сохранить акт приёмки'
-                              : 'Сохранить изменения в акте',
+                          widget.tradeInMode
+                              ? 'Принять'
+                              : (_editingId == null
+                                  ? 'Принять'
+                                  : 'Принять'),
                         ),
                 ),
                 if (_editingId != null)
@@ -1532,6 +1649,61 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TradeInDeltaBanner extends StatelessWidget {
+  const _TradeInDeltaBanner({required this.netDeltaKrw});
+
+  final int netDeltaKrw;
+
+  @override
+  Widget build(BuildContext context) {
+    final String badge;
+    final Color bg;
+    final Color fg;
+    final String amount;
+    if (netDeltaKrw > 0) {
+      badge = 'Получить оплату от покупателя';
+      bg = const Color(0xFFE8F5E9);
+      fg = const Color(0xFF1B5E20);
+      amount = '+${formatWon(netDeltaKrw)}';
+    } else if (netDeltaKrw < 0) {
+      badge = 'Доплатить покупателю';
+      bg = const Color(0xFFFFEBEE);
+      fg = AppColors.saleRed;
+      amount = '−${formatWon(netDeltaKrw.abs())}';
+    } else {
+      badge = 'Обмен без доплаты';
+      bg = AppColors.cardBackground;
+      fg = AppColors.textSecondary;
+      amount = formatWon(0);
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Card(
+        color: bg,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                amount,
+                style: AppTypography.heading(fontSize: 22).copyWith(color: fg),
+              ),
+              const SizedBox(height: 6),
+              Chip(
+                label: Text(badge, style: TextStyle(color: fg, fontSize: 12)),
+                backgroundColor: Colors.transparent,
+                side: BorderSide(color: fg.withValues(alpha: 0.45)),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
         ),
       ),
     );

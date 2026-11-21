@@ -446,12 +446,39 @@ class _KpiHeader extends StatelessWidget {
             )
           else ...[
             Text(
-              formatWon(s?.totalSumKrw ?? 0),
+              formatWon(
+                (s?.tradeInScrapKrw ?? 0) > 0
+                    ? (s?.netCashKrw ?? s?.totalSumKrw ?? 0)
+                    : (s?.totalSumKrw ?? 0),
+              ),
               style: AppTypography.heading(fontSize: 30).copyWith(
                 color: AppColors.textOnPrimary,
                 letterSpacing: -0.5,
               ),
             ),
+            if ((s?.tradeInScrapKrw ?? 0) > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Фактически в кассу (чистая выручка)',
+                style: AppTypography.productMeta().copyWith(
+                  color: AppColors.textOnPrimary.withValues(alpha: 0.88),
+                  fontSize: 11,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Продано изделий: ${formatWon(s?.grossSalesKrw ?? s?.totalSumKrw ?? 0)}',
+                style: AppTypography.productMeta().copyWith(
+                  color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                ),
+              ),
+              Text(
+                'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): −${formatWon(s?.tradeInScrapKrw ?? 0)}',
+                style: AppTypography.productMeta().copyWith(
+                  color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                ),
+              ),
+            ],
             const SizedBox(height: 2),
             Text(
               '${s?.totalCount ?? 0} поз.',
@@ -669,8 +696,33 @@ class _SalesHistoryTile extends StatelessWidget {
                           icon: Icons.schedule,
                           label: soldAt,
                         ),
+                        if (row.isTradeIn && row.scrapTradeInKrw > 0)
+                          _InfoChip(
+                            icon: Icons.recycling_outlined,
+                            label: 'С ломом (Trade-In)',
+                            emphasized: true,
+                          ),
                       ],
                     ),
+                    if (row.isTradeIn && row.scrapTradeInKrw > 0) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Лом: −${formatWon(row.scrapTradeInKrw)}',
+                        style: AppTypography.productMeta().copyWith(
+                          color: AppColors.saleRed,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (row.netCashDeltaKrw != null)
+                        Text(
+                          row.netCashDeltaKrw! > 0
+                              ? 'Получено от клиента: +${formatWon(row.netCashDeltaKrw!)}'
+                              : row.netCashDeltaKrw! < 0
+                                  ? 'Доплачено покупателю: −${formatWon(row.netCashDeltaKrw!.abs())}'
+                                  : 'Обмен без доплаты',
+                          style: AppTypography.productMeta(),
+                        ),
+                    ],
                   ],
                 ),
               ),

@@ -64,6 +64,12 @@ class ScrapPayoutBreakdown {
 }
 
 abstract final class ScrapMetalCalculator {
+  /// Округление суммы приёмки лома вниз до 1 000 ₩ (в пользу магазина).
+  static int floorKrwTo1000(int rawAmount) {
+    if (rawAmount <= 0) return 0;
+    return (rawAmount ~/ 1000) * 1000;
+  }
+
   static ScrapPayoutBreakdown computePayout({
     required double totalEquivalent,
     required double purchaseOffsetGrams,
@@ -74,12 +80,13 @@ abstract final class ScrapMetalCalculator {
     final offset = purchaseOffsetGrams < 0 ? 0.0 : purchaseOffsetGrams;
     final tradein = offset < total ? offset : total;
     final standard = total - tradein;
-    final payout = (tradein * tradeinRateKrw + standard * standardRateKrw).round();
+    final raw = (tradein * tradeinRateKrw + standard * standardRateKrw).round();
+    final payout = floorKrwTo1000(raw < 0 ? 0 : raw);
     return ScrapPayoutBreakdown(
       totalEquivalent: total,
       tradeinPaidGrams: tradein,
       standardPaidGrams: standard,
-      payoutKrw: payout < 0 ? 0 : payout,
+      payoutKrw: payout,
     );
   }
 

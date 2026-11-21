@@ -22,10 +22,18 @@ class SalesHistorySummary {
     required this.silverSumKrw,
     required this.silverCount,
     required this.otherCount,
+    this.grossSalesKrw = 0,
+    this.tradeInScrapKrw = 0,
+    this.tradeInBatchCount = 0,
+    this.netCashKrw = 0,
   });
 
   final int totalSumKrw;
   final int totalCount;
+  final int grossSalesKrw;
+  final int tradeInScrapKrw;
+  final int tradeInBatchCount;
+  final int netCashKrw;
   final double goldWeightGrams;
   final int goldSumKrw;
   final int goldCount;
@@ -39,6 +47,10 @@ class SalesHistorySummary {
       return const SalesHistorySummary(
         totalSumKrw: 0,
         totalCount: 0,
+        grossSalesKrw: 0,
+        tradeInScrapKrw: 0,
+        tradeInBatchCount: 0,
+        netCashKrw: 0,
         goldWeightGrams: 0,
         goldSumKrw: 0,
         goldCount: 0,
@@ -49,9 +61,17 @@ class SalesHistorySummary {
       );
     }
     final map = Map<String, dynamic>.from(raw);
+    final gross = _numToInt(map['gross_sales_krw']);
+    final total = _numToInt(map['total_sum_krw']);
+    final tradeIn = _numToInt(map['trade_in_scrap_krw']);
+    final netCash = _numToInt(map['net_cash_krw']);
     return SalesHistorySummary(
-      totalSumKrw: _numToInt(map['total_sum_krw']),
+      totalSumKrw: total,
       totalCount: _numToInt(map['total_count']),
+      grossSalesKrw: gross > 0 ? gross : total,
+      tradeInScrapKrw: tradeIn,
+      tradeInBatchCount: _numToInt(map['trade_in_batch_count']),
+      netCashKrw: netCash > 0 || tradeIn > 0 ? netCash : total,
       goldWeightGrams: _numToDouble(map['gold_weight_grams']),
       goldSumKrw: _numToInt(map['gold_sum_krw']),
       goldCount: _numToInt(map['gold_count']),
@@ -98,6 +118,10 @@ class SalesHistoryRow {
     this.canReturn = false,
     this.rawLegacyPayload,
     this.migrationMeta,
+    this.saleBatchId,
+    this.scrapTradeInKrw = 0,
+    this.netCashDeltaKrw,
+    this.isTradeIn = false,
   });
 
   final String id;
@@ -123,6 +147,10 @@ class SalesHistoryRow {
   final bool canReturn;
   final Map<String, dynamic>? rawLegacyPayload;
   final Map<String, dynamic>? migrationMeta;
+  final String? saleBatchId;
+  final int scrapTradeInKrw;
+  final int? netCashDeltaKrw;
+  final bool isTradeIn;
 
   bool get isReturnLine =>
       priceKrw < 0 ||
@@ -254,6 +282,10 @@ class SalesHistoryRow {
       metalCategory: map['metal_category']?.toString().trim(),
       sourceSystem: map['source_system']?.toString().trim(),
       canReturn: map['can_return'] == true,
+      saleBatchId: map['sale_batch_id']?.toString().trim(),
+      scrapTradeInKrw: _parseKrw(map['scrap_trade_in_krw']),
+      netCashDeltaKrw: _parseKrwOpt(map['net_cash_delta_krw']),
+      isTradeIn: map['is_trade_in'] == true,
     );
   }
 

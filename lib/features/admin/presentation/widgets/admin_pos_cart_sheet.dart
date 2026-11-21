@@ -9,6 +9,9 @@ import '../../../profile/domain/models/user_profile.dart';
 import '../../application/pos_cart_controller.dart';
 import '../../domain/admin_pos_sale_exception.dart';
 import '../../domain/models/pos_cart_item.dart';
+import '../../domain/trade_in_scrap_draft.dart';
+import '../screens/scrap_metal_intake_screen.dart';
+import 'admin_pos_trade_in_section.dart';
 import 'admin_product_photo_preview.dart';
 
 abstract final class AdminPosPaymentMethods {
@@ -54,6 +57,7 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
   bool _sellersLoading = true;
   List<SellerItem> _activeSellers = const [];
   String? _selectedPromoCode;
+  String _storeLocation = 'ICN';
 
   @override
   void initState() {
@@ -129,11 +133,17 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
         .toList(growable: false);
     final seller = _selectedSeller!;
     try {
+      final draft = widget.cart.tradeInDraft;
       final result = await widget.database.archiveAdminPosSale(
         lines: widget.cart.toSaleLineInputs(),
         sellerName: seller.name,
         sellerCode: seller.promoCode,
         paymentMethod: _paymentMethod,
+        scrapTradeInPayload: draft?.scrapPayload,
+        tradeInNetCashDeltaKrw: draft != null
+            ? widget.cart.totalFinalKrw - draft.scrapTotalKrw
+            : null,
+        tradeInScrapTotalKrw: draft?.scrapTotalKrw,
       );
       if (!mounted) return;
       if (result.ok) {
@@ -143,6 +153,7 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
           sellerName: seller.name,
         );
         Navigator.of(context).pop();
+        widget.cart.clearCart();
         await widget.onArchived();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -161,6 +172,29 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
       await _showCheckoutError(error);
     } finally {
       if (mounted) setState(() => _checkoutBusy = false);
+    }
+  }
+
+  Future<void> _openTradeInScreen({TradeInScrapDraft? restore}) async {
+    final cart = widget.cart;
+    final seller = _selectedSeller;
+    final result = await Navigator.of(context).push<TradeInScrapDraft>(
+      MaterialPageRoute(
+        builder: (_) => ScrapMetalIntakeScreen(
+          database: widget.database,
+          tradeInMode: true,
+          cartTotalAmountKrw: cart.totalFinalKrw,
+          initialPurchasedGoldWeightG: cart.cartGoldWeightGrams,
+          initialStoreLocation: _storeLocation,
+          initialSellerCode: seller?.promoCode,
+          initialSellerName: seller?.name,
+          initialTradeInDraft: restore,
+        ),
+      ),
+    );
+    if (result != null && mounted) {
+      cart.attachTradeInDraft(result);
+      setState(() => _storeLocation = result.storeLocation);
     }
   }
 
@@ -382,6 +416,27 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                   ListenableBuilder(
                     listenable: cart,
                     builder: (context, _) {
+                      return AdminPosTradeInSection(
+                        cart: cart,
+                        storeLocation: _storeLocation,
+                        checkoutBusy: _checkoutBusy,
+                        onStoreChanged: (code) =>
+                            setState(() => _storeLocation = code),
+                        onOpenTradeIn: () => _openTradeInScreen(),
+                        onEditTradeIn: () => _openTradeInScreen(
+                          restore: cart.tradeInDraft,
+                        ),
+                        onRemoveTradeIn: cart.clearTradeInDraft,
+                        onRecalculateTradeIn: () => _openTradeInScreen(
+                          restore: cart.tradeInDraft,
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ListenableBuilder(
+                    listenable: cart,
+                    builder: (context, _) {
                       return Row(
                         children: [
                           OutlinedButton(
@@ -405,7 +460,7 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                                       ),
                                     )
                                   : const Icon(Icons.point_of_sale_outlined),
-                              label: const Text('Оформить продажу (Archive)'),
+                              label: const Text('Оформить продажу'),
                               style: FilledButton.styleFrom(
                                 backgroundColor: const Color(0xFF1B5E20),
                               ),

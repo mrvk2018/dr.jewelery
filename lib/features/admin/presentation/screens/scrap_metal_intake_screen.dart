@@ -93,6 +93,8 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   /// Секция серебра на вкладке «Приёмка и расчёт» свёрнута по умолчанию.
   bool _isSilverExpanded = false;
 
+  final ScrollController _intakeScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -126,6 +128,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
 
   @override
   void dispose() {
+    _intakeScrollController.dispose();
     _tabs.dispose();
     _notesController.dispose();
     _goldStdRate.dispose();
@@ -611,13 +614,6 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   bool _isWideLayout(BuildContext context) =>
       MediaQuery.sizeOf(context).width >= _wideLayoutMinWidth;
 
-  bool _intakeTabNeedsVerticalScroll(bool wide) {
-    if (!wide) return true;
-    if (_isSilverExpanded) return true;
-    if (_goldRows.length > 4 || _silverRows.length > 3) return true;
-    return false;
-  }
-
   InputDecoration _scrapCompactFieldDecoration(String labelText) =>
       InputDecoration(
         labelText: labelText,
@@ -630,125 +626,176 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = _isWideLayout(context);
-        final sectionGap = wide ? 10.0 : 16.0;
+        final sectionGap = wide ? 8.0 : 16.0;
         final outerPad = wide ? 12.0 : 16.0;
-        final needsScroll = _intakeTabNeedsVerticalScroll(wide);
 
-        return ListView(
-          padding: EdgeInsets.all(outerPad),
-          physics: needsScroll
-              ? const AlwaysScrollableScrollPhysics()
-              : const NeverScrollableScrollPhysics(),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildHeaderCard(wide),
-            SizedBox(height: sectionGap),
-            _buildMetalSection(
-              wide: wide,
-              title: 'Золото (приведение к 585 пробе)',
-              rows: _goldRows,
-              standardProbe: 585,
-              eqLabel: 'В 585 пробе',
-              stdRate: _goldStdRate,
-              tradeRate: _goldTradeRate,
-              purchaseGrams: _goldPurchaseGrams,
-              breakdown: _goldBreakdown,
-              onAddCustom: () => setState(
-                () => _goldRows.add(
-                  ScrapFinenessRow(fineness: 583, customFineness: true),
-                ),
-              ),
-            ),
-            SizedBox(height: sectionGap),
-            _buildMetalSection(
-              wide: wide,
-              title: 'Серебро (приведение к 925 пробе)',
-              rows: _silverRows,
-              standardProbe: 925,
-              eqLabel: 'В 925 пробе',
-              stdRate: _silverStdRate,
-              tradeRate: _silverTradeRate,
-              purchaseGrams: _silverPurchaseGrams,
-              breakdown: _silverBreakdown,
-              collapsible: true,
-              expanded: _isSilverExpanded,
-              onToggleExpanded: () =>
-                  setState(() => _isSilverExpanded = !_isSilverExpanded),
-              summaryBadge: _silverSectionSummaryBadge(),
-              onAddCustom: () => setState(
-                () => _silverRows.add(
-                  ScrapFinenessRow(fineness: 800, customFineness: true),
-                ),
-              ),
-            ),
-            SizedBox(height: sectionGap),
-            if (_highlightPayout != null)
-              Card(
-                color: AppColors.accent.withValues(alpha: 0.12),
-                child: Padding(
-                  padding: EdgeInsets.all(wide ? 10 : 12),
-                  child: Text(
-                    _highlightPayout!,
-                    style: AppTypography.heading(fontSize: wide ? 16 : 18),
+            Expanded(
+              child: Scrollbar(
+                controller: _intakeScrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _intakeScrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: EdgeInsets.fromLTRB(
+                    outerPad,
+                    outerPad,
+                    outerPad,
+                    wide ? 8 : 12,
                   ),
-                ),
-              ),
-            if (widget.tradeInMode && _calculated && _tradeInNetDelta != null)
-              _TradeInDeltaBanner(netDeltaKrw: _tradeInNetDelta!),
-            SizedBox(height: wide ? 8 : 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: _runCalculate,
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                  ),
-                  child: const Text('Рассчитать'),
-                ),
-                FilledButton(
-                  onPressed: _saving ? null : _saveIntake,
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                  ),
-                  child: _saving
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          widget.tradeInMode
-                              ? 'Принять'
-                              : (_editingId == null
-                                  ? 'Принять'
-                                  : 'Принять'),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeaderCard(wide),
+                      SizedBox(height: sectionGap),
+                      _buildMetalSection(
+                        wide: wide,
+                        title: 'Золото (приведение к 585 пробе)',
+                        rows: _goldRows,
+                        standardProbe: 585,
+                        eqLabel: 'В 585 пробе',
+                        stdRate: _goldStdRate,
+                        tradeRate: _goldTradeRate,
+                        purchaseGrams: _goldPurchaseGrams,
+                        breakdown: _goldBreakdown,
+                        onAddCustom: () => setState(
+                          () => _goldRows.add(
+                            ScrapFinenessRow(
+                              fineness: 583,
+                              customFineness: true,
+                            ),
+                          ),
                         ),
-                ),
-                if (_editingId != null)
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _editingId = null;
-                      _resetIntakeForm();
-                    }),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: const Text('Отменить редактирование'),
+                      ),
+                      SizedBox(height: sectionGap),
+                      _buildMetalSection(
+                        wide: wide,
+                        title: 'Серебро (приведение к 925 пробе)',
+                        rows: _silverRows,
+                        standardProbe: 925,
+                        eqLabel: 'В 925 пробе',
+                        stdRate: _silverStdRate,
+                        tradeRate: _silverTradeRate,
+                        purchaseGrams: _silverPurchaseGrams,
+                        breakdown: _silverBreakdown,
+                        collapsible: true,
+                        expanded: _isSilverExpanded,
+                        onToggleExpanded: () => setState(
+                          () => _isSilverExpanded = !_isSilverExpanded,
+                        ),
+                        summaryBadge: _silverSectionSummaryBadge(),
+                        onAddCustom: () => setState(
+                          () => _silverRows.add(
+                            ScrapFinenessRow(
+                              fineness: 800,
+                              customFineness: true,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-              ],
+                ),
+              ),
             ),
+            _buildIntakeFooterBar(wide),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildIntakeFooterBar(bool wide) {
+    return Material(
+      elevation: 6,
+      color: AppColors.cardBackground,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            wide ? 12 : 16,
+            wide ? 8 : 10,
+            wide ? 12 : 16,
+            wide ? 8 : 10,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_highlightPayout != null)
+                Padding(
+                  padding: EdgeInsets.only(bottom: wide ? 6 : 8),
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    color: AppColors.accent.withValues(alpha: 0.12),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: wide ? 10 : 12,
+                        vertical: wide ? 8 : 10,
+                      ),
+                      child: Text(
+                        _highlightPayout!,
+                        style: AppTypography.heading(fontSize: wide ? 16 : 18),
+                      ),
+                    ),
+                  ),
+                ),
+              if (widget.tradeInMode && _calculated && _tradeInNetDelta != null)
+                Padding(
+                  padding: EdgeInsets.only(bottom: wide ? 6 : 8),
+                  child: _TradeInDeltaBanner(netDeltaKrw: _tradeInNetDelta!),
+                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: _runCalculate,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: const Text('Рассчитать'),
+                  ),
+                  FilledButton(
+                    onPressed: _saving ? null : _saveIntake,
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Принять'),
+                  ),
+                  if (_editingId != null)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        _editingId = null;
+                        _resetIntakeForm();
+                      }),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: const Text('Отменить редактирование'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1133,7 +1180,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     String eqLabel, {
     bool compact = false,
   }) {
-    final rowPad = compact ? 3.0 : 8.0;
+    final rowPad = compact ? 2.0 : 8.0;
     return Table(
       columnWidths: const {
         0: FlexColumnWidth(1.2),
@@ -1168,8 +1215,8 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                       padding: EdgeInsets.symmetric(vertical: rowPad),
                       child: Text('${rows[i].fineness.toInt()}'),
                     ),
-              _weightField(rows[i]),
-              _stoneField(rows[i]),
+              _weightField(rows[i], compact: compact),
+              _stoneField(rows[i], compact: compact),
               Padding(
                 padding: EdgeInsets.symmetric(vertical: rowPad),
                 child: Text(
@@ -1186,7 +1233,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   }
 
   Widget _th(String text, {bool compact = false}) => Padding(
-        padding: EdgeInsets.symmetric(vertical: compact ? 2 : 4),
+        padding: EdgeInsets.symmetric(vertical: compact ? 1 : 4),
         child: Text(
           text,
           style: AppTypography.caption(fontWeight: FontWeight.w700).copyWith(
@@ -1195,26 +1242,34 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
         ),
       );
 
-  Widget _weightField(ScrapFinenessRow row) => TextFormField(
+  Widget _weightField(ScrapFinenessRow row, {bool compact = false}) =>
+      TextFormField(
         initialValue: row.grossWeight > 0 ? '${row.grossWeight}' : '',
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: compact ? 4 : 6,
+          ),
         ),
         onChanged: (v) => setState(() {
           row.grossWeight = double.tryParse(v.replaceAll(',', '.')) ?? 0;
         }),
       );
 
-  Widget _stoneField(ScrapFinenessRow row) => TextFormField(
+  Widget _stoneField(ScrapFinenessRow row, {bool compact = false}) =>
+      TextFormField(
         initialValue: row.stoneDiscountPercent > 0
             ? '${row.stoneDiscountPercent}'
             : '',
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: compact ? 4 : 6,
+          ),
         ),
         onChanged: (v) => setState(() {
           row.stoneDiscountPercent = double.tryParse(v.replaceAll(',', '.')) ?? 0;

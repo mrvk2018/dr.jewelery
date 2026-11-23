@@ -72,46 +72,53 @@ abstract final class JewelryLabelPdfBuilder {
         final backX = JewelryLabelLayout.backTextLeftMm;
         final backW = JewelryLabelLayout.backTextWidthMm;
 
+        final frontY = JewelryLabelLayout.frontTextYMm(
+          hasSubtype: data.subtype.isNotEmpty,
+          hasSize: data.hasBackSize,
+        );
+
         final children = <pw.Widget>[
           textAt(
             xMm: frontX,
-            yMm: JewelryLabelLayout.frontCategoryYmm,
+            yMm: frontY.categoryY,
             widthMm: frontW,
             text: data.category,
             fontSize: JewelryLabelLayout.fontCategoryPt,
             weight: pw.FontWeight.bold,
             maxLines: 1,
           ),
-          if (data.subtype.isNotEmpty)
+          if (frontY.subtypeY != null)
             textAt(
               xMm: frontX,
-              yMm: JewelryLabelLayout.frontSubtypeYmm,
+              yMm: frontY.subtypeY!,
               widthMm: frontW,
               text: data.subtype,
               fontSize: JewelryLabelLayout.fontSubtypePt,
+              weight: pw.FontWeight.bold,
               maxLines: 1,
             ),
           textAt(
             xMm: frontX,
-            yMm: JewelryLabelLayout.frontWeightYmm,
+            yMm: frontY.weightY,
             widthMm: frontW,
             text: data.weightLine,
             fontSize: JewelryLabelLayout.fontWeightPt,
             weight: pw.FontWeight.bold,
             maxLines: 1,
           ),
-          if (data.sizeLine.isNotEmpty)
+          if (frontY.sizeY != null)
             textAt(
               xMm: frontX,
-              yMm: JewelryLabelLayout.frontSizeYmm,
+              yMm: frontY.sizeY!,
               widthMm: frontW,
-              text: data.sizeLine,
+              text: data.frontSizeLine,
               fontSize: JewelryLabelLayout.fontSizePt,
+              weight: pw.FontWeight.bold,
               maxLines: 1,
             ),
           textAt(
             xMm: frontX,
-            yMm: JewelryLabelLayout.frontPriceYmm,
+            yMm: frontY.priceY,
             widthMm: frontW,
             text: data.showroomPriceLine,
             fontSize: JewelryLabelLayout.fontPricePt,
@@ -153,7 +160,8 @@ abstract final class JewelryLabelPdfBuilder {
               yMm: backTextY.sizeY!,
               widthMm: backW,
               text: data.backSizeLine,
-              fontSize: JewelryLabelLayout.fontSizePt,
+              fontSize: JewelryLabelLayout.fontBackSizePt,
+              weight: pw.FontWeight.bold,
               maxLines: 1,
             ),
           );
@@ -164,9 +172,9 @@ abstract final class JewelryLabelPdfBuilder {
             xMm: backX,
             yMm: backTextY.insertsY,
             widthMm: backW,
-            text: data.insertsLine,
+            text: data.backInsertsLine,
             fontSize: JewelryLabelLayout.fontInsertsPt,
-            maxLines: 1,
+            maxLines: JewelryLabelLayout.backInsertsMaxLines,
           ),
         );
 

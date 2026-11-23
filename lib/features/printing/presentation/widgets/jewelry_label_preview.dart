@@ -102,7 +102,7 @@ class JewelryLabelPreview extends StatelessWidget {
         overflow: TextOverflow.clip,
         style: TextStyle(
           fontSize: fontPt * scale / 6,
-          height: 1.05,
+          height: 1.02,
           fontWeight: weight,
           color: AppColors.textPrimary,
         ),
@@ -120,36 +120,49 @@ class JewelryLabelPreview extends StatelessWidget {
       );
     }
 
+    final frontY = JewelryLabelLayout.frontTextYMm(
+      hasSubtype: data.subtype.isNotEmpty,
+      hasSize: data.hasBackSize,
+    );
+
     add(
-      JewelryLabelLayout.frontCategoryYmm,
+      frontY.categoryY,
       line(
         data.category,
         fontPt: JewelryLabelLayout.fontCategoryPt,
         weight: FontWeight.w700,
       ),
     );
-    if (data.subtype.isNotEmpty) {
+    if (frontY.subtypeY != null) {
       add(
-        JewelryLabelLayout.frontSubtypeYmm,
-        line(data.subtype, fontPt: JewelryLabelLayout.fontSubtypePt),
+        frontY.subtypeY!,
+        line(
+          data.subtype,
+          fontPt: JewelryLabelLayout.fontSubtypePt,
+          weight: FontWeight.w700,
+        ),
       );
     }
     add(
-      JewelryLabelLayout.frontWeightYmm,
+      frontY.weightY,
       line(
         data.weightLine,
         fontPt: JewelryLabelLayout.fontWeightPt,
         weight: FontWeight.w700,
       ),
     );
-    if (data.sizeLine.isNotEmpty) {
+    if (frontY.sizeY != null) {
       add(
-        JewelryLabelLayout.frontSizeYmm,
-        line(data.sizeLine, fontPt: JewelryLabelLayout.fontSizePt),
+        frontY.sizeY!,
+        line(
+          data.frontSizeLine,
+          fontPt: JewelryLabelLayout.fontSizePt,
+          weight: FontWeight.w700,
+        ),
       );
     }
     add(
-      JewelryLabelLayout.frontPriceYmm,
+      frontY.priceY,
       line(
         data.showroomPriceLine,
         fontPt: JewelryLabelLayout.fontPricePt,
@@ -176,6 +189,7 @@ class JewelryLabelPreview extends StatelessWidget {
       String text, {
       required double fontPt,
       int maxLines = 1,
+      FontWeight weight = FontWeight.w400,
     }) {
       return Text(
         text,
@@ -183,7 +197,8 @@ class JewelryLabelPreview extends StatelessWidget {
         overflow: TextOverflow.clip,
         style: TextStyle(
           fontSize: fontPt * scale / 6,
-          height: 1.05,
+          height: 1.02,
+          fontWeight: weight,
           color: AppColors.textPrimary,
         ),
       );
@@ -220,13 +235,21 @@ class JewelryLabelPreview extends StatelessWidget {
     if (data.hasBackSize) {
       addTextRow(
         backTextY.sizeY!,
-        backText(data.backSizeLine, fontPt: JewelryLabelLayout.fontSizePt),
+        backText(
+          data.backSizeLine,
+          fontPt: JewelryLabelLayout.fontBackSizePt,
+          weight: FontWeight.w700,
+        ),
       );
     }
 
     addTextRow(
       backTextY.insertsY,
-      backText(data.insertsLine, fontPt: JewelryLabelLayout.fontInsertsPt),
+      backText(
+        data.backInsertsLine,
+        fontPt: JewelryLabelLayout.fontInsertsPt,
+        maxLines: JewelryLabelLayout.backInsertsMaxLines,
+      ),
     );
 
     if (backDesc.isNotEmpty && backTextY.descriptionY != null) {

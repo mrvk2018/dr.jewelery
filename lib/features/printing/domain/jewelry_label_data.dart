@@ -4,7 +4,7 @@ import '../../../core/utils/showroom_price_utils.dart';
 import '../../../core/utils/won_format.dart';
 import 'jewelry_label_layout.dart';
 
-/// DTO гантельки 12×60 mm: лицо / оборот / QR.
+/// DTO гантельки 60×12 mm: лицо / оборот / QR.
 class JewelryLabelData {
   const JewelryLabelData({
     required this.category,
@@ -44,7 +44,12 @@ class JewelryLabelData {
     return t.isNotEmpty && t != '—' && t != '-';
   }
 
+  String get frontSizeLine => backSizeLine;
+
   String get backSizeLine => hasBackSize ? 'Р-р: ${sizeLine.trim()}' : '';
+
+  String get backInsertsLine =>
+      JewelryLabelLayout.clampBackInserts(insertsLine);
 
   String get backDescriptionLine =>
       JewelryLabelLayout.clampBackDescription(descriptionLine);

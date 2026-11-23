@@ -102,7 +102,7 @@ class JewelryLabelPreview extends StatelessWidget {
         overflow: TextOverflow.clip,
         style: TextStyle(
           fontSize: fontPt * scale / 6,
-          height: 1.02,
+          height: JewelryLabelLayout.textLineHeight,
           fontWeight: weight,
           color: AppColors.textPrimary,
         ),
@@ -139,7 +139,6 @@ class JewelryLabelPreview extends StatelessWidget {
         line(
           data.subtype,
           fontPt: JewelryLabelLayout.fontSubtypePt,
-          weight: FontWeight.w700,
         ),
       );
     }
@@ -166,7 +165,7 @@ class JewelryLabelPreview extends StatelessWidget {
       line(
         data.showroomPriceLine,
         fontPt: JewelryLabelLayout.fontPricePt,
-        weight: FontWeight.w800,
+        weight: FontWeight.w700,
       ),
     );
 
@@ -197,7 +196,7 @@ class JewelryLabelPreview extends StatelessWidget {
         overflow: TextOverflow.clip,
         style: TextStyle(
           fontSize: fontPt * scale / 6,
-          height: 1.02,
+          height: JewelryLabelLayout.textLineHeight,
           fontWeight: weight,
           color: AppColors.textPrimary,
         ),

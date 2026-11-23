@@ -30,15 +30,18 @@ abstract final class JewelryLabelLayout {
         marginAll: 0,
       );
 
-  /// Лицо: Y 0.8–7.8 mm (5 строк с шагом 1.6 mm, без «дыр» при пропусках).
-  static const double frontFirstLineYMm = 0.8;
-  static const double frontLineStepMm = 1.6;
+  /// Лицо: Y 0.6–7.9 mm (фиксированная сетка, без «дыр» при пропусках).
+  static const List<double> frontLineYsMm = [0.6, 2.4, 4.2, 6.0, 7.9];
 
-  static const double fontCategoryPt = 6.5;
-  static const double fontSubtypePt = 6.5;
-  static const double fontWeightPt = 7.0;
-  static const double fontSizePt = 7.0;
-  static const double fontPricePt = 8.0;
+  static const double fontCategoryPt = 5.3;
+  static const double fontSubtypePt = 4.9;
+  static const double fontWeightPt = 5.3;
+  static const double fontSizePt = 5.3;
+  static const double fontPricePt = 6.0;
+
+  /// Межстрочный коэффициент (Flutter `height` / плотный PDF).
+  static const double textLineHeight = 1.0;
+  static const double pdfLineSpacing = 0;
 
   /// Оборот: QR 8×8 @ 41.2×1.8 mm; текст 49.8–58.5 mm (ширина 8.7 mm).
   static const double backQrLeftMm = 41.2;
@@ -49,16 +52,17 @@ abstract final class JewelryLabelLayout {
   static const double backTextRightMm = 58.5;
   static const double backTextWidthMm = backTextRightMm - backTextLeftMm;
 
-  static const double backTextFirstLineYMm = 0.8;
-  static const double backSizeLineStepMm = 2.0;
-  static const double backInsertsBlockHeightMm = 3.85;
-  static const double backDescriptionBlockHeightMm = 3.6;
+  static const double backSizeYMm = 0.7;
+  static const double backInsertsYMmWithSize = 2.7;
+  static const double backInsertsYMmNoSize = 0.7;
+  static const double backDescriptionYMmWithSize = 7.3;
+  static const double backDescriptionYMmNoSize = 5.0;
 
-  static const double fontBackSizePt = 6.5;
-  static const double fontInsertsPt = 6.0;
+  static const double fontBackSizePt = 5.3;
+  static const double fontInsertsPt = 4.6;
   static const int backInsertsMaxLines = 2;
   static const int backInsertsMaxChars = 22;
-  static const double fontDescriptionPt = 5.8;
+  static const double fontDescriptionPt = 4.6;
   static const int backDescriptionMaxChars = 20;
   static const int backDescriptionMaxLines = 2;
 
@@ -72,6 +76,17 @@ abstract final class JewelryLabelLayout {
   static String clampBackInserts(String raw) {
     final t = raw.trim();
     if (t.isEmpty) return 'Без камней';
+    final ctSplit = RegExp(
+      r'^(.+?)(\s+[\d.,]+\s*ct)\s*$',
+      caseSensitive: false,
+    ).firstMatch(t);
+    if (ctSplit != null && t.length > 16) {
+      final name = ctSplit.group(1)!.trim();
+      final carat = ctSplit.group(2)!.trim();
+      if (name.length <= backInsertsMaxChars) {
+        return '$name\n$carat';
+      }
+    }
     if (t.length <= backInsertsMaxChars) return t;
     return '${t.substring(0, backInsertsMaxChars)}…';
   }
@@ -87,26 +102,24 @@ abstract final class JewelryLabelLayout {
     required bool hasSubtype,
     required bool hasSize,
   }) {
-    var y = frontFirstLineYMm;
-    final categoryY = y;
-    y += frontLineStepMm;
+    var idx = 0;
+    double nextY() => frontLineYsMm[idx++];
+
+    final categoryY = nextY();
 
     double? subtypeY;
     if (hasSubtype) {
-      subtypeY = y;
-      y += frontLineStepMm;
+      subtypeY = nextY();
     }
 
-    final weightY = y;
-    y += frontLineStepMm;
+    final weightY = nextY();
 
     double? sizeY;
     if (hasSize) {
-      sizeY = y;
-      y += frontLineStepMm;
+      sizeY = nextY();
     }
 
-    final priceY = y;
+    final priceY = nextY();
     return (
       categoryY: categoryY,
       subtypeY: subtypeY,
@@ -125,18 +138,16 @@ abstract final class JewelryLabelLayout {
     required bool hasSize,
     required bool hasDescription,
   }) {
-    var y = backTextFirstLineYMm;
-    double? sizeY;
-    if (hasSize) {
-      sizeY = y;
-      y += backSizeLineStepMm;
-    }
-    final insertsY = y;
-    y += backInsertsBlockHeightMm;
+    final double? sizeY = hasSize ? backSizeYMm : null;
+    final insertsY =
+        hasSize ? backInsertsYMmWithSize : backInsertsYMmNoSize;
+    final double? descriptionY = hasDescription
+        ? (hasSize ? backDescriptionYMmWithSize : backDescriptionYMmNoSize)
+        : null;
     return (
       sizeY: sizeY,
       insertsY: insertsY,
-      descriptionY: hasDescription ? y : null,
+      descriptionY: descriptionY,
     );
   }
 

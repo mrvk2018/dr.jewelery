@@ -58,7 +58,7 @@ abstract final class JewelryLabelPdfBuilder {
                   font: font,
                   fontSize: fontSize,
                   fontWeight: weight,
-                  lineSpacing: 0.5,
+                  lineSpacing: JewelryLabelLayout.pdfLineSpacing,
                 ),
                 maxLines: maxLines,
                 overflow: pw.TextOverflow.clip,
@@ -94,7 +94,6 @@ abstract final class JewelryLabelPdfBuilder {
               widthMm: frontW,
               text: data.subtype,
               fontSize: JewelryLabelLayout.fontSubtypePt,
-              weight: pw.FontWeight.bold,
               maxLines: 1,
             ),
           textAt(

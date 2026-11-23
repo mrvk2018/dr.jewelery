@@ -2,6 +2,7 @@ import '../../../core/constants/jewelry_category_subtypes.dart';
 import '../../../core/utils/product_size_utils.dart';
 import '../../../core/utils/showroom_price_utils.dart';
 import '../../../core/utils/won_format.dart';
+import 'jewelry_label_layout.dart';
 
 /// DTO гантельки 12×60 mm: лицо / оборот / QR.
 class JewelryLabelData {
@@ -37,6 +38,16 @@ class JewelryLabelData {
       formatShowroomWonForJewelryLabel(showroomPriceKrw);
 
   String get priceLine => 'Цена: ${formatWonForLabel(showroomPriceKrw)}';
+
+  bool get hasBackSize {
+    final t = sizeLine.trim();
+    return t.isNotEmpty && t != '—' && t != '-';
+  }
+
+  String get backSizeLine => hasBackSize ? 'Р-р: ${sizeLine.trim()}' : '';
+
+  String get backDescriptionLine =>
+      JewelryLabelLayout.clampBackDescription(descriptionLine);
 
   factory JewelryLabelData.fromProductMap(Map<String, dynamic> map) {
     final nameText = _resolveProductName(map);

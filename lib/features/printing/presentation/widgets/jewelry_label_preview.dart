@@ -4,7 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../domain/jewelry_label_data.dart';
 import '../../domain/jewelry_label_layout.dart';
 
-/// Превью гантельки 12×60 mm (два ушка + перемычка).
+/// Превью гантельки 60×12 mm (лицо слева · перемычка · оборот справа).
 class JewelryLabelPreview extends StatelessWidget {
   const JewelryLabelPreview({
     super.key,
@@ -30,7 +30,7 @@ class JewelryLabelPreview extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Гантелька · 12×60 mm (лицо сверху)',
+          'Гантелька · 60×12 mm (лицо слева)',
           style: Theme.of(context).textTheme.labelMedium,
         ),
         const SizedBox(height: 8),
@@ -53,40 +53,30 @@ class JewelryLabelPreview extends StatelessWidget {
             children: [
               if (showCutGuides) ...[
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  top: mmPx(JewelryLabelLayout.topCutLineMm),
-                  child: _cutGuide(),
+                  left: mmPx(JewelryLabelLayout.leftCutLineMm),
+                  top: 0,
+                  bottom: 0,
+                  child: _verticalCutGuide(),
                 ),
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  top: mmPx(JewelryLabelLayout.bottomCutLineMm),
-                  child: _cutGuide(),
+                  left: mmPx(JewelryLabelLayout.rightCutLineMm),
+                  top: 0,
+                  bottom: 0,
+                  child: _verticalCutGuide(),
                 ),
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  top: mmPx(JewelryLabelLayout.bridgeTopMm),
-                  height: mmPx(
-                    JewelryLabelLayout.bridgeBottomMm -
-                        JewelryLabelLayout.bridgeTopMm,
+                  left: mmPx(JewelryLabelLayout.bridgeLeftMm),
+                  top: 0,
+                  width: mmPx(
+                    JewelryLabelLayout.bridgeRightMm -
+                        JewelryLabelLayout.bridgeLeftMm,
                   ),
+                  height: height,
                   child: ColoredBox(color: Colors.grey.shade100),
                 ),
               ],
-              Positioned(
-                left: mmPx(JewelryLabelLayout.earMarginHorizontalMm),
-                top: mmPx(JewelryLabelLayout.frontCategoryYmm),
-                width: mmPx(JewelryLabelLayout.contentWidthMm),
-                child: _FrontEarColumn(data: data, scale: scale),
-              ),
-              Positioned(
-                left: 0,
-                width: width,
-                top: mmPx(JewelryLabelLayout.backQrTopMm - 1),
-                child: _BackEarColumn(data: data, scale: scale, mmPx: mmPx),
-              ),
+              ..._frontEarLayers(data, scale, mmPx),
+              ..._backEarLayers(data, scale, mmPx),
             ],
           ),
         ),
@@ -94,129 +84,204 @@ class JewelryLabelPreview extends StatelessWidget {
     );
   }
 
-  Widget _cutGuide() => LayoutBuilder(
+  List<Widget> _frontEarLayers(
+    JewelryLabelData data,
+    double scale,
+    double Function(double mm) mmPx,
+  ) {
+    final layers = <Widget>[];
+
+    Text line(
+      String text, {
+      required double fontPt,
+      FontWeight weight = FontWeight.w400,
+    }) {
+      return Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.clip,
+        style: TextStyle(
+          fontSize: fontPt * scale / 6,
+          height: 1.05,
+          fontWeight: weight,
+          color: AppColors.textPrimary,
+        ),
+      );
+    }
+
+    void add(double yMm, Widget child) {
+      layers.add(
+        Positioned(
+          left: mmPx(JewelryLabelLayout.frontContentLeftMm),
+          top: mmPx(yMm),
+          width: mmPx(JewelryLabelLayout.frontContentWidthMm),
+          child: child,
+        ),
+      );
+    }
+
+    add(
+      JewelryLabelLayout.frontCategoryYmm,
+      line(
+        data.category,
+        fontPt: JewelryLabelLayout.fontCategoryPt,
+        weight: FontWeight.w700,
+      ),
+    );
+    if (data.subtype.isNotEmpty) {
+      add(
+        JewelryLabelLayout.frontSubtypeYmm,
+        line(data.subtype, fontPt: JewelryLabelLayout.fontSubtypePt),
+      );
+    }
+    add(
+      JewelryLabelLayout.frontWeightYmm,
+      line(
+        data.weightLine,
+        fontPt: JewelryLabelLayout.fontWeightPt,
+        weight: FontWeight.w700,
+      ),
+    );
+    if (data.sizeLine.isNotEmpty) {
+      add(
+        JewelryLabelLayout.frontSizeYmm,
+        line(data.sizeLine, fontPt: JewelryLabelLayout.fontSizePt),
+      );
+    }
+    add(
+      JewelryLabelLayout.frontPriceYmm,
+      line(
+        data.showroomPriceLine,
+        fontPt: JewelryLabelLayout.fontPricePt,
+        weight: FontWeight.w800,
+      ),
+    );
+
+    return layers;
+  }
+
+  List<Widget> _backEarLayers(
+    JewelryLabelData data,
+    double scale,
+    double Function(double mm) mmPx,
+  ) {
+    final qrSide = mmPx(JewelryLabelLayout.backQrSizeMm);
+    final backDesc = data.backDescriptionLine;
+    final backTextY = JewelryLabelLayout.backTextYMm(
+      hasSize: data.hasBackSize,
+      hasDescription: backDesc.isNotEmpty,
+    );
+
+    Text backText(
+      String text, {
+      required double fontPt,
+      int maxLines = 1,
+    }) {
+      return Text(
+        text,
+        maxLines: maxLines,
+        overflow: TextOverflow.clip,
+        style: TextStyle(
+          fontSize: fontPt * scale / 6,
+          height: 1.05,
+          color: AppColors.textPrimary,
+        ),
+      );
+    }
+
+    final layers = <Widget>[
+      Positioned(
+        left: mmPx(JewelryLabelLayout.backQrLeftMm),
+        top: mmPx(JewelryLabelLayout.backQrTopMm),
+        width: qrSide,
+        height: qrSide,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.black26),
+          ),
+          child: Center(
+            child: Icon(Icons.qr_code_2, size: qrSide * 0.85),
+          ),
+        ),
+      ),
+    ];
+
+    void addTextRow(double yMm, Widget child) {
+      layers.add(
+        Positioned(
+          left: mmPx(JewelryLabelLayout.backTextLeftMm),
+          top: mmPx(yMm),
+          width: mmPx(JewelryLabelLayout.backTextWidthMm),
+          child: child,
+        ),
+      );
+    }
+
+    if (data.hasBackSize) {
+      addTextRow(
+        backTextY.sizeY!,
+        backText(data.backSizeLine, fontPt: JewelryLabelLayout.fontSizePt),
+      );
+    }
+
+    addTextRow(
+      backTextY.insertsY,
+      backText(data.insertsLine, fontPt: JewelryLabelLayout.fontInsertsPt),
+    );
+
+    if (backDesc.isNotEmpty && backTextY.descriptionY != null) {
+      addTextRow(
+        backTextY.descriptionY!,
+        backText(
+          backDesc,
+          fontPt: JewelryLabelLayout.fontDescriptionPt,
+          maxLines: JewelryLabelLayout.backDescriptionMaxLines,
+        ),
+      );
+    }
+
+    return layers;
+  }
+
+  Widget _verticalCutGuide() => LayoutBuilder(
         builder: (context, constraints) {
           return CustomPaint(
-            size: Size(constraints.maxWidth, 1),
-            painter: _DashedLinePainter(),
+            size: Size(1, constraints.maxHeight),
+            painter: _DashedLinePainter(axis: Axis.vertical),
           );
         },
       );
 }
 
-class _FrontEarColumn extends StatelessWidget {
-  const _FrontEarColumn({required this.data, required this.scale});
-
-  final JewelryLabelData data;
-  final double scale;
-
-  @override
-  Widget build(BuildContext context) {
-    final base = TextStyle(
-      fontSize: 6.5 * scale / 6,
-      height: 1.05,
-      color: AppColors.textPrimary,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(data.category, style: base.copyWith(fontWeight: FontWeight.w700)),
-        if (data.subtype.isNotEmpty) ...[
-          SizedBox(height: 1.5 * scale / 6),
-          Text(data.subtype, style: base.copyWith(fontSize: 6 * scale / 6)),
-        ],
-        SizedBox(height: 1.5 * scale / 6),
-        Text(
-          data.weightLine,
-          style: base.copyWith(
-            fontWeight: FontWeight.w700,
-            fontSize: 6.5 * scale / 6,
-          ),
-        ),
-        if (data.sizeLine.isNotEmpty) ...[
-          SizedBox(height: 1.5 * scale / 6),
-          Text(data.sizeLine, style: base.copyWith(fontSize: 6 * scale / 6)),
-        ],
-        SizedBox(height: 1.5 * scale / 6),
-        Text(
-          data.showroomPriceLine,
-          style: base.copyWith(
-            fontWeight: FontWeight.w800,
-            fontSize: 7 * scale / 6,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _BackEarColumn extends StatelessWidget {
-  const _BackEarColumn({
-    required this.data,
-    required this.scale,
-    required this.mmPx,
-  });
-
-  final JewelryLabelData data;
-  final double scale;
-  final double Function(double mm) mmPx;
-
-  @override
-  Widget build(BuildContext context) {
-    final qr = mmPx(JewelryLabelLayout.backQrSizeMm);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Align(
-          alignment: Alignment.center,
-          child: SizedBox(
-          width: qr,
-          height: qr,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.black26),
-            ),
-            child: Center(
-              child: Icon(Icons.qr_code_2, size: qr * 0.85),
-            ),
-          ),
-        ),
-        ),
-        SizedBox(height: 2 * scale / 6),
-        Text(
-          data.insertsLine,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 6 * scale / 6, height: 1.05),
-        ),
-        if (data.descriptionLine.isNotEmpty) ...[
-          SizedBox(height: 1 * scale / 6),
-          Text(
-            data.descriptionLine,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 5.5 * scale / 6, height: 1.05),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
 class _DashedLinePainter extends CustomPainter {
+  const _DashedLinePainter({this.axis = Axis.horizontal});
+
+  final Axis axis;
+
   @override
   void paint(Canvas canvas, Size size) {
     const dash = 3.0;
     final paint = Paint()
       ..color = Colors.red.withValues(alpha: 0.45)
       ..strokeWidth = 0.8;
-    var x = 0.0;
-    while (x < size.width) {
-      canvas.drawLine(Offset(x, 0), Offset(x + dash, 0), paint);
-      x += dash * 2;
+
+    if (axis == Axis.horizontal) {
+      var x = 0.0;
+      while (x < size.width) {
+        canvas.drawLine(Offset(x, 0), Offset(x + dash, 0), paint);
+        x += dash * 2;
+      }
+      return;
+    }
+
+    var y = 0.0;
+    while (y < size.height) {
+      canvas.drawLine(Offset(0, y), Offset(0, y + dash), paint);
+      y += dash * 2;
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _DashedLinePainter oldDelegate) =>
+      oldDelegate.axis != axis;
 }

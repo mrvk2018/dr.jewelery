@@ -19,9 +19,7 @@ import '../../../../shared/models/product_item.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../catalog/presentation/widgets/smart_filter_widget.dart';
-import '../../../printing/application/label_print_service.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
-import '../../../printing/domain/jewelry_label_layout.dart';
 import '../../../printing/infrastructure/browser_label_print.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
@@ -108,9 +106,6 @@ class JewelryAdminDashboard extends StatefulWidget {
 }
 
 class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
-  final LabelPrintService _labelPrintService = const LabelPrintService(
-    protocol: LabelPrinterProtocol.tspl,
-  );
   final PosCartController _posCart = PosCartController();
 
   List<Map<String, dynamic>> _products = const [];
@@ -696,8 +691,9 @@ class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     if (confirmed != true || !mounted) return;
 
     try {
-      await _labelPrintService.printLabel(labelData);
-      _snack('Дубликат бирки отправлен на печать (TSPL)');
+      await printJewelryLabelPlatform(labelData);
+      if (!mounted) return;
+      _snack('Откройте диалог печати и выберите принтер (TSC TE310, 60×12 mm)');
     } catch (error, stackTrace) {
       debugPrint('JewelryAdminDashboard._printDuplicateLabel failed: $error');
       debugPrint('$stackTrace');
@@ -2826,14 +2822,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           return;
         }
         final data = JewelryLabelData.fromProductMap(row);
-        const labelService = LabelPrintService(
-          protocol: LabelPrinterProtocol.tspl,
-        );
-        await labelService.printLabel(data);
-        await printJewelryLabelPlatform(
-          data,
-          labelPrintService: labelService,
-        );
+        await printJewelryLabelPlatform(data);
       } catch (error, stackTrace) {
         debugPrint(
           'Тихая ошибка печати после ручного сохранения ($sku): $error',

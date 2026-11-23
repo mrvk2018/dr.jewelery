@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_typography.dart';
-import '../../application/label_print_service.dart';
 import '../../domain/jewelry_label_data.dart';
-import '../../domain/jewelry_label_layout.dart';
 import '../../infrastructure/browser_label_print.dart';
 import 'jewelry_label_preview.dart';
-/// Предпросмотр гантельки + печать PDF 12×60 mm.
+/// Предпросмотр гантельки + печать PDF 60×12 mm.
 class JewelryLabelPrintDialog extends StatelessWidget {
   const JewelryLabelPrintDialog({
     super.key,
@@ -44,12 +42,7 @@ class JewelryLabelPrintDialog extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
 
     final data = JewelryLabelData.fromProductMap(productRow);
-    await printJewelryLabelPlatform(
-      data,
-      labelPrintService: const LabelPrintService(
-        protocol: LabelPrinterProtocol.tspl,
-      ),
-    );
+    await printJewelryLabelPlatform(data);
   }
 
   JewelryLabelData get _data => JewelryLabelData.fromProductMap(productRow);
@@ -75,8 +68,8 @@ class JewelryLabelPrintDialog extends StatelessWidget {
               Center(child: JewelryLabelPreview(data: data, scale: 3.2)),
               const SizedBox(height: 8),
               Text(
-                'PDF 12×60 mm: лицо (категория, вид, вес, размер, витринная цена) '
-                'и оборот (QR, вставки, описание). Перемычка 20–40 mm — под отрез.',
+                'PDF 60×12 mm: лицо слева (категория, вид, вес, размер, витринная цена), '
+                'оборот справа (QR, вставки, описание). Перемычка X 20–40 mm.',
                 style: AppTypography.productMeta(),
               ),
             ],

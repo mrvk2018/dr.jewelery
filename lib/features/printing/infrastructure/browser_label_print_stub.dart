@@ -1,11 +1,7 @@
-import 'package:printing/printing.dart';
-
 import '../application/label_print_service.dart';
 import '../domain/jewelry_label_data.dart';
-import '../domain/jewelry_label_layout.dart';
-import '../domain/jewelry_label_pdf_builder.dart';
 
-/// Mobile / desktop: PDF 12×60 mm + опционально сырой TSPL/ZPL.
+/// Mobile / desktop: PDF 60×12 mm через системный диалог печати.
 Future<void> printJewelryLabelPlatform(
   JewelryLabelData data, {
   LabelPrintService? labelPrintService,
@@ -17,11 +13,6 @@ Future<void> printJewelryLabelsPlatform(
   List<JewelryLabelData> dataList, {
   LabelPrintService? labelPrintService,
 }) async {
-  if (dataList.isEmpty) return;
-
-  final bytes = await JewelryLabelPdfBuilder.buildBytes(dataList);
-  await Printing.layoutPdf(
-    onLayout: (_) async => bytes,
-    format: JewelryLabelLayout.pageFormat,
-  );
+  final service = labelPrintService ?? const LabelPrintService();
+  await service.printSystemPdfBatch(dataList);
 }

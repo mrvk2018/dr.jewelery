@@ -7,7 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'jewelry_label_data.dart';
 import 'jewelry_label_layout.dart';
 
-/// PDF гантельки: 12 × 60 mm, по одной странице на изделие.
+/// PDF гантельки: 60 × 12 mm, по одной странице на изделие.
 abstract final class JewelryLabelPdfBuilder {
   static pw.Font? _notoRegular;
 
@@ -37,11 +37,10 @@ abstract final class JewelryLabelPdfBuilder {
       pageFormat: JewelryLabelLayout.pageFormat,
       margin: pw.EdgeInsets.zero,
       build: (context) {
-        final x = JewelryLabelLayout.mm(JewelryLabelLayout.earMarginHorizontalMm);
-        final w = JewelryLabelLayout.mm(JewelryLabelLayout.contentWidthMm);
-
         pw.Widget textAt({
+          required double xMm,
           required double yMm,
+          required double widthMm,
           required String text,
           required double fontSize,
           pw.FontWeight weight = pw.FontWeight.normal,
@@ -49,10 +48,10 @@ abstract final class JewelryLabelPdfBuilder {
         }) {
           if (text.trim().isEmpty) return pw.SizedBox();
           return pw.Positioned(
-            left: x,
+            left: JewelryLabelLayout.mm(xMm),
             top: JewelryLabelLayout.mm(yMm),
             child: pw.SizedBox(
-              width: w,
+              width: JewelryLabelLayout.mm(widthMm),
               child: pw.Text(
                 text,
                 style: pw.TextStyle(
@@ -68,46 +67,64 @@ abstract final class JewelryLabelPdfBuilder {
           );
         }
 
+        final frontX = JewelryLabelLayout.frontContentLeftMm;
+        final frontW = JewelryLabelLayout.frontContentWidthMm;
+        final backX = JewelryLabelLayout.backTextLeftMm;
+        final backW = JewelryLabelLayout.backTextWidthMm;
+
         final children = <pw.Widget>[
           textAt(
+            xMm: frontX,
             yMm: JewelryLabelLayout.frontCategoryYmm,
+            widthMm: frontW,
             text: data.category,
             fontSize: JewelryLabelLayout.fontCategoryPt,
             weight: pw.FontWeight.bold,
+            maxLines: 1,
           ),
           if (data.subtype.isNotEmpty)
             textAt(
+              xMm: frontX,
               yMm: JewelryLabelLayout.frontSubtypeYmm,
+              widthMm: frontW,
               text: data.subtype,
               fontSize: JewelryLabelLayout.fontSubtypePt,
+              maxLines: 1,
             ),
           textAt(
+            xMm: frontX,
             yMm: JewelryLabelLayout.frontWeightYmm,
+            widthMm: frontW,
             text: data.weightLine,
             fontSize: JewelryLabelLayout.fontWeightPt,
             weight: pw.FontWeight.bold,
+            maxLines: 1,
           ),
           if (data.sizeLine.isNotEmpty)
             textAt(
+              xMm: frontX,
               yMm: JewelryLabelLayout.frontSizeYmm,
+              widthMm: frontW,
               text: data.sizeLine,
               fontSize: JewelryLabelLayout.fontSizePt,
+              maxLines: 1,
             ),
           textAt(
+            xMm: frontX,
             yMm: JewelryLabelLayout.frontPriceYmm,
+            widthMm: frontW,
             text: data.showroomPriceLine,
             fontSize: JewelryLabelLayout.fontPricePt,
             weight: pw.FontWeight.bold,
+            maxLines: 1,
           ),
         ];
 
         final qrSize = JewelryLabelLayout.mm(JewelryLabelLayout.backQrSizeMm);
-        final qrLeft =
-            (JewelryLabelLayout.mm(JewelryLabelLayout.labelWidthMm) - qrSize) / 2;
 
         children.add(
           pw.Positioned(
-            left: qrLeft,
+            left: JewelryLabelLayout.mm(JewelryLabelLayout.backQrLeftMm),
             top: JewelryLabelLayout.mm(JewelryLabelLayout.backQrTopMm),
             child: pw.SizedBox(
               width: qrSize,
@@ -123,22 +140,45 @@ abstract final class JewelryLabelPdfBuilder {
           ),
         );
 
+        final backDesc = data.backDescriptionLine;
+        final backTextY = JewelryLabelLayout.backTextYMm(
+          hasSize: data.hasBackSize,
+          hasDescription: backDesc.isNotEmpty,
+        );
+
+        if (data.hasBackSize) {
+          children.add(
+            textAt(
+              xMm: backX,
+              yMm: backTextY.sizeY!,
+              widthMm: backW,
+              text: data.backSizeLine,
+              fontSize: JewelryLabelLayout.fontSizePt,
+              maxLines: 1,
+            ),
+          );
+        }
+
         children.add(
           textAt(
-            yMm: JewelryLabelLayout.backInsertsYmm,
+            xMm: backX,
+            yMm: backTextY.insertsY,
+            widthMm: backW,
             text: data.insertsLine,
             fontSize: JewelryLabelLayout.fontInsertsPt,
             maxLines: 1,
           ),
         );
 
-        if (data.descriptionLine.isNotEmpty) {
+        if (backDesc.isNotEmpty && backTextY.descriptionY != null) {
           children.add(
             textAt(
-              yMm: JewelryLabelLayout.backDescriptionYmm,
-              text: data.descriptionLine,
+              xMm: backX,
+              yMm: backTextY.descriptionY!,
+              widthMm: backW,
+              text: backDesc,
               fontSize: JewelryLabelLayout.fontDescriptionPt,
-              maxLines: 3,
+              maxLines: JewelryLabelLayout.backDescriptionMaxLines,
             ),
           );
         }

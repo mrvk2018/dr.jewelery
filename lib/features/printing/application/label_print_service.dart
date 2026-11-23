@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:printing/printing.dart';
 
 import '../domain/jewelry_label_data.dart';
 import '../domain/jewelry_label_layout.dart';
@@ -30,17 +31,32 @@ class LabelPrintService {
   Future<Uint8List> buildPdfBytesBatch(List<JewelryLabelData> items) =>
       JewelryLabelPdfBuilder.buildBytes(items);
 
-  Future<void> printLabel(JewelryLabelData data) async {
-    final commands = buildCommands(data);
-    final bytes = utf8.encode(commands);
+  /// Системный диалог печати PDF (браузер / ОС), формат 60×12 mm.
+  Future<void> printSystemPdf(JewelryLabelData data) =>
+      printSystemPdfBatch([data]);
 
+  Future<void> printSystemPdfBatch(List<JewelryLabelData> items) async {
+    if (items.isEmpty) return;
+    final bytes = await buildPdfBytesBatch(items);
+    final name = items.length == 1
+        ? 'jewelry-label-${items.first.sku}'
+        : 'jewelry-labels-${items.length}';
+    await Printing.layoutPdf(
+      onLayout: (_) async => bytes,
+      format: JewelryLabelLayout.pageFormat,
+      name: name,
+    );
+  }
+
+  /// Сырой TSPL/ZPL на нативный мост; на Web — только PDF через [printSystemPdf].
+  Future<void> printLabel(JewelryLabelData data) async {
     if (kIsWeb) {
-      debugPrint(
-        'LabelPrintService[web]: TSPL/ZPL log only (${protocol.name}) '
-        '${bytes.length} bytes',
-      );
+      await printSystemPdf(data);
       return;
     }
+
+    final commands = buildCommands(data);
+    final bytes = utf8.encode(commands);
 
     await LabelPrinterBridge.sendRaw(
       payload: bytes,

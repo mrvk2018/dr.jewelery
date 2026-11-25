@@ -28,6 +28,7 @@ import '../../../../core/utils/product_size_utils.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
+import '../../data/scrap_metal_storage.dart';
 import '../screens/scrap_metal_intake_screen.dart';
 
 /// Склад/sync: камни в `insert`, legacy Pro — в `gem_inserts`.
@@ -331,6 +332,29 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ScrapMetalIntakeScreen(database: widget.database),
+      ),
+    );
+  }
+
+  Future<void> _openSellerScrapIntake() async {
+    final code = widget.presetSellerPromoCode?.trim().toUpperCase();
+    final name = widget.presetSellerName?.trim();
+    if (code == null || code.isEmpty) {
+      _snack('Смена продавца не задана', error: true);
+      return;
+    }
+    final storage = await ScrapMetalStorage.create();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ScrapMetalIntakeScreen(
+          database: widget.database,
+          initialSellerCode: code,
+          initialSellerName: name?.isNotEmpty == true ? name : code,
+          initialStoreLocation: storage.storeLocation,
+          hideJournalBulkWriteOff: true,
+          actorCode: code,
+        ),
       ),
     );
   }
@@ -740,8 +764,11 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                 final columnChildren = <Widget>[
                   _TopControlBar(
                     isSuperAdmin: panelAdmin,
+                    showSellerQuickActions: widget.sellerStaffMode,
                     onOpenDraft: _openDraftIntake,
-                    onOpenScrap: _openScrapIntake,
+                    onOpenScrap: widget.sellerStaffMode
+                        ? _openSellerScrapIntake
+                        : _openScrapIntake,
                     onAddProduct: _openAddProductDialog,
                     onProductReturn: _openProductReturnDialog,
                   ),
@@ -855,6 +882,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
 class _TopControlBar extends StatelessWidget {
   const _TopControlBar({
     required this.isSuperAdmin,
+    required this.showSellerQuickActions,
     required this.onOpenDraft,
     required this.onOpenScrap,
     required this.onAddProduct,
@@ -862,6 +890,7 @@ class _TopControlBar extends StatelessWidget {
   });
 
   final bool isSuperAdmin;
+  final bool showSellerQuickActions;
   final VoidCallback onOpenDraft;
   final VoidCallback onOpenScrap;
   final VoidCallback onAddProduct;
@@ -927,6 +956,21 @@ class _TopControlBar extends StatelessWidget {
                   icon: const Icon(Icons.replay_outlined, size: 16),
                   label: const Text('Возврат товара'),
                 ),
+              if (showSellerQuickActions) ...[
+                OutlinedButton.icon(
+                  onPressed: onOpenScrap,
+                  style: _compactBtnStyle,
+                  icon: const Icon(Icons.scale_outlined, size: 16),
+                  label: const Text('Приёмка лома'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onProductReturn,
+                  style: _compactBtnStyle,
+                  icon: const Icon(Icons.replay_outlined, size: 16),
+                  label: const Text('Возврат товара'),
+                ),
+              ],
             ],
           ),
         ),

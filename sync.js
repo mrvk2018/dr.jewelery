@@ -132,7 +132,7 @@ const DELETE_CHUNK_SIZE = 500;
 
 /** Поля products для зеркальной сверки MSSQL ↔ Supabase. */
 const MIRROR_PRODUCT_COLUMNS =
-  'id, sku, stock_quantity, status, name, description, metal, metal_type, sale_price, old_price, ' +
+  'id, sku, stock_quantity, status, product_status, manual_return_lock, name, description, metal, metal_type, sale_price, old_price, ' +
   'discount_percent, category, insert, icon_index, available_sizes, warehouse_attributes, ' +
   'weight_grams, image_url, images, store_location';
 
@@ -318,6 +318,26 @@ function mapWarehouseStatus(mssqlStatus) {
     return { status: 'active', stock_quantity: 1 };
   }
   return { status: 'hidden', stock_quantity: 0 };
+}
+
+/** После ручного/POS-возврата sync не перетирает витринные поля из MSSQL. */
+function isManualReturnProtected(existing) {
+  if (!existing) return false;
+  return existing.manual_return_lock === true && String(existing.status) === 'active';
+}
+
+function preserveManualReturnScalars(scalars, existing) {
+  if (!isManualReturnProtected(existing)) return scalars;
+  const out = { ...scalars };
+  out.status = existing.status;
+  out.stock_quantity = existing.stock_quantity;
+  if (existing.store_location != null && String(existing.store_location).trim() !== '') {
+    out.store_location = existing.store_location;
+  }
+  if (existing.product_status != null && String(existing.product_status).trim() !== '') {
+    out.product_status = existing.product_status;
+  }
+  return out;
 }
 
 function parseSizeArray(sizeValue) {
@@ -695,12 +715,14 @@ async function fetchSupabaseProductMap(supabase) {
 
   const byId = new Map();
   const statusMap = new Map();
+  const manualReturnLockById = new Map();
   for (const row of rows) {
     const id = String(row.id);
     byId.set(id, row);
     statusMap.set(id, row.status);
+    manualReturnLockById.set(id, row.manual_return_lock === true);
   }
-  return { byId, statusMap };
+  return { byId, statusMap, manualReturnLockById };
 }
 
 function stripUrlCacheBuster(url) {
@@ -928,7 +950,8 @@ async function upsertProductsInChunks(supabase, payloads) {
 }
 
 async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
-  const { byId: supabaseById, statusMap } = await fetchSupabaseProductMap(supabase);
+  const { byId: supabaseById, statusMap, manualReturnLockById } =
+    await fetchSupabaseProductMap(supabase);
   const mssqlIds = new Set(
     allInStockRows
       .map((row) => String(row.Id))
@@ -963,10 +986,11 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
     }
 
     try {
-      const { scalars, fromCache } = await buildDesiredScalarsForRow(row);
+      let { scalars, fromCache } = await buildDesiredScalarsForRow(row);
       if (!fromCache) translationApiCalls += 1;
 
       const existing = supabaseById.get(id);
+      scalars = preserveManualReturnScalars(scalars, existing);
       const isNew = !existing;
 
       let scalarsMatch = false;
@@ -1120,16 +1144,18 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
     translationApiCalls,
     cacheSize: Object.keys(translationCache).length,
     statusMap,
+    manualReturnLockById,
     mirrorStats,
   };
 }
 
-async function cleanupRemovedFromMssql(supabase, mssqlIds, statusMap) {
+async function cleanupRemovedFromMssql(supabase, mssqlIds, statusMap, manualReturnLockById) {
   const toDelete = [];
   for (const [id, status] of statusMap) {
     const sid = String(id);
     if (mssqlIds.has(sid)) continue;
     if (SYNC_SKIP_STATUSES.has(status)) continue;
+    if (manualReturnLockById?.get(sid) === true && status === 'active') continue;
     toDelete.push(sid);
   }
 
@@ -1407,6 +1433,7 @@ async function main() {
       supabase,
       stats.mssqlIds,
       stats.statusMap,
+      stats.manualReturnLockById,
     );
 
     const ms = stats.mirrorStats;

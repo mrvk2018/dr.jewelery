@@ -92,6 +92,16 @@ class SalesHistoryRepository {
     }
   }
 
+  static String posReturnErrorMessage(String code) {
+    return switch (code) {
+      'empty_product_id' => 'Не указан идентификатор товара',
+      'product_not_found' => 'Товар не найден в каталоге',
+      'no_active_sale_found' => 'Активная продажа для возврата не найдена',
+      'already_returned' => 'Возврат по этой продаже уже оформлен',
+      _ => 'Возврат не выполнен: $code',
+    };
+  }
+
   Future<void> processPosProductReturn({
     required String productId,
     required String reason,
@@ -112,13 +122,14 @@ class SalesHistoryRepository {
           posReturnAdminNameParam: admin,
         },
       );
-      if (result is Map) {
-        final map = Map<String, dynamic>.from(result);
-        final ok = map['ok'] == true || map['success'] == true;
-        if (!ok) {
-          final err = map['error']?.toString() ?? map['message']?.toString();
-          throw StateError(err ?? 'Возврат не выполнен');
-        }
+      if (result is! Map) {
+        throw StateError('Неожиданный ответ сервера при возврате');
+      }
+      final map = Map<String, dynamic>.from(result);
+      final ok = map['ok'] == true || map['success'] == true;
+      if (!ok) {
+        final err = map['error']?.toString() ?? map['message']?.toString() ?? 'unknown';
+        throw StateError(posReturnErrorMessage(err));
       }
     } on PostgrestException catch (error, stackTrace) {
       debugPrint('SalesHistoryRepository.processPosProductReturn: $error');

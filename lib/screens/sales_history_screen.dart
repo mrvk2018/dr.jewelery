@@ -62,9 +62,14 @@ String formatWeightGrams(double? grams) {
 }
 
 class SalesHistoryScreen extends StatefulWidget {
-  const SalesHistoryScreen({super.key, this.repository});
+  const SalesHistoryScreen({
+    super.key,
+    this.repository,
+    this.onProductReturned,
+  });
 
   final SalesHistoryRepository? repository;
+  final VoidCallback? onProductReturned;
 
   @override
   State<SalesHistoryScreen> createState() => SalesHistoryScreenState();
@@ -272,6 +277,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
       if (!mounted) return;
       setState(() => _returnBusyKey = null);
       _snack('Товар успешно возвращен на витрину!');
+      widget.onProductReturned?.call();
       await _loadInitial();
     } catch (error) {
       if (!mounted) return;

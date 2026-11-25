@@ -102,10 +102,12 @@ class JewelryAdminDashboard extends StatefulWidget {
   final String? presetSellerName;
 
   @override
-  State<JewelryAdminDashboard> createState() => _JewelryAdminDashboardState();
+  State<JewelryAdminDashboard> createState() => JewelryAdminDashboardState();
 }
 
-class _JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
+class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
+  /// Обновить каталог после возврата с другой вкладки (История продаж).
+  Future<void> refreshCatalog() => _refreshCatalog();
   final PosCartController _posCart = PosCartController();
 
   List<Map<String, dynamic>> _products = const [];

@@ -156,9 +156,15 @@ class _ProductReturnDialogState extends State<ProductReturnDialog> {
       if (!mounted) return;
       _snack('Возврат оформлен · $sku снова на витрине');
       Navigator.pop(context);
+    } on StateError catch (error) {
+      if (!mounted) return;
+      _snack(error.message, error: true);
     } catch (error) {
       if (!mounted) return;
-      _snack('Не удалось оформить возврат: $error', error: true);
+      _snack(
+        'Не удалось оформить возврат: ${error.toString().replaceFirst('Exception: ', '')}',
+        error: true,
+      );
     } finally {
       if (mounted) setState(() => _returnBusy = false);
     }

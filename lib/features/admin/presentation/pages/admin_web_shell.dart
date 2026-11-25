@@ -31,6 +31,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
   static const _salesHistoryTabIndex = 2;
 
   int _selectedIndex = 0;
+  final _dashboardKey = GlobalKey<JewelryAdminDashboardState>();
   final _salesHistoryKey = GlobalKey<SalesHistoryScreenState>();
   late final DatabaseService _database = DatabaseService.create();
   late final ProductTransfersInTransitCounter _transfersInTransitCounter;
@@ -169,11 +170,19 @@ class _AdminWebShellState extends State<AdminWebShell> {
     });
   }
 
+  void _scheduleCatalogRefreshAfterReturn() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _dashboardKey.currentState?.refreshCatalog();
+    });
+  }
+
   String _panelActorCode(AdminStaffSession? session) =>
       session?.promoCode ?? 'ADMIN';
 
   List<Widget> _adminPages(bool isSuperAdmin, AdminStaffSession? session) => [
         JewelryAdminDashboard(
+          key: _dashboardKey,
           onPosSaleArchived: _scheduleSalesHistoryReload,
           onProductTransfersChanged: _refreshTransfersBadge,
         ),
@@ -181,7 +190,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
           actorCode: _panelActorCode(session),
           onTransfersMutated: _refreshTransfersBadge,
         ),
-        SalesHistoryScreen(key: _salesHistoryKey),
+        SalesHistoryScreen(
+          key: _salesHistoryKey,
+          onProductReturned: _scheduleCatalogRefreshAfterReturn,
+        ),
         if (isSuperAdmin) StaffManagementScreen(database: _database),
         if (isSuperAdmin)
           ScrapMetalIntakeScreen(
@@ -192,6 +204,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
 
   List<Widget> _sellerPages(AdminStaffSession session) => [
         JewelryAdminDashboard(
+          key: _dashboardKey,
           sellerStaffMode: true,
           presetSellerPromoCode: session.promoCode,
           presetSellerName: session.name,

@@ -220,6 +220,7 @@ GRANT EXECUTE ON FUNCTION public.process_pos_product_return(text, text, text)
 -- PostgREST: DEFAULT на p_admin_email даёт две RPC-сигнатуры (text) и (text,text)
 -- → неоднозначность, если клиент шлёт оба параметра. Снимаем DEFAULT и дропаем старые overload.
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.process_product_return_manual(text, text, text, text) CASCADE;
 DROP FUNCTION IF EXISTS public.process_product_return_manual(text);
 DROP FUNCTION IF EXISTS public.process_product_return_manual(text, text);
 

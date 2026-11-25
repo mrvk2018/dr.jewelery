@@ -217,10 +217,15 @@ GRANT EXECUTE ON FUNCTION public.process_pos_product_return(text, text, text)
 
 -- ---------------------------------------------------------------------------
 -- 4) process_product_return_manual — SKU-дубли, product_status, lock
+-- PostgREST: DEFAULT на p_admin_email даёт две RPC-сигнатуры (text) и (text,text)
+-- → неоднозначность, если клиент шлёт оба параметра. Снимаем DEFAULT и дропаем старые overload.
 -- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.process_product_return_manual(text);
+DROP FUNCTION IF EXISTS public.process_product_return_manual(text, text);
+
 CREATE OR REPLACE FUNCTION public.process_product_return_manual(
   p_sku text,
-  p_admin_email text DEFAULT 'dr.jewelry.korea@gmail.com'
+  p_admin_email text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -376,5 +381,7 @@ $$;
 REVOKE ALL ON FUNCTION public.process_product_return_manual(text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.process_product_return_manual(text, text)
   TO anon, authenticated, service_role;
+
+NOTIFY pgrst, 'reload schema';
 
 COMMIT;

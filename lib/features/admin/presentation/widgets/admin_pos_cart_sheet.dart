@@ -14,6 +14,7 @@ import '../../domain/trade_in_scrap_draft.dart';
 import '../screens/scrap_metal_intake_screen.dart';
 import 'admin_pos_trade_in_section.dart';
 import 'admin_product_photo_preview.dart';
+import 'admin_toast.dart';
 import 'reservation_checkout_dialog.dart';
 
 abstract final class AdminPosPaymentMethods {
@@ -148,25 +149,21 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
         tradeInScrapTotalKrw: draft?.scrapTotalKrw,
       );
       if (!mounted) return;
+      final host = ScaffoldMessenger.of(context).context;
+      final navigator = Navigator.of(context);
       if (result.ok) {
         await widget.database.attachSellerToSales(
           skus: checkoutSkus,
           sellerCode: seller.promoCode,
           sellerName: seller.name,
         );
-        Navigator.of(context).pop();
+        final notice = result.orderId == null
+            ? 'POS-продажа заархивирована'
+            : 'POS-продажа · заказ ${result.orderId}';
+        navigator.pop();
         widget.cart.clearCart();
         await widget.onArchived();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              result.orderId == null
-                  ? 'POS-продажа заархивирована'
-                  : 'POS-продажа · заказ ${result.orderId}',
-            ),
-          ),
-        );
+        if (host.mounted) showAdminToast(host, notice);
         return;
       }
       final error = result.error;
@@ -213,19 +210,14 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
       ),
     );
     if (created == null || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final host = ScaffoldMessenger.of(context).context;
+    final notice = created.completed
+        ? 'Бронь выкуплена. Продажа проведена в «Историю продаж».'
+        : 'Бронь оформлена. Изделия сняты с витрины.';
     Navigator.of(context).pop();
     widget.cart.clearCart();
     await widget.onArchived();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          created.completed
-              ? 'Бронь выкуплена. Продажа проведена в «Историю продаж».'
-              : 'Бронь оформлена. Изделия сняты с витрины.',
-        ),
-      ),
-    );
+    if (host.mounted) showAdminToast(host, notice);
   }
 
   Future<void> _openTradeInScreen({TradeInScrapDraft? restore}) async {

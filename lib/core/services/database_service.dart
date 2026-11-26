@@ -94,6 +94,26 @@ abstract final class ScrapMetalRpc {
   static const receiverCodeParam = 'p_receiver_code';
 }
 
+/// Журнал лома по весу и пробе (migration 078).
+abstract final class ScrapLedgerRpc {
+  static const balances = 'get_scrap_balances';
+  static const writeOff = 'write_off_scrap';
+  static const list = 'list_scrap_ledger';
+
+  static const branch = 'p_branch';
+  static const purity = 'p_purity';
+  static const weightG = 'p_weight_g';
+  static const movementType = 'p_movement_type';
+  static const recipientOrReason = 'p_recipient_or_reason';
+  static const comment = 'p_comment';
+  static const sellerCode = 'p_seller_code';
+  static const filter = 'p_filter';
+  static const dateFrom = 'p_date_from';
+  static const dateTo = 'p_date_to';
+  static const limit = 'p_limit';
+  static const offset = 'p_offset';
+}
+
 abstract final class TransferRpc {
   static const createProductTransferById = 'create_product_transfer_by_id';
   static const completeProductTransferById = 'complete_product_transfer_by_id';
@@ -611,6 +631,31 @@ abstract class DatabaseService {
   });
 
   Future<ScrapMetalDeleteResult> deleteScrapMetalIntake(String id);
+
+  /// Остатки лома по пробам (`get_scrap_balances`). `branch`: null / ALL / ICN / ANS.
+  Future<Map<String, dynamic>> getScrapBalances({String? branch});
+
+  /// Списание веса (`write_off_scrap`). Не затрагивает кассу.
+  Future<Map<String, dynamic>> writeOffScrap({
+    required String branch,
+    required String purity,
+    required double weightG,
+    String movementType = 'write_off',
+    required String recipientOrReason,
+    String? comment,
+    String? sellerCode,
+  });
+
+  /// Журнал движений (`list_scrap_ledger`).
+  Future<Map<String, dynamic>> listScrapLedger({
+    String? branch,
+    String? purity,
+    String filter = 'all',
+    String? dateFromKst,
+    String? dateToKst,
+    int limit = 50,
+    int offset = 0,
+  });
 
   /// Фото лома / квитанции → bucket `product-images`, папка `scrap-intake/`.
   Future<String?> uploadScrapMetalIntakePhoto({
@@ -2624,6 +2669,64 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('$stackTrace');
       return (ok: false, error: error.toString());
     }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getScrapBalances({String? branch}) {
+    final store = branch?.trim().toUpperCase();
+    return _reservationRpc(ScrapLedgerRpc.balances, {
+      if (store != null && store.isNotEmpty && store != 'ALL')
+        ScrapLedgerRpc.branch: store,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> writeOffScrap({
+    required String branch,
+    required String purity,
+    required double weightG,
+    String movementType = 'write_off',
+    required String recipientOrReason,
+    String? comment,
+    String? sellerCode,
+  }) {
+    final note = comment?.trim();
+    final code = sellerCode?.trim();
+    return _reservationRpc(ScrapLedgerRpc.writeOff, {
+      ScrapLedgerRpc.branch: branch.trim(),
+      ScrapLedgerRpc.purity: purity.trim(),
+      ScrapLedgerRpc.weightG: weightG,
+      ScrapLedgerRpc.movementType: movementType.trim(),
+      ScrapLedgerRpc.recipientOrReason: recipientOrReason.trim(),
+      if (note != null && note.isNotEmpty) ScrapLedgerRpc.comment: note,
+      if (code != null && code.isNotEmpty) ScrapLedgerRpc.sellerCode: code,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> listScrapLedger({
+    String? branch,
+    String? purity,
+    String filter = 'all',
+    String? dateFromKst,
+    String? dateToKst,
+    int limit = 50,
+    int offset = 0,
+  }) {
+    final store = branch?.trim().toUpperCase();
+    final probe = purity?.trim();
+    final from = dateFromKst?.trim();
+    final to = dateToKst?.trim();
+    return _reservationRpc(ScrapLedgerRpc.list, {
+      if (store != null && store.isNotEmpty && store != 'ALL')
+        ScrapLedgerRpc.branch: store,
+      if (probe != null && probe.isNotEmpty) ScrapLedgerRpc.purity: probe,
+      ScrapLedgerRpc.filter: filter.trim().isEmpty ? 'all' : filter.trim(),
+      if (from != null && from.isNotEmpty) ScrapLedgerRpc.dateFrom: from,
+      if (to != null && to.isNotEmpty) ScrapLedgerRpc.dateTo: to,
+      ScrapLedgerRpc.limit: limit,
+      ScrapLedgerRpc.offset: offset,
+    });
   }
 
   static DraftDeleteResult _parseDraftDeleteRpc(dynamic result) {

@@ -13,6 +13,8 @@ import '../../../../shared/models/seller_item.dart';
 import '../../data/scrap_metal_storage.dart';
 import '../../domain/scrap_metal_calculator.dart';
 import '../../domain/trade_in_scrap_draft.dart';
+import '../widgets/admin_toast.dart';
+import 'scrap_ledger_screen.dart';
 
 /// Приёмка лома: расчёт 585/925, журнал, списание со склада.
 class ScrapMetalIntakeScreen extends StatefulWidget {
@@ -98,13 +100,12 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   @override
   void initState() {
     super.initState();
-    final tabCount = widget.tradeInMode ? 1 : 2;
+    final tabCount = widget.tradeInMode ? 1 : 3;
     _tabs = TabController(length: tabCount, vsync: this);
     if (!widget.tradeInMode) {
       _tabs.addListener(() {
-        if (_tabs.index == 1 && _tabs.indexIsChanging == false) {
-          _loadJournal();
-        }
+        if (_tabs.indexIsChanging) return;
+        if (_tabs.index == 1) _loadJournal();
       });
     }
     if (widget.initialSellerCode != null &&
@@ -177,13 +178,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   }
 
   void _snack(String msg, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAdminToast(context, msg, error: error);
   }
 
   String _acceptName() {
@@ -589,13 +584,31 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
           tradeIn ? 'Приёмка лома (Trade-In)' : 'Приёмка лома',
           style: AppTypography.heading(fontSize: 20),
         ),
+        actions: tradeIn
+            ? null
+            : [
+                IconButton(
+                  tooltip: 'Учёт и списание лома',
+                  onPressed: () => ScrapLedgerScreen.open(
+                    context,
+                    database: widget.database,
+                    sellerCode:
+                        widget.actorCode == 'ADMIN' ? null : widget.actorCode,
+                    initialBranch: _storeLocation,
+                  ),
+                  icon: const Icon(Icons.inventory_2_outlined),
+                ),
+              ],
         bottom: tradeIn
             ? null
             : TabBar(
                 controller: _tabs,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 tabs: const [
                   Tab(text: 'Приёмка и расчёт'),
-                  Tab(text: 'Журнал и архив'),
+                  Tab(text: 'Журнал актов'),
+                  Tab(text: 'Учёт / Списание'),
                 ],
               ),
       ),
@@ -606,6 +619,13 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
               children: [
                 _buildIntakeTab(),
                 _buildJournalTab(),
+                ScrapLedgerPanel(
+                  database: widget.database,
+                  sellerCode:
+                      widget.actorCode == 'ADMIN' ? null : widget.actorCode,
+                  initialBranch: _storeLocation,
+                  embedded: true,
+                ),
               ],
             ),
     );

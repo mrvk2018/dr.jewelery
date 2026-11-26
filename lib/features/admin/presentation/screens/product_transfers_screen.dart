@@ -11,6 +11,7 @@ import '../../../../core/utils/product_gallery_urls.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../domain/product_transfer_item.dart';
 import '../widgets/admin_product_photo_preview.dart';
+import '../widgets/admin_toast.dart';
 
 /// Трансферы изделий между ICN и ANS (RPC 043/046).
 class ProductTransfersScreen extends StatefulWidget {
@@ -142,13 +143,7 @@ class _ProductTransfersScreenState extends State<ProductTransfersScreen> {
   }
 
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAdminToast(context, message, error: error);
   }
 
   Future<void> _openPhotoPreview(ProductTransferItem item) async {

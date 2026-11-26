@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/krw_text.dart';
 import '../../domain/models/reservation_record.dart';
+import 'admin_toast.dart';
 import 'reservation_ui.dart';
 
 class ReservationsDialog extends StatefulWidget {
@@ -473,17 +474,16 @@ class _PayReservationDialogState extends State<_PayReservationDialog> {
     if (!mounted) return;
     if (result['ok'] == true) {
       final completed = result['completed'] == true;
-      final messenger = ScaffoldMessenger.of(context);
+      final host = ScaffoldMessenger.of(context).context;
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            completed
-                ? 'Бронь выкуплена. Продажа проведена в «Историю продаж».'
-                : 'Доплата принята. Остаток обновлён.',
-          ),
-        ),
-      );
+      if (host.mounted) {
+        showAdminToast(
+          host,
+          completed
+              ? 'Бронь выкуплена. Продажа проведена в «Историю продаж».'
+              : 'Доплата принята. Остаток обновлён.',
+        );
+      }
       return;
     }
     setState(() {
@@ -659,17 +659,16 @@ class _CancelReservationDialogState extends State<_CancelReservationDialog> {
     if (!mounted) return;
     if (result['ok'] == true) {
       final kept = !_refund;
-      final messenger = ScaffoldMessenger.of(context);
+      final host = ScaffoldMessenger.of(context).context;
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            kept
-                ? 'Бронь отменена. Изделия снова на витрине, залог остался в доходе.'
-                : 'Бронь отменена. Залог списан из кассы, изделия снова на витрине.',
-          ),
-        ),
-      );
+      if (host.mounted) {
+        showAdminToast(
+          host,
+          kept
+              ? 'Бронь отменена. Изделия снова на витрине, залог остался в доходе.'
+              : 'Бронь отменена. Залог списан из кассы, изделия снова на витрине.',
+        );
+      }
       return;
     }
     setState(() {

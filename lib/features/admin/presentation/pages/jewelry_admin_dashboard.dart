@@ -15,6 +15,7 @@ import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
+import '../widgets/admin_toast.dart';
 import '../widgets/reservations_dialog.dart';
 import '../widgets/admin_product_photo_preview.dart';
 import '../../../../shared/models/product_item.dart';
@@ -32,6 +33,7 @@ import '../../data/admin_manual_product_storage.dart';
 import '../screens/draft_intake_screen.dart';
 import '../../data/scrap_metal_storage.dart';
 import '../screens/scrap_metal_intake_screen.dart';
+import '../screens/scrap_ledger_screen.dart';
 
 /// Склад/sync: камни в `insert`, legacy Pro — в `gem_inserts`.
 String adminProductInsertLabel(Map<String, dynamic> row) {
@@ -333,13 +335,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   }
 
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAdminToast(context, message, error: error);
   }
 
   Future<void> _openDraftIntake() async {
@@ -360,6 +356,18 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       MaterialPageRoute<void>(
         builder: (_) => ScrapMetalIntakeScreen(database: widget.database),
       ),
+    );
+  }
+
+  Future<void> _openScrapLedger() async {
+    final storage = await ScrapMetalStorage.create();
+    final code = widget.presetSellerPromoCode?.trim();
+    if (!mounted) return;
+    await ScrapLedgerScreen.open(
+      context,
+      database: widget.database,
+      sellerCode: widget.sellerStaffMode ? code : null,
+      initialBranch: storage.storeLocation,
     );
   }
 
@@ -800,6 +808,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     onAddProduct: _openAddProductDialog,
                     onProductReturn: _openProductReturnDialog,
                     onOpenReservations: _openReservations,
+                    onOpenScrapLedger: _openScrapLedger,
                   ),
                   const SizedBox(height: 8),
                   SmartFilterWidget(
@@ -918,6 +927,7 @@ class _TopControlBar extends StatelessWidget {
     required this.onAddProduct,
     required this.onProductReturn,
     required this.onOpenReservations,
+    required this.onOpenScrapLedger,
   });
 
   final bool isSuperAdmin;
@@ -928,6 +938,7 @@ class _TopControlBar extends StatelessWidget {
   final VoidCallback onAddProduct;
   final VoidCallback onProductReturn;
   final VoidCallback onOpenReservations;
+  final VoidCallback onOpenScrapLedger;
 
   static final _compactBtnStyle = ButtonStyle(
     padding: const WidgetStatePropertyAll(
@@ -968,6 +979,12 @@ class _TopControlBar extends StatelessWidget {
                 icon: const Icon(Icons.scale_outlined, size: 16),
                 label: const Text('Приёмка лома'),
               ),
+              OutlinedButton.icon(
+                onPressed: onOpenScrapLedger,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                label: const Text('Учёт / Списание лома'),
+              ),
               FilledButton.icon(
                 onPressed: onAddProduct,
                 style: _compactBtnStyle.copyWith(
@@ -993,6 +1010,12 @@ class _TopControlBar extends StatelessWidget {
                 style: _compactBtnStyle,
                 icon: const Icon(Icons.scale_outlined, size: 16),
                 label: const Text('Приёмка лома'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onOpenScrapLedger,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                label: const Text('Учёт / Списание лома'),
               ),
               OutlinedButton.icon(
                 onPressed: onProductReturn,
@@ -2950,12 +2973,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
-      ),
-    );
+    showAdminToast(context, message, error: error);
   }
 
   void _safeFireAndForgetLabelPrintAfterManualSave(String sku) {

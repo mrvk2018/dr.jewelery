@@ -8,6 +8,7 @@ import '../core/theme/app_typography.dart';
 import '../core/utils/won_format.dart';
 import '../core/widgets/krw_text.dart';
 import '../features/admin/presentation/widgets/admin_pos_cart_sheet.dart';
+import '../features/admin/presentation/widgets/admin_toast.dart';
 import '../features/admin/presentation/widgets/admin_product_photo_preview.dart';
 import '../models/sales_history_row.dart';
 import '../services/sales_history_service.dart';
@@ -250,13 +251,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   void _snack(String message, {bool error = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: error ? AppColors.saleRed : AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAdminToast(context, message, error: error);
   }
 
   Future<void> _openPosReturnDialog(SalesHistoryRow row) async {

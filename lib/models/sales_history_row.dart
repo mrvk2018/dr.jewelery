@@ -26,6 +26,10 @@ class SalesHistorySummary {
     this.tradeInScrapKrw = 0,
     this.tradeInBatchCount = 0,
     this.netCashKrw = 0,
+    this.shiftCashKrw = 0,
+    this.reservationCashKrw = 0,
+    this.hasShiftCash = false,
+    this.byMethod = const {},
   });
 
   final int totalSumKrw;
@@ -34,6 +38,10 @@ class SalesHistorySummary {
   final int tradeInScrapKrw;
   final int tradeInBatchCount;
   final int netCashKrw;
+  final int shiftCashKrw;
+  final int reservationCashKrw;
+  final bool hasShiftCash;
+  final Map<String, int> byMethod;
   final double goldWeightGrams;
   final int goldSumKrw;
   final int goldCount;
@@ -64,14 +72,23 @@ class SalesHistorySummary {
     final gross = _numToInt(map['gross_sales_krw']);
     final total = _numToInt(map['total_sum_krw']);
     final tradeIn = _numToInt(map['trade_in_scrap_krw']);
+    final hasNet = map.containsKey('net_cash_krw');
+    final hasShift = map.containsKey('shift_cash_krw');
     final netCash = _numToInt(map['net_cash_krw']);
+    final resolvedNet =
+        hasNet ? netCash : (tradeIn > 0 ? netCash : total);
+    final shift = hasShift ? _numToInt(map['shift_cash_krw']) : resolvedNet;
     return SalesHistorySummary(
       totalSumKrw: total,
       totalCount: _numToInt(map['total_count']),
       grossSalesKrw: gross > 0 ? gross : total,
       tradeInScrapKrw: tradeIn,
       tradeInBatchCount: _numToInt(map['trade_in_batch_count']),
-      netCashKrw: netCash > 0 || tradeIn > 0 ? netCash : total,
+      netCashKrw: hasShift ? shift : resolvedNet,
+      shiftCashKrw: shift,
+      reservationCashKrw: _numToInt(map['reservation_cash_krw']),
+      hasShiftCash: hasShift,
+      byMethod: _methodMap(map['by_method']),
       goldWeightGrams: _numToDouble(map['gold_weight_grams']),
       goldSumKrw: _numToInt(map['gold_sum_krw']),
       goldCount: _numToInt(map['gold_count']),
@@ -80,6 +97,36 @@ class SalesHistorySummary {
       silverCount: _numToInt(map['silver_count']),
       otherCount: _numToInt(map['other_count']),
     );
+  }
+
+  SalesHistorySummary withShiftDrawer(Map<String, dynamic> shift) {
+    return SalesHistorySummary(
+      totalSumKrw: totalSumKrw,
+      totalCount: totalCount,
+      grossSalesKrw: grossSalesKrw,
+      tradeInScrapKrw: _numToInt(shift['trade_in_scrap_krw']),
+      tradeInBatchCount: tradeInBatchCount,
+      netCashKrw: _numToInt(shift['shift_cash_krw']),
+      shiftCashKrw: _numToInt(shift['shift_cash_krw']),
+      reservationCashKrw: _numToInt(shift['reservation_cash_krw']),
+      hasShiftCash: true,
+      byMethod: _methodMap(shift['by_method']),
+      goldWeightGrams: goldWeightGrams,
+      goldSumKrw: goldSumKrw,
+      goldCount: goldCount,
+      silverWeightGrams: silverWeightGrams,
+      silverSumKrw: silverSumKrw,
+      silverCount: silverCount,
+      otherCount: otherCount,
+    );
+  }
+
+  static Map<String, int> _methodMap(Object? raw) {
+    if (raw is! Map) return const {};
+    return {
+      for (final entry in raw.entries)
+        entry.key.toString(): _numToInt(entry.value),
+    };
   }
 
   static int _numToInt(Object? value) {

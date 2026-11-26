@@ -14,6 +14,7 @@ import '../../domain/trade_in_scrap_draft.dart';
 import '../screens/scrap_metal_intake_screen.dart';
 import 'admin_pos_trade_in_section.dart';
 import 'admin_product_photo_preview.dart';
+import 'reservation_checkout_dialog.dart';
 
 abstract final class AdminPosPaymentMethods {
   static const options = <String>[
@@ -174,6 +175,57 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     } finally {
       if (mounted) setState(() => _checkoutBusy = false);
     }
+  }
+
+  Future<void> _openReservation() async {
+    if (_checkoutBusy || widget.cart.lineCount == 0) return;
+    if (widget.cart.tradeInDraft != null) {
+      await _showCheckoutError(
+        const AdminPosSaleException(
+          AdminPosSaleFailure.validation,
+          message: 'Бронь оформляется без лома. Уберите Trade-In из корзины.',
+        ),
+      );
+      return;
+    }
+    final seller = _selectedSeller;
+    if (seller == null) {
+      await _showCheckoutError(
+        const AdminPosSaleException(
+          AdminPosSaleFailure.validation,
+          message: 'Выберите продавца из списка',
+        ),
+      );
+      return;
+    }
+    final lines = widget.cart.items
+        .map(ReservationCartLine.fromCartItem)
+        .toList(growable: false);
+    if (!mounted) return;
+    final created = await showDialog<ReservationCheckoutResult>(
+      context: context,
+      builder: (context) => ReservationCheckoutDialog(
+        lines: lines,
+        database: widget.database,
+        sellerName: _checkoutSellerLabel,
+        sellerCode: seller.promoCode,
+        branch: _storeLocation,
+      ),
+    );
+    if (created == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    widget.cart.clearCart();
+    await widget.onArchived();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          created.completed
+              ? 'Бронь выкуплена. Продажа проведена в «Историю продаж».'
+              : 'Бронь оформлена. Изделия сняты с витрины.',
+        ),
+      ),
+    );
   }
 
   Future<void> _openTradeInScreen({TradeInScrapDraft? restore}) async {
@@ -439,34 +491,76 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                   ListenableBuilder(
                     listenable: cart,
                     builder: (context, _) {
-                      return Row(
+                      final empty = cart.lineCount == 0;
+                      final tradeIn = cart.tradeInDraft != null;
+                      final reserveDisabled = _checkoutBusy || empty || tradeIn;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          OutlinedButton(
-                            onPressed: _checkoutBusy || cart.lineCount == 0
-                                ? null
-                                : cart.clearCart,
-                            child: const Text('Очистить'),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _checkoutBusy || cart.lineCount == 0
-                                  ? null
-                                  : _archiveSale,
-                              icon: _checkoutBusy
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.point_of_sale_outlined),
-                              label: const Text('Оформить продажу'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF1B5E20),
+                          if (tradeIn)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                'Бронь оформляется без лома. Уберите Trade-In, чтобы забронировать изделия.',
+                                style: AppTypography.productMeta().copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
                             ),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final stacked = constraints.maxWidth < 520;
+                              final clear = OutlinedButton(
+                                onPressed: _checkoutBusy || empty
+                                    ? null
+                                    : cart.clearCart,
+                                child: const Text('Очистить'),
+                              );
+                              final reserve = OutlinedButton.icon(
+                                onPressed: reserveDisabled ? null : _openReservation,
+                                icon: const Icon(Icons.bookmark_add_outlined),
+                                label: const Text('Бронь / Предоплата'),
+                              );
+                              final sell = FilledButton.icon(
+                                onPressed: _checkoutBusy || empty
+                                    ? null
+                                    : _archiveSale,
+                                icon: _checkoutBusy
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.point_of_sale_outlined),
+                                label: const Text('Оформить продажу'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1B5E20),
+                                ),
+                              );
+                              if (stacked) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    sell,
+                                    const SizedBox(height: 8),
+                                    reserve,
+                                    const SizedBox(height: 8),
+                                    clear,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                children: [
+                                  clear,
+                                  const SizedBox(width: 8),
+                                  Expanded(child: reserve),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: sell),
+                                ],
+                              );
+                            },
                           ),
                         ],
                       );

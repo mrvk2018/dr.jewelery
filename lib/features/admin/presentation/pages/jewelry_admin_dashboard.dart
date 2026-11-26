@@ -15,6 +15,7 @@ import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
+import '../widgets/reservations_dialog.dart';
 import '../widgets/admin_product_photo_preview.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -109,12 +110,14 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
   bool _initialLoading = true;
+  int _activeReservationCount = 0;
 
   @override
   void initState() {
     super.initState();
     _posCart.addListener(_onPosCartChanged);
     _refreshCatalog();
+    _refreshReservationCount();
   }
 
   @override
@@ -297,6 +300,35 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _snack('Ошибка загрузки витрины: $error', error: true);
     } finally {
       if (mounted) setState(() => _initialLoading = false);
+      unawaited(_refreshReservationCount());
+    }
+  }
+
+  Future<void> _refreshReservationCount() async {
+    try {
+      final result = await widget.database.getActiveReservationsCount();
+      if (!mounted || result['ok'] != true) return;
+      final raw = result['count'];
+      final count = raw is num ? raw.round() : int.tryParse('$raw') ?? 0;
+      setState(() => _activeReservationCount = count);
+    } catch (error) {
+      debugPrint('JewelryAdminDashboard._refreshReservationCount failed: $error');
+    }
+  }
+
+  Future<void> _openReservations() async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => ReservationsDialog(
+        database: widget.database,
+        sellerName: widget.presetSellerName,
+        sellerCode: widget.presetSellerPromoCode,
+        lockSeller: widget.sellerStaffMode,
+      ),
+    );
+    if (changed == true) {
+      await _refreshCatalog();
+      widget.onPosSaleArchived?.call();
     }
   }
 
@@ -760,12 +792,14 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                   _TopControlBar(
                     isSuperAdmin: panelAdmin,
                     showSellerQuickActions: widget.sellerStaffMode,
+                    activeReservationCount: _activeReservationCount,
                     onOpenDraft: _openDraftIntake,
                     onOpenScrap: widget.sellerStaffMode
                         ? _openSellerScrapIntake
                         : _openScrapIntake,
                     onAddProduct: _openAddProductDialog,
                     onProductReturn: _openProductReturnDialog,
+                    onOpenReservations: _openReservations,
                   ),
                   const SizedBox(height: 8),
                   SmartFilterWidget(
@@ -878,18 +912,22 @@ class _TopControlBar extends StatelessWidget {
   const _TopControlBar({
     required this.isSuperAdmin,
     required this.showSellerQuickActions,
+    required this.activeReservationCount,
     required this.onOpenDraft,
     required this.onOpenScrap,
     required this.onAddProduct,
     required this.onProductReturn,
+    required this.onOpenReservations,
   });
 
   final bool isSuperAdmin;
   final bool showSellerQuickActions;
+  final int activeReservationCount;
   final VoidCallback onOpenDraft;
   final VoidCallback onOpenScrap;
   final VoidCallback onAddProduct;
   final VoidCallback onProductReturn;
+  final VoidCallback onOpenReservations;
 
   static final _compactBtnStyle = ButtonStyle(
     padding: const WidgetStatePropertyAll(
@@ -912,64 +950,97 @@ class _TopControlBar extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              if (isSuperAdmin) ...[
-                OutlinedButton.icon(
-                  onPressed: onOpenDraft,
-                  style: _compactBtnStyle,
-                  icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
-                  label: const Text('Приёмка черновиков'),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (isSuperAdmin) ...[
+              OutlinedButton.icon(
+                onPressed: onOpenDraft,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
+                label: const Text('Приёмка черновиков'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onOpenScrap,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.scale_outlined, size: 16),
+                label: const Text('Приёмка лома'),
+              ),
+              FilledButton.icon(
+                onPressed: onAddProduct,
+                style: _compactBtnStyle.copyWith(
+                  backgroundColor:
+                      const WidgetStatePropertyAll(AppColors.primary),
+                  foregroundColor:
+                      const WidgetStatePropertyAll(AppColors.textOnPrimary),
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: onOpenScrap,
-                  style: _compactBtnStyle,
-                  icon: const Icon(Icons.scale_outlined, size: 16),
-                  label: const Text('Приёмка лома'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  onPressed: onAddProduct,
-                  style: _compactBtnStyle.copyWith(
-                    backgroundColor:
-                        const WidgetStatePropertyAll(AppColors.primary),
-                    foregroundColor:
-                        const WidgetStatePropertyAll(AppColors.textOnPrimary),
-                  ),
-                  icon: const Icon(Icons.add_circle_outline, size: 16),
-                  label: const Text('Добавить товар'),
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (isSuperAdmin)
-                OutlinedButton.icon(
-                  onPressed: onProductReturn,
-                  style: _compactBtnStyle,
-                  icon: const Icon(Icons.replay_outlined, size: 16),
-                  label: const Text('Возврат товара'),
-                ),
-              if (showSellerQuickActions) ...[
-                OutlinedButton.icon(
-                  onPressed: onOpenScrap,
-                  style: _compactBtnStyle,
-                  icon: const Icon(Icons.scale_outlined, size: 16),
-                  label: const Text('Приёмка лома'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: onProductReturn,
-                  style: _compactBtnStyle,
-                  icon: const Icon(Icons.replay_outlined, size: 16),
-                  label: const Text('Возврат товара'),
-                ),
-              ],
+                icon: const Icon(Icons.add_circle_outline, size: 16),
+                label: const Text('Добавить товар'),
+              ),
             ],
-          ),
+            if (isSuperAdmin)
+              OutlinedButton.icon(
+                onPressed: onProductReturn,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.replay_outlined, size: 16),
+                label: const Text('Возврат товара'),
+              ),
+            if (showSellerQuickActions) ...[
+              OutlinedButton.icon(
+                onPressed: onOpenScrap,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.scale_outlined, size: 16),
+                label: const Text('Приёмка лома'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onProductReturn,
+                style: _compactBtnStyle,
+                icon: const Icon(Icons.replay_outlined, size: 16),
+                label: const Text('Возврат товара'),
+              ),
+            ],
+            if (isSuperAdmin || showSellerQuickActions)
+              _ReservationsButton(
+                count: activeReservationCount,
+                style: _compactBtnStyle,
+                onPressed: onOpenReservations,
+              ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _ReservationsButton extends StatelessWidget {
+  const _ReservationsButton({
+    required this.count,
+    required this.style,
+    required this.onPressed,
+  });
+
+  final int count;
+  final ButtonStyle style;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = OutlinedButton.icon(
+      onPressed: onPressed,
+      style: style,
+      icon: const Icon(Icons.bookmark_outline, size: 16),
+      label: const Text('Брони / Залоги'),
+    );
+    if (count <= 0) return button;
+    final label = count > 99 ? '99+' : '$count';
+    return Badge(
+      isLabelVisible: true,
+      backgroundColor: AppColors.saleRed,
+      textColor: AppColors.textOnPrimary,
+      label: Text(label),
+      child: button,
     );
   }
 }

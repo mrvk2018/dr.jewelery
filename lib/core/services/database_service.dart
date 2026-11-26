@@ -180,6 +180,37 @@ abstract final class SellerAdminRpc {
   static const loginPinField = 'p_pin';
 }
 
+abstract final class ReservationRpc {
+  static const create = 'create_reservation';
+  static const payBalance = 'pay_reservation_balance';
+  static const cancel = 'cancel_reservation';
+  static const list = 'list_reservations';
+  static const activeCount = 'get_active_reservations_count';
+  static const shiftCash = 'get_shift_cash_summary';
+
+  static const lines = 'p_lines';
+  static const totalAmount = 'p_total_amount_krw';
+  static const deposit = 'p_deposit_krw';
+  static const paymentAmount = 'p_payment_amount_krw';
+  static const paymentMethod = 'p_payment_method';
+  static const branch = 'p_branch';
+  static const sellerName = 'p_seller_name';
+  static const sellerCode = 'p_seller_code';
+  static const customerName = 'p_customer_name';
+  static const customerPhone = 'p_customer_phone';
+  static const expiresAt = 'p_expires_at';
+  static const comment = 'p_comment';
+  static const reservationId = 'p_reservation_id';
+  static const refundDeposit = 'p_refund_deposit';
+  static const refundMethod = 'p_refund_method';
+  static const filter = 'p_filter';
+  static const search = 'p_search';
+  static const limit = 'p_limit';
+  static const offset = 'p_offset';
+  static const dateFrom = 'p_date_from';
+  static const dateTo = 'p_date_to';
+}
+
 abstract final class SellerPayrollRpc {
   static const attachSellerToSales = 'attach_seller_to_sales';
   static const skusParam = 'p_skus';
@@ -697,6 +728,61 @@ abstract class DatabaseService {
     Map<String, dynamic>? scrapTradeInPayload,
     int? tradeInNetCashDeltaKrw,
     int? tradeInScrapTotalKrw,
+  });
+
+  /// Бронь по предоплате (`create_reservation`).
+  Future<Map<String, dynamic>> createReservation({
+    required List<Map<String, dynamic>> lines,
+    required int totalAmountKrw,
+    required int depositKrw,
+    required String paymentMethod,
+    required String branch,
+    required String sellerName,
+    required String customerName,
+    required String customerPhone,
+    required DateTime expiresAt,
+    String? sellerCode,
+    String? comment,
+  });
+
+  /// Доплата или выкуп брони (`pay_reservation_balance`).
+  Future<Map<String, dynamic>> payReservationBalance({
+    required String reservationId,
+    required int paymentAmountKrw,
+    required String paymentMethod,
+    required String branch,
+    required String sellerName,
+    String? sellerCode,
+  });
+
+  /// Отмена брони (`cancel_reservation`).
+  Future<Map<String, dynamic>> cancelReservation({
+    required String reservationId,
+    required bool refundDeposit,
+    String? refundMethod,
+    String? branch,
+    String? sellerName,
+    String? sellerCode,
+  });
+
+  /// Список броней (`list_reservations`).
+  Future<Map<String, dynamic>> listReservations({
+    String filter = 'active',
+    String? search,
+    String? branch,
+    int limit = 50,
+    int offset = 0,
+  });
+
+  /// Бейдж активных броней, включая просроченные (`get_active_reservations_count`).
+  Future<Map<String, dynamic>> getActiveReservationsCount({String? branch});
+
+  /// Касса смены с залогами (`get_shift_cash_summary`).
+  Future<Map<String, dynamic>> getShiftCashSummary({
+    required String dateFrom,
+    required String dateTo,
+    String branch = 'ALL',
+    String? sellerName,
   });
 
   /// POS: карточка товара по `qr_code_payload`.
@@ -3600,6 +3686,141 @@ class CloudDatabaseService implements DatabaseService {
       final failure = AdminPosSaleException.classify(error);
       return AdminPosArchiveResult.failure(AdminPosSaleException(failure));
     }
+  }
+
+  Future<Map<String, dynamic>> _reservationRpc(
+    String fn,
+    Map<String, dynamic> params,
+  ) async {
+    try {
+      final result = await _supabaseClient.rpc(fn, params: params);
+      return _rpcJsonMap(result);
+    } on PostgrestException catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.$fn: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.message};
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.$fn failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> createReservation({
+    required List<Map<String, dynamic>> lines,
+    required int totalAmountKrw,
+    required int depositKrw,
+    required String paymentMethod,
+    required String branch,
+    required String sellerName,
+    required String customerName,
+    required String customerPhone,
+    required DateTime expiresAt,
+    String? sellerCode,
+    String? comment,
+  }) {
+    final note = comment?.trim();
+    final code = sellerCode?.trim();
+    return _reservationRpc(ReservationRpc.create, {
+      ReservationRpc.lines: lines,
+      ReservationRpc.totalAmount: totalAmountKrw,
+      ReservationRpc.deposit: depositKrw,
+      ReservationRpc.paymentMethod: paymentMethod.trim(),
+      ReservationRpc.branch: branch.trim(),
+      ReservationRpc.sellerName: sellerName.trim(),
+      ReservationRpc.customerName: customerName.trim(),
+      ReservationRpc.customerPhone: customerPhone.trim(),
+      ReservationRpc.expiresAt: expiresAt.toUtc().toIso8601String(),
+      if (note != null && note.isNotEmpty) ReservationRpc.comment: note,
+      if (code != null && code.isNotEmpty) ReservationRpc.sellerCode: code,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> payReservationBalance({
+    required String reservationId,
+    required int paymentAmountKrw,
+    required String paymentMethod,
+    required String branch,
+    required String sellerName,
+    String? sellerCode,
+  }) {
+    final code = sellerCode?.trim();
+    return _reservationRpc(ReservationRpc.payBalance, {
+      ReservationRpc.reservationId: reservationId.trim(),
+      ReservationRpc.paymentAmount: paymentAmountKrw,
+      ReservationRpc.paymentMethod: paymentMethod.trim(),
+      ReservationRpc.branch: branch.trim(),
+      ReservationRpc.sellerName: sellerName.trim(),
+      if (code != null && code.isNotEmpty) ReservationRpc.sellerCode: code,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelReservation({
+    required String reservationId,
+    required bool refundDeposit,
+    String? refundMethod,
+    String? branch,
+    String? sellerName,
+    String? sellerCode,
+  }) {
+    final method = refundMethod?.trim();
+    final store = branch?.trim();
+    final seller = sellerName?.trim();
+    final code = sellerCode?.trim();
+    return _reservationRpc(ReservationRpc.cancel, {
+      ReservationRpc.reservationId: reservationId.trim(),
+      ReservationRpc.refundDeposit: refundDeposit,
+      if (method != null && method.isNotEmpty) ReservationRpc.refundMethod: method,
+      if (store != null && store.isNotEmpty) ReservationRpc.branch: store,
+      if (seller != null && seller.isNotEmpty) ReservationRpc.sellerName: seller,
+      if (code != null && code.isNotEmpty) ReservationRpc.sellerCode: code,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> listReservations({
+    String filter = 'active',
+    String? search,
+    String? branch,
+    int limit = 50,
+    int offset = 0,
+  }) {
+    final query = search?.trim();
+    final store = branch?.trim();
+    return _reservationRpc(ReservationRpc.list, {
+      ReservationRpc.filter: filter,
+      if (query != null && query.isNotEmpty) ReservationRpc.search: query,
+      if (store != null && store.isNotEmpty) ReservationRpc.branch: store,
+      ReservationRpc.limit: limit,
+      ReservationRpc.offset: offset,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> getActiveReservationsCount({String? branch}) {
+    final store = branch?.trim();
+    return _reservationRpc(ReservationRpc.activeCount, {
+      if (store != null && store.isNotEmpty) ReservationRpc.branch: store,
+    });
+  }
+
+  @override
+  Future<Map<String, dynamic>> getShiftCashSummary({
+    required String dateFrom,
+    required String dateTo,
+    String branch = 'ALL',
+    String? sellerName,
+  }) {
+    final seller = sellerName?.trim();
+    return _reservationRpc(ReservationRpc.shiftCash, {
+      ReservationRpc.dateFrom: dateFrom,
+      ReservationRpc.dateTo: dateTo,
+      ReservationRpc.branch: branch.trim().isEmpty ? 'ALL' : branch.trim(),
+      if (seller != null && seller.isNotEmpty) ReservationRpc.sellerName: seller,
+    });
   }
 
   static Map<String, dynamic> _rpcJsonMap(dynamic result) {

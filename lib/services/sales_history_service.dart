@@ -68,12 +68,14 @@ class SalesHistoryRepository {
     required String soldDateKstStart,
     required String soldDateKstEnd,
     String store = 'ALL',
+    String? sellerName,
   }) async {
     final start = soldDateKstStart.trim();
     final end = soldDateKstEnd.trim();
     if (start.isEmpty || end.isEmpty) {
       return SalesHistorySummary.fromRpc(null);
     }
+    final branch = store.trim().isEmpty ? 'ALL' : store.trim().toUpperCase();
 
     try {
       final response = await _client.rpc(
@@ -81,10 +83,23 @@ class SalesHistoryRepository {
         params: {
           pDateFrom: start,
           pDateTo: end,
-          pStore: store.trim().isEmpty ? 'ALL' : store.trim().toUpperCase(),
+          pStore: branch,
         },
       );
-      return SalesHistorySummary.fromRpc(response);
+      final summary = SalesHistorySummary.fromRpc(response);
+      try {
+        final shift = await _database.getShiftCashSummary(
+          dateFrom: start,
+          dateTo: end,
+          branch: branch,
+          sellerName: sellerName,
+        );
+        if (shift['ok'] == true) return summary.withShiftDrawer(shift);
+      } catch (error, stackTrace) {
+        debugPrint('SalesHistoryRepository.getShiftCashSummary failed: $error');
+        debugPrint('$stackTrace');
+      }
+      return summary;
     } catch (error, stackTrace) {
       debugPrint('SalesHistoryRepository.fetchSummary failed: $error');
       debugPrint('$stackTrace');

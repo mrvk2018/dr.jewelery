@@ -122,8 +122,12 @@ const STORAGE_FOLDER = 'products';
 const IN_STOCK_STATUSES = ['InStock', 'В наличии'];
 const TARGET_LANGS = ['ko', 'kk', 'uz', 'en'];
 
-/** Не перезаписывать из MSSQL и не удалять при cleanup (checkout / продажи / скрытые). */
-const SYNC_SKIP_STATUSES = new Set(['reserved', 'sold', 'hidden']);
+/**
+ * Строку целиком не обновляем из MSSQL и не удаляем в cleanup.
+ * reserved — залог/checkout; sold — продажа; in_transfer — путь ICN↔ANS;
+ * hidden — черновик/снят с витрины (как раньше).
+ */
+const SYNC_SKIP_STATUSES = new Set(['reserved', 'sold', 'hidden', 'in_transfer']);
 
 /** PostgREST max rows per select; paginate with `.range()`. */
 const SUPABASE_PAGE_SIZE = 1000;
@@ -320,14 +324,21 @@ function mapWarehouseStatus(mssqlStatus) {
   return { status: 'hidden', stock_quantity: 0 };
 }
 
-/** После ручного/POS-возврата sync не перетирает витринные поля из MSSQL. */
-function isManualReturnProtected(existing) {
+/** reserved / sold / in_transfer / ручной возврат: склад не меняет status. */
+function isSyncStatusLocked(existing) {
   if (!existing) return false;
-  return existing.manual_return_lock === true && String(existing.status) === 'active';
+  const status = String(existing.status || '');
+  if (status === 'reserved' || status === 'sold' || status === 'in_transfer') return true;
+  return existing.manual_return_lock === true;
 }
 
+function isManualReturnProtected(existing) {
+  return isSyncStatusLocked(existing);
+}
+
+/** Не отдавать в upsert status active/hidden поверх защищённой строки. */
 function preserveManualReturnScalars(scalars, existing) {
-  if (!isManualReturnProtected(existing)) return scalars;
+  if (!isSyncStatusLocked(existing)) return scalars;
   const out = { ...scalars };
   out.status = existing.status;
   out.stock_quantity = existing.stock_quantity;
@@ -932,12 +943,75 @@ async function uploadImageUrlsFromSlots(supabase, sku, slots, logContext = {}) {
   return { imageUrls, mssqlBytes, storageBytes, expectedSlots, failedSlots };
 }
 
-async function upsertProductsInChunks(supabase, payloads) {
-  if (payloads.length === 0) return;
+/**
+ * Повторная проверка прямо перед upsert: бронь могла появиться,
+ * пока качались фото. reserved/sold/in_transfer — строка целиком не пишется.
+ * manual_return_lock — пишем цены/фото, но status/stock остаются как в Supabase.
+ */
+async function stripProtectedUpserts(supabase, payloads) {
+  if (payloads.length === 0) return payloads;
+  const fresh = new Map();
+  const ids = payloads.map((row) => String(row.id)).filter((id) => id && id !== 'undefined');
+  for (let i = 0; i < ids.length; i += DELETE_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + DELETE_CHUNK_SIZE);
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, status, stock_quantity, product_status, store_location, manual_return_lock')
+      .in('id', chunk);
+    if (error) throw error;
+    for (const row of data || []) fresh.set(String(row.id), row);
+  }
 
-  const totalChunks = Math.ceil(payloads.length / DELETE_CHUNK_SIZE);
-  for (let i = 0; i < payloads.length; i += DELETE_CHUNK_SIZE) {
-    const chunk = payloads.slice(i, i + DELETE_CHUNK_SIZE);
+  let dropped = 0;
+  let statusLocked = 0;
+  const kept = [];
+  for (const payload of payloads) {
+    const row = fresh.get(String(payload.id));
+    if (!row) {
+      kept.push(payload);
+      continue;
+    }
+    const status = String(row.status || '');
+    if (status === 'reserved' || status === 'sold' || status === 'in_transfer') {
+      dropped += 1;
+      console.warn(
+        `[sync:skip-protected] id=${row.id} status=${status} — not updated from MSSQL`,
+      );
+      continue;
+    }
+    if (row.manual_return_lock === true) {
+      statusLocked += 1;
+      const locked = {
+        ...payload,
+        status: row.status,
+        stock_quantity: row.stock_quantity,
+      };
+      if (row.store_location != null && String(row.store_location).trim() !== '') {
+        locked.store_location = row.store_location;
+      }
+      if (row.product_status != null && String(row.product_status).trim() !== '') {
+        locked.product_status = row.product_status;
+      }
+      kept.push(locked);
+      continue;
+    }
+    kept.push(payload);
+  }
+  if (dropped > 0 || statusLocked > 0) {
+    console.warn(
+      `[sync:skip-protected] pre-upsert dropped=${dropped} status_locked=${statusLocked}`,
+    );
+  }
+  return kept;
+}
+
+async function upsertProductsInChunks(supabase, payloads) {
+  const safePayloads = await stripProtectedUpserts(supabase, payloads);
+  if (safePayloads.length === 0) return 0;
+
+  const totalChunks = Math.ceil(safePayloads.length / DELETE_CHUNK_SIZE);
+  for (let i = 0; i < safePayloads.length; i += DELETE_CHUNK_SIZE) {
+    const chunk = safePayloads.slice(i, i + DELETE_CHUNK_SIZE);
     const chunkIndex = Math.floor(i / DELETE_CHUNK_SIZE) + 1;
     const { error } = await supabase.from('products').upsert(chunk, {
       onConflict: 'id',
@@ -947,6 +1021,7 @@ async function upsertProductsInChunks(supabase, payloads) {
       `[sync:mirror] upsert chunk ${chunkIndex}/${totalChunks}: ${chunk.length} rows`,
     );
   }
+  return safePayloads.length;
 }
 
 async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
@@ -1115,7 +1190,7 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
   }
 
   const upsertPayloads = [...toInsert, ...toUpdate];
-  await upsertProductsInChunks(supabase, upsertPayloads);
+  const upsertedCount = await upsertProductsInChunks(supabase, upsertPayloads);
 
   if (rowErrors > 0) {
     console.warn(`[sync] строк с ошибками (пропущено): ${rowErrors}`);
@@ -1137,7 +1212,7 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
 
   return {
     mssqlIds,
-    upserted: upsertPayloads.length,
+    upserted: upsertedCount,
     skippedProtected,
     rowErrors,
     photosUploaded,
@@ -1155,7 +1230,7 @@ async function cleanupRemovedFromMssql(supabase, mssqlIds, statusMap, manualRetu
     const sid = String(id);
     if (mssqlIds.has(sid)) continue;
     if (SYNC_SKIP_STATUSES.has(status)) continue;
-    if (manualReturnLockById?.get(sid) === true && status === 'active') continue;
+    if (manualReturnLockById?.get(sid) === true) continue;
     toDelete.push(sid);
   }
 

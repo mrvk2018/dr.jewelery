@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -83,6 +85,8 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   late DateTimeRange _selectedRange;
   SalesHistoryStoreFilter _storeFilter = SalesHistoryStoreFilter.all;
+  final _sellerController = TextEditingController();
+  Timer? _sellerDebounce;
   SalesHistorySummary? _summary;
   bool _kpiLoading = false;
   bool _listLoading = false;
@@ -107,6 +111,8 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   @override
   void dispose() {
+    _sellerDebounce?.cancel();
+    _sellerController.dispose();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -152,6 +158,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
         soldDateKstStart: _rangeStartIso,
         soldDateKstEnd: _rangeEndIso,
         store: store,
+        sellerName: _sellerController.text,
       );
       final page = await _repo.fetchPage(
         pageIndex: 0,
@@ -229,6 +236,11 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
     if (picked == null || !mounted) return;
     setState(() => _selectedRange = picked);
     await _loadInitial();
+  }
+
+  void _onSellerChanged(String _) {
+    _sellerDebounce?.cancel();
+    _sellerDebounce = Timer(const Duration(milliseconds: 400), _loadInitial);
   }
 
   void _onStoreChanged(SalesHistoryStoreFilter next) {
@@ -312,10 +324,12 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
           _KpiHeader(
             rangeLabel: formatSalesRangeLabel(_selectedRange),
             storeFilter: _storeFilter,
+            sellerController: _sellerController,
             summary: _summary,
             loading: _kpiLoading,
             onPickRange: _pickDateRange,
             onStoreChanged: _onStoreChanged,
+            onSellerChanged: _onSellerChanged,
           ),
           if (_error != null)
             Padding(
@@ -362,22 +376,45 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 }
 
+int _drawerKrw(SalesHistorySummary? summary) {
+  if (summary == null) return 0;
+  if (summary.hasShiftCash) return summary.shiftCashKrw;
+  if (summary.tradeInScrapKrw > 0) return summary.netCashKrw;
+  return summary.totalSumKrw;
+}
+
+List<String> _methodOrder(Map<String, int> methods) {
+  const preferred = ['cash', 'card', 'transfer', 'unknown'];
+  final rest = methods.keys.where((key) => !preferred.contains(key)).toList()
+    ..sort();
+  return [...preferred.where(methods.containsKey), ...rest];
+}
+
+String _methodLabel(String method) {
+  if (method == 'unknown') return 'Прочее';
+  return AdminPosPaymentMethods.label(method);
+}
+
 class _KpiHeader extends StatelessWidget {
   const _KpiHeader({
     required this.rangeLabel,
     required this.storeFilter,
+    required this.sellerController,
     required this.summary,
     required this.loading,
     required this.onPickRange,
     required this.onStoreChanged,
+    required this.onSellerChanged,
   });
 
   final String rangeLabel;
   final SalesHistoryStoreFilter storeFilter;
+  final TextEditingController sellerController;
   final SalesHistorySummary? summary;
   final bool loading;
   final VoidCallback onPickRange;
   final void Function(SalesHistoryStoreFilter) onStoreChanged;
+  final ValueChanged<String> onSellerChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -428,6 +465,35 @@ class _KpiHeader extends StatelessWidget {
                 selected: storeFilter,
                 onChanged: onStoreChanged,
               ),
+              SizedBox(
+                width: 240,
+                child: TextField(
+                  controller: sellerController,
+                  onChanged: onSellerChanged,
+                  style: const TextStyle(color: AppColors.textOnPrimary),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Касса: продавец (имя или код)',
+                    hintStyle: TextStyle(
+                      color: AppColors.textOnPrimary.withValues(alpha: 0.7),
+                      fontSize: 13,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.person_outline,
+                      color: AppColors.textOnPrimary,
+                      size: 18,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: AppColors.textOnPrimary.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    focusedBorder: const OutlineInputBorder(
+                      borderSide: BorderSide(color: AppColors.textOnPrimary),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -452,26 +518,31 @@ class _KpiHeader extends StatelessWidget {
               ),
             )
           else ...[
-            Text(
-              formatWon(
-                (s?.tradeInScrapKrw ?? 0) > 0
-                    ? (s?.netCashKrw ?? s?.totalSumKrw ?? 0)
-                    : (s?.totalSumKrw ?? 0),
-              ),
+            KrwText(
+              amount: _drawerKrw(s),
               style: AppTypography.heading(fontSize: 30).copyWith(
                 color: AppColors.textOnPrimary,
                 letterSpacing: -0.5,
               ),
-            ),
-            if ((s?.tradeInScrapKrw ?? 0) > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Фактически в кассу (чистая выручка)',
-                style: AppTypography.productMeta().copyWith(
-                  color: AppColors.textOnPrimary.withValues(alpha: 0.88),
-                  fontSize: 11,
-                ),
+              digitStyle: AppTypography.heading(fontSize: 30).copyWith(
+                color: AppColors.textOnPrimary,
+                letterSpacing: -0.5,
               ),
+              currencyColor: AppColors.textOnPrimary,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              s?.hasShiftCash == true
+                  ? 'Касса смены'
+                  : ((s?.tradeInScrapKrw ?? 0) > 0
+                      ? 'Фактически в кассу (чистая выручка)'
+                      : 'Сумма продаж'),
+              style: AppTypography.productMeta().copyWith(
+                color: AppColors.textOnPrimary.withValues(alpha: 0.88),
+                fontSize: 11,
+              ),
+            ),
+            if (s?.hasShiftCash == true || (s?.tradeInScrapKrw ?? 0) > 0) ...[
               const SizedBox(height: 8),
               Text(
                 'Продано изделий: ${formatWon(s?.grossSalesKrw ?? s?.totalSumKrw ?? 0)}',
@@ -479,13 +550,84 @@ class _KpiHeader extends StatelessWidget {
                   color: AppColors.textOnPrimary.withValues(alpha: 0.92),
                 ),
               ),
+            ],
+            if ((s?.reservationCashKrw ?? 0) != 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    'Залоги и доплаты: ',
+                    style: AppTypography.productMeta().copyWith(
+                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  KrwText(
+                    amount: s!.reservationCashKrw,
+                    showPlusSign: s.reservationCashKrw > 0,
+                    style: AppTypography.productMeta().copyWith(
+                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                    ),
+                    digitStyle: AppTypography.productMeta().copyWith(
+                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                    ),
+                    currencyColor: AppColors.textOnPrimary,
+                  ),
+                ],
+              ),
+            ],
+            if ((s?.tradeInScrapKrw ?? 0) > 0) ...[
+              const SizedBox(height: 4),
               Text(
-                'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): ${formatWon(-(s?.tradeInScrapKrw ?? 0))}',
+                sellerController.text.trim().isEmpty
+                    ? 'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): ${formatWon(-(s?.tradeInScrapKrw ?? 0))}'
+                    : 'Зачтено ломом: ${formatWon(-(s?.tradeInScrapKrw ?? 0))}',
                 style: AppTypography.productMeta().copyWith(
                   color: AppColors.textOnPrimary.withValues(alpha: 0.92),
                 ),
               ),
             ],
+            if (s?.hasShiftCash == true && (s?.byMethod.isNotEmpty ?? false)) ...[
+              const SizedBox(height: 8),
+              for (final method in _methodOrder(s!.byMethod))
+                if ((s.byMethod[method] ?? 0) != 0)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Row(
+                      children: [
+                        Text(
+                          '${_methodLabel(method)}: ',
+                          style: AppTypography.productMeta().copyWith(
+                            color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+                            fontSize: 12,
+                          ),
+                        ),
+                        KrwText(
+                          amount: s.byMethod[method] ?? 0,
+                          style: AppTypography.productMeta().copyWith(
+                            color: AppColors.textOnPrimary,
+                            fontSize: 12,
+                          ),
+                          digitStyle: AppTypography.productMeta().copyWith(
+                            color: AppColors.textOnPrimary,
+                            fontSize: 12,
+                          ),
+                          currencyColor: AppColors.textOnPrimary,
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+            if (sellerController.text.trim().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Касса отфильтрована по продавцу. Список продаж и металл — по всем.',
+                  style: AppTypography.productMeta().copyWith(
+                    color: AppColors.textOnPrimary.withValues(alpha: 0.8),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
             const SizedBox(height: 2),
             Text(
               '${s?.totalCount ?? 0} поз.',

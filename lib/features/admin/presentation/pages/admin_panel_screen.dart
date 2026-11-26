@@ -5,6 +5,7 @@ import '../../../../core/l10n/app_locale_codes.dart';
 import '../../../profile/domain/models/user_profile.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/catalog_scope.dart';
 import '../../../profile/domain/models/order_item.dart';
@@ -204,9 +205,13 @@ class _AdminOrderCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(order.dateLabel, style: AppTypography.productMeta()),
-              Text(
-                formatWon(order.amount),
+              KrwText(
+                amount: order.amount,
                 style: AppTypography.price(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+                digitStyle: AppTypography.price(
                   fontSize: 14,
                   color: AppColors.textPrimary,
                 ),

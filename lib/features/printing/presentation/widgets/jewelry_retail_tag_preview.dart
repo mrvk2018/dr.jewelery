@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/utils/won_format.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../domain/jewelry_label_data.dart';
 
 /// Превью розничного ценника ~30×20 mm (экран + печать PWA).
@@ -76,9 +76,15 @@ class JewelryRetailTagPreview extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 6.5 * scale, height: 1.05),
               ),
-              Text(
-                formatWon(data.showroomPriceKrw),
+              KrwText(
+                amount: data.showroomPriceKrw,
                 style: TextStyle(
+                  fontSize: 8 * scale,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                  height: 1.1,
+                ),
+                digitStyle: TextStyle(
                   fontSize: 8 * scale,
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary,

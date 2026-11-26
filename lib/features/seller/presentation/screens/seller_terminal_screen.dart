@@ -4,6 +4,7 @@ import '../../../../core/services/database_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/won_format.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../admin/presentation/screens/scrap_metal_intake_screen.dart';
 import '../../../printing/presentation/widgets/product_return_dialog.dart';
 import '../../application/seller_terminal_service.dart';
@@ -1125,6 +1126,27 @@ class _TransferInScreen extends StatelessWidget {
   }
 }
 
+Widget _posPriceLine(String label, int amount, {TextStyle? style}) {
+  final labelStyle = style ?? AppTypography.productMeta();
+  final valueStyle = style ?? AppTypography.productMeta();
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Text.rich(
+      TextSpan(
+        style: labelStyle,
+        children: [
+          TextSpan(text: '$label '),
+          ...buildKrwAmountSpans(
+            amount: amount,
+            baseStyle: valueStyle,
+            digitStyle: valueStyle,
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _ProductCard extends StatelessWidget {
   const _ProductCard({
     required this.product,
@@ -1158,7 +1180,7 @@ class _ProductCard extends StatelessWidget {
             ),
             Text('Вставки: ${product['gem_inserts'] ?? '—'}'),
             const SizedBox(height: 12),
-            Text('Базовая цена: ${formatWon(base)}'),
+            _posPriceLine('Базовая цена:', base),
             InputDecorator(
               decoration: const InputDecoration(
                 labelText: 'Скидка',
@@ -1180,13 +1202,15 @@ class _ProductCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text('После скидки: ${formatWon(quote.discountedPriceKrw)}'),
-            Text(
-              'Доставка: ${formatWon(quote.deliveryFeeKrw)}',
+            _posPriceLine('После скидки:', quote.discountedPriceKrw),
+            _posPriceLine(
+              'Доставка:',
+              quote.deliveryFeeKrw,
               style: AppTypography.productMeta(),
             ),
-            Text(
-              'Итого: ${formatWon(quote.totalKrw)}',
+            _posPriceLine(
+              'Итого:',
+              quote.totalKrw,
               style: AppTypography.heading(fontSize: 18),
             ),
           ],

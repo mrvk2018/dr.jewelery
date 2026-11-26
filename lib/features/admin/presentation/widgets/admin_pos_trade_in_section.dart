@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../core/utils/store_location_utils.dart';
-import '../../../../core/utils/won_format.dart';
 import '../../application/pos_cart_controller.dart';
 import '../../domain/trade_in_scrap_draft.dart';
 
@@ -145,15 +145,18 @@ class _TradeInAttachedCard extends StatelessWidget {
           children: [
             Text('Продажа с ломом', style: AppTypography.heading(fontSize: 15)),
             const SizedBox(height: 8),
-            _line('Сумма изделий', formatWon(cartTotalKrw)),
-            _line(
+            _lineAmount('Сумма изделий', cartTotalKrw),
+            _lineAmount(
               'Зачтено ломом (${draft.goldEquivalent585.toStringAsFixed(2)} г 585 экв.)',
-              '−${formatWon(draft.scrapTotalKrw)}',
+              -draft.scrapTotalKrw,
             ),
             const SizedBox(height: 8),
-            Text(
-              badge.amountLabel,
+            KrwText(
+              amount: net,
+              showPlusSign: net > 0,
               style: AppTypography.heading(fontSize: 22).copyWith(color: badge.color),
+              digitStyle:
+                  AppTypography.heading(fontSize: 22).copyWith(color: badge.color),
             ),
             Chip(
               label: Text(badge.label),
@@ -176,41 +179,28 @@ class _TradeInAttachedCard extends StatelessWidget {
     );
   }
 
-  static Widget _line(String label, String value) {
+  static Widget _lineAmount(String label, int amount) {
+    final valueStyle =
+        AppTypography.productMeta().copyWith(fontWeight: FontWeight.w700);
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Flexible(child: Text(label, style: AppTypography.productMeta())),
-          Text(
-            value,
-            style: AppTypography.productMeta().copyWith(fontWeight: FontWeight.w700),
-          ),
+          KrwText(amount: amount, style: valueStyle, digitStyle: valueStyle),
         ],
       ),
     );
   }
 
-  static ({String label, String amountLabel, Color color}) _netBadge(int net) {
+  static ({String label, Color color}) _netBadge(int net) {
     if (net > 0) {
-      return (
-        label: 'Получить оплату',
-        amountLabel: '+${formatWon(net)}',
-        color: const Color(0xFF1B5E20),
-      );
+      return (label: 'Получить оплату', color: const Color(0xFF1B5E20));
     }
     if (net < 0) {
-      return (
-        label: 'Доплатить покупателю',
-        amountLabel: '−${formatWon(net.abs())}',
-        color: AppColors.saleRed,
-      );
+      return (label: 'Доплатить покупателю', color: AppColors.saleRed);
     }
-    return (
-      label: 'Обмен без доплаты',
-      amountLabel: formatWon(0),
-      color: AppColors.textSecondary,
-    );
+    return (label: 'Обмен без доплаты', color: AppColors.textSecondary);
   }
 }

@@ -28,4 +28,7 @@ abstract final class AppColors {
 
   static const Color installmentMint = Color(0xFF14B8A6);
   static const Color installmentMintBg = Color(0xFFE6FAF7);
+
+  /// Символ ₩ в суммах (читаемо на светлом фоне и в бейджах).
+  static const Color currencyWonAccent = Color(0xFF2563EB);
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -291,21 +292,23 @@ class _PriceRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          formatWon(displayOldPrice),
-          style: AppTypography.productOldPrice.copyWith(
-            color: Colors.grey,
-            decoration: TextDecoration.lineThrough,
-            decorationColor: Colors.grey,
-          ),
+        KrwText(
+          amount: displayOldPrice,
+          style: AppTypography.productOldPrice.copyWith(color: Colors.grey),
+          decoration: TextDecoration.lineThrough,
+          decorationColor: Colors.grey,
         ),
         const SizedBox(height: 2),
         FittedBox(
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
-          child: Text(
-            formatWon(salePrice),
+          child: KrwText(
+            amount: salePrice,
             style: AppTypography.productPrice.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.accent,
+            ),
+            digitStyle: AppTypography.productPrice.copyWith(
               fontWeight: FontWeight.bold,
               color: AppColors.accent,
             ),

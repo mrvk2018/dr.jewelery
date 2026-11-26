@@ -6,6 +6,7 @@ import '../../../../shared/providers/cart_controller.dart';
 import '../../../../core/l10n/localized_text.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/providers/cart_scope.dart';
 import '../../../../shared/providers/favorites_scope.dart';
@@ -265,22 +266,28 @@ class _DetailPriceRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                formatWon(displayOldPrice),
+              KrwText(
+                amount: displayOldPrice,
                 style: AppTypography.price(
                   fontSize: 16,
                   color: Colors.grey,
                   fontWeight: FontWeight.w400,
-                  decoration: TextDecoration.lineThrough,
                 ),
+                decoration: TextDecoration.lineThrough,
+                decorationColor: Colors.grey,
               ),
               const SizedBox(height: 4),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  formatWon(salePrice),
+                child: KrwText(
+                  amount: salePrice,
                   style: AppTypography.price(
+                    fontSize: 28,
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  digitStyle: AppTypography.price(
                     fontSize: 28,
                     color: AppColors.accent,
                     fontWeight: FontWeight.bold,

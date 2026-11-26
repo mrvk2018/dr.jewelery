@@ -11,6 +11,7 @@ import '../../../../core/constants/jewelry_gem_inserts.dart';
 import '../../../../core/widgets/jewelry_gem_insert_picker_dialog.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../core/utils/round_krw_up_1000.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
@@ -53,19 +54,13 @@ int? adminShowroomSalePriceKrw(Map<String, dynamic> row) {
   return parsed;
 }
 
-String adminShowroomKrwLabel(int krw) {
-  final spaced = krw.toString().replaceAllMapped(
-    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-    (m) => '${m[1]} ',
-  );
-  return '$spaced ₩';
-}
-
 String adminShowroomSalePriceLabel(Map<String, dynamic> row) {
   final krw = adminShowroomSalePriceKrw(row);
   if (krw == null) return '—';
-  return adminShowroomKrwLabel(krw);
+  return formatWon(krw);
 }
+
+String adminShowroomKrwLabel(int krw) => formatWon(krw);
 
 /// Наименование витрины из `products.name` (jsonb или строка).
 String extractStoredProductName(Map<String, dynamic> row) {
@@ -1084,6 +1079,17 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
     );
   }
 
+  Widget _priceCell(Map<String, dynamic> row, double width) {
+    final krw = adminShowroomSalePriceKrw(row);
+    final style = AppTypography.productMeta().copyWith(fontSize: 12);
+  return SizedBox(
+      width: width,
+      child: krw == null
+          ? Text('—', style: style)
+          : KrwText(amount: krw, style: style, digitStyle: style),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final products = widget.products;
@@ -1190,10 +1196,7 @@ class _ProductTablePanelState extends State<_ProductTablePanel> {
                                           widths[6],
                                           maxLines: 2,
                                         ),
-                                        _dataCell(
-                                          widget.salePriceLabel(row),
-                                          widths[7],
-                                        ),
+                                        _priceCell(row, widths[7]),
                                         _dataCell(
                                           widget.productName(row),
                                           widths[8],
@@ -1320,10 +1323,7 @@ class _ShowroomKpiStrip extends StatelessWidget {
                   label: 'Масса',
                   value: '${totalWeightGrams.toStringAsFixed(2)} г',
                 ),
-                _KpiCompactChip(
-                  label: 'Сумма',
-                  value: adminShowroomKrwLabel(totalPriceKrw),
-                ),
+                _KpiAmountChip(label: 'Сумма', amountKrw: totalPriceKrw),
                 Container(
                   width: 1,
                   height: 28,
@@ -1394,6 +1394,36 @@ class _KpiCompactChip extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KpiAmountChip extends StatelessWidget {
+  const _KpiAmountChip({required this.label, required this.amountKrw});
+
+  final String label;
+  final int amountKrw;
+
+  @override
+  Widget build(BuildContext context) {
+    final valueStyle = AppTypography.productMeta().copyWith(
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('$label: ', style: AppTypography.productMeta().copyWith(fontSize: 11)),
+          KrwText(amount: amountKrw, style: valueStyle, digitStyle: valueStyle),
         ],
       ),
     );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../core/services/database_service.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/models/seller_item.dart';
@@ -299,9 +300,10 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                             'Итого',
                             style: AppTypography.heading(fontSize: 16),
                           ),
-                          Text(
-                            '${_formatKrw(cart.totalFinalKrw)} ₩',
+                          KrwText(
+                            amount: cart.totalFinalKrw,
                             style: AppTypography.heading(fontSize: 18),
+                            digitStyle: AppTypography.heading(fontSize: 18),
                           ),
                         ],
                       ),
@@ -487,8 +489,8 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     final urls = posCartProductImageUrls(product);
     if (urls.isEmpty) return;
     final subtitle = line.discountPercent <= 0
-        ? '${_formatKrw(line.finalPriceKrw)} ₩'
-        : '${_formatKrw(line.finalPriceKrw)} ₩ · −${line.discountPercent}%';
+        ? formatWon(line.finalPriceKrw)
+        : '${formatWon(line.finalPriceKrw)} · −${line.discountPercent}%';
     await showAdminProductPhotoPreview(
       context,
       title: product.sku,
@@ -497,15 +499,6 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     );
   }
 
-  String _formatKrw(int value) {
-    final s = value.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
-      buf.write(s[i]);
-    }
-    return buf.toString();
-  }
 }
 
 List<String> posCartProductImageUrls(ProductItem product) {
@@ -597,21 +590,21 @@ class _PosCartLinePrice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final finalText = '${_formatKrw(line.finalPriceKrw)} ₩';
+    final meta = AppTypography.productMeta();
     if (line.discountPercent <= 0) {
-      return Text(finalText, style: AppTypography.productMeta());
+      return KrwText(amount: line.finalPriceKrw, style: meta, digitStyle: meta);
     }
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       spacing: 6,
       children: [
-        Text(finalText, style: AppTypography.productMeta()),
-        Text(
-          '${_formatKrw(line.originalPriceKrw)} ₩',
-          style: AppTypography.productMeta().copyWith(
-            decoration: TextDecoration.lineThrough,
-            color: AppColors.textSecondary,
-          ),
+        KrwText(amount: line.finalPriceKrw, style: meta, digitStyle: meta),
+        KrwText(
+          amount: line.originalPriceKrw,
+          style: meta.copyWith(color: AppColors.textSecondary),
+          digitStyle: meta.copyWith(color: AppColors.textSecondary),
+          decoration: TextDecoration.lineThrough,
+          decorationColor: AppColors.textSecondary,
         ),
         Text(
           '−${line.discountPercent}%',
@@ -623,11 +616,6 @@ class _PosCartLinePrice extends StatelessWidget {
       ],
     );
   }
-
-  String _formatKrw(int value) => value.toString().replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
-        (m) => '${m[1]} ',
-      );
 }
 
 class _PosCartLineThumbnail extends StatelessWidget {

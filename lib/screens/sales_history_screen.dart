@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/won_format.dart';
+import '../core/widgets/krw_text.dart';
 import '../features/admin/presentation/widgets/admin_pos_cart_sheet.dart';
 import '../features/admin/presentation/widgets/admin_product_photo_preview.dart';
 import '../models/sales_history_row.dart';
@@ -479,7 +480,7 @@ class _KpiHeader extends StatelessWidget {
                 ),
               ),
               Text(
-                'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): −${formatWon(s?.tradeInScrapKrw ?? 0)}',
+                'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): ${formatWon(-(s?.tradeInScrapKrw ?? 0))}',
                 style: AppTypography.productMeta().copyWith(
                   color: AppColors.textOnPrimary.withValues(alpha: 0.92),
                 ),
@@ -713,7 +714,7 @@ class _SalesHistoryTile extends StatelessWidget {
                     if (row.isTradeIn && row.scrapTradeInKrw > 0) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Лом: −${formatWon(row.scrapTradeInKrw)}',
+                        'Лом: ${formatWon(-row.scrapTradeInKrw)}',
                         style: AppTypography.productMeta().copyWith(
                           color: AppColors.saleRed,
                           fontWeight: FontWeight.w600,
@@ -722,9 +723,9 @@ class _SalesHistoryTile extends StatelessWidget {
                       if (row.netCashDeltaKrw != null)
                         Text(
                           row.netCashDeltaKrw! > 0
-                              ? 'Получено от клиента: +${formatWon(row.netCashDeltaKrw!)}'
+                              ? 'Получено от клиента: ${formatWonDelta(row.netCashDeltaKrw!)}'
                               : row.netCashDeltaKrw! < 0
-                                  ? 'Доплачено покупателю: −${formatWon(row.netCashDeltaKrw!.abs())}'
+                                  ? 'Доплачено покупателю: ${formatWon(-row.netCashDeltaKrw!.abs())}'
                                   : 'Обмен без доплаты',
                           style: AppTypography.productMeta(),
                         ),
@@ -824,13 +825,18 @@ class _SalePriceColumn extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (showsDiscount) ...[
-            Text(
-              formatWon(row.displayListPriceKrw),
+            KrwText(
+              amount: row.displayListPriceKrw,
               style: AppTypography.productMeta().copyWith(
-                decoration: TextDecoration.lineThrough,
                 color: AppColors.textSecondary,
                 fontSize: 12,
               ),
+              digitStyle: AppTypography.productMeta().copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+              decoration: TextDecoration.lineThrough,
+              decorationColor: AppColors.textSecondary,
             ),
             if (discountPct > 0)
               Container(
@@ -850,13 +856,41 @@ class _SalePriceColumn extends StatelessWidget {
                 ),
               ),
           ],
-          Text(
-            formatWon(row.priceKrw),
+          KrwText(
+            amount: row.priceKrw,
             style: AppTypography.price(fontSize: 17).copyWith(
+              color: row.isReturnLine ? AppColors.saleRed : null,
+            ),
+            digitStyle: AppTypography.price(fontSize: 17).copyWith(
               color: row.isReturnLine ? AppColors.saleRed : null,
             ),
             textAlign: TextAlign.end,
           ),
+          if (row.isTradeIn &&
+              row.scrapTradeInKrw > 0 &&
+              row.netCashDeltaKrw != null) ...[
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: KrwText(
+                amount: row.netCashDeltaKrw!,
+                showPlusSign: row.netCashDeltaKrw! > 0,
+                currencyColor: AppColors.currencyWonAccent,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.saleRed,
+                ),
+                digitStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.saleRed,
+                ),
+                textAlign: TextAlign.end,
+              ),
+            ),
+          ],
           if (showReturnedBadge) ...[
             const SizedBox(height: 6),
             Container(

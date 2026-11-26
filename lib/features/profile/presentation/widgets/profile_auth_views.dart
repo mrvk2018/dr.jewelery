@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/l10n/app_language.dart';
 import '../../../../core/l10n/profile_localizations.dart';
-import '../../../../core/utils/won_format.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../core/l10n/support_localizations.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -522,9 +522,14 @@ class _BonusBalanceCard extends StatelessWidget {
                     color: AppColors.textOnPrimary.withValues(alpha: 0.75),
                   ).copyWith(fontSize: 12),
                 ),
-                Text(
-                  formatWon(balance),
+                KrwText(
+                  amount: balance,
+                  currencyColor: AppColors.textOnPrimary,
                   style: AppTypography.heading(
+                    fontSize: 22,
+                    color: AppColors.textOnPrimary,
+                  ),
+                  digitStyle: AppTypography.heading(
                     fontSize: 22,
                     color: AppColors.textOnPrimary,
                   ),
@@ -576,9 +581,13 @@ class _OrderHistoryTile extends StatelessWidget {
                 order.dateLabel,
                 style: AppTypography.productMeta(),
               ),
-              Text(
-                formatWon(order.amount),
+              KrwText(
+                amount: order.amount,
                 style: AppTypography.price(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+                digitStyle: AppTypography.price(
                   fontSize: 14,
                   color: AppColors.textPrimary,
                 ),

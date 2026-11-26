@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/won_format.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/models/product_item.dart';
 import '../../../../shared/widgets/product_image.dart';
@@ -93,9 +95,14 @@ class CartItemTile extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 6),
-                Text(
-                  formatWon(product.salePrice),
+                KrwText(
+                  amount: product.salePrice,
                   style: AppTypography.price(
+                    fontSize: 16,
+                    color: AppColors.saleRed,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  digitStyle: AppTypography.price(
                     fontSize: 16,
                     color: AppColors.saleRed,
                     fontWeight: FontWeight.w700,
@@ -341,18 +348,18 @@ class CartSummarySection extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _SummaryRow(label: 'Стоимость', value: formatWon(subtotal)),
+          _SummaryRow(label: 'Стоимость', amount: subtotal),
           const SizedBox(height: 8),
           _SummaryRow(
             label: 'Скидка',
-            value: '- ${formatWon(discount)}',
+            amount: -discount,
             valueColor: AppColors.saleRed,
           ),
           if (promoDiscount > 0) ...[
             const SizedBox(height: 8),
             _SummaryRow(
               label: 'Промокод',
-              value: '- ${formatWon(promoDiscount)}',
+              amount: -promoDiscount,
               valueColor: AppColors.accent,
             ),
           ],
@@ -360,7 +367,7 @@ class CartSummarySection extends StatelessWidget {
             const SizedBox(height: 8),
             _SummaryRow(
               label: 'Списано бонусов',
-              value: '- ${formatWon(bonusDeduction)}',
+              amount: -bonusDeduction,
               valueColor: AppColors.accent,
             ),
           ],
@@ -370,7 +377,7 @@ class CartSummarySection extends StatelessWidget {
           ),
           _SummaryRow(
             label: 'Итого к оплате',
-            value: formatWon(total),
+            amount: total,
             isTotal: true,
           ),
         ],
@@ -382,18 +389,24 @@ class CartSummarySection extends StatelessWidget {
 class _SummaryRow extends StatelessWidget {
   const _SummaryRow({
     required this.label,
-    required this.value,
+    required this.amount,
     this.valueColor,
     this.isTotal = false,
   });
 
   final String label;
-  final String value;
+  final int amount;
   final Color? valueColor;
   final bool isTotal;
 
   @override
   Widget build(BuildContext context) {
+    final valueStyle = isTotal
+        ? AppTypography.price(fontSize: 18, color: AppColors.primary)
+        : AppTypography.price(
+            fontSize: 14,
+            color: valueColor ?? AppColors.textPrimary,
+          );
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -403,14 +416,10 @@ class _SummaryRow extends StatelessWidget {
               ? AppTypography.heading(fontSize: 16)
               : AppTypography.productMeta().copyWith(fontSize: 14),
         ),
-        Text(
-          value,
-          style: isTotal
-              ? AppTypography.price(fontSize: 18, color: AppColors.primary)
-              : AppTypography.price(
-                  fontSize: 14,
-                  color: valueColor ?? AppColors.textPrimary,
-                ),
+        KrwText(
+          amount: amount,
+          style: valueStyle,
+          digitStyle: valueStyle,
         ),
       ],
     );

@@ -250,6 +250,7 @@ abstract final class SellerPayrollRpc {
 abstract final class CatalogFacetedRpc {
   static const getAdvancedFacetedProducts = 'get_advanced_faceted_products';
   static const searchDraftProducts = 'search_draft_products';
+  static const countPendingDraftIntake = 'count_pending_draft_intake';
   static const metalTagsParam = 'metal_tags';
   static const categoryTagsParam = 'category_tags';
   static const advancedTagsParam = 'advanced_tags';
@@ -578,6 +579,9 @@ abstract class DatabaseService {
 
   /// Приёмка черновиков: RPC [CatalogFacetedRpc.searchDraftProducts] (admin JWT).
   Future<List<Map<String, dynamic>>> searchDraftProducts(String query);
+
+  /// Бейдж приёмки: непринятые черновики (`count_pending_draft_intake`).
+  Future<int> countPendingDraftIntake();
 
   /// Сленг витрины из `public.jewelry_thesaurus.slang_word`.
   Future<List<String>> fetchJewelryThesaurusSlang();
@@ -2257,6 +2261,24 @@ class CloudDatabaseService implements DatabaseService {
       debugPrint('CloudDatabaseService.searchDraftProducts failed: $error');
       debugPrint('$stackTrace');
       return const [];
+    }
+  }
+
+  @override
+  Future<int> countPendingDraftIntake() async {
+    try {
+      final response = await _supabaseClient.rpc(
+        CatalogFacetedRpc.countPendingDraftIntake,
+      );
+      final map = _rpcJsonMap(response);
+      if (map['ok'] != true) return 0;
+      final raw = map['count'];
+      if (raw is num) return raw.round();
+      return int.tryParse('$raw') ?? 0;
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.countPendingDraftIntake failed: $error');
+      debugPrint('$stackTrace');
+      return 0;
     }
   }
 

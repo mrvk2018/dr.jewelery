@@ -15,6 +15,7 @@ import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
+import '../widgets/admin_nav_count_badge.dart';
 import '../widgets/admin_toast.dart';
 import '../widgets/reservations_dialog.dart';
 import '../widgets/admin_product_photo_preview.dart';
@@ -113,13 +114,13 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   Map<String, dynamic>? _selected;
   bool _initialLoading = true;
   int _activeReservationCount = 0;
+  int _pendingDraftCount = 0;
 
   @override
   void initState() {
     super.initState();
     _posCart.addListener(_onPosCartChanged);
     _refreshCatalog();
-    _refreshReservationCount();
   }
 
   @override
@@ -302,8 +303,15 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
       _snack('Ошибка загрузки витрины: $error', error: true);
     } finally {
       if (mounted) setState(() => _initialLoading = false);
-      unawaited(_refreshReservationCount());
+      unawaited(_refreshActionBadges());
     }
+  }
+
+  Future<void> _refreshActionBadges() async {
+    await Future.wait([
+      _refreshReservationCount(),
+      _refreshPendingDraftCount(),
+    ]);
   }
 
   Future<void> _refreshReservationCount() async {
@@ -318,6 +326,16 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
     }
   }
 
+  Future<void> _refreshPendingDraftCount() async {
+    try {
+      final count = await widget.database.countPendingDraftIntake();
+      if (!mounted) return;
+      setState(() => _pendingDraftCount = count);
+    } catch (error) {
+      debugPrint('JewelryAdminDashboard._refreshPendingDraftCount failed: $error');
+    }
+  }
+
   Future<void> _openReservations() async {
     final changed = await showDialog<bool>(
       context: context,
@@ -328,6 +346,8 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         lockSeller: widget.sellerStaffMode,
       ),
     );
+    if (!mounted) return;
+    unawaited(_refreshReservationCount());
     if (changed == true) {
       await _refreshCatalog();
       widget.onPosSaleArchived?.call();
@@ -802,6 +822,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     isSuperAdmin: panelAdmin,
                     showSellerQuickActions: widget.sellerStaffMode,
                     activeReservationCount: _activeReservationCount,
+                    pendingDraftCount: _pendingDraftCount,
                     onOpenDraft: _openDraftIntake,
                     onOpenScrap: widget.sellerStaffMode
                         ? _openSellerScrapIntake
@@ -923,6 +944,7 @@ class _TopControlBar extends StatelessWidget {
     required this.isSuperAdmin,
     required this.showSellerQuickActions,
     required this.activeReservationCount,
+    required this.pendingDraftCount,
     required this.onOpenDraft,
     required this.onOpenScrap,
     required this.onAddProduct,
@@ -934,6 +956,7 @@ class _TopControlBar extends StatelessWidget {
   final bool isSuperAdmin;
   final bool showSellerQuickActions;
   final int activeReservationCount;
+  final int pendingDraftCount;
   final VoidCallback onOpenDraft;
   final VoidCallback onOpenScrap;
   final VoidCallback onAddProduct;
@@ -968,11 +991,12 @@ class _TopControlBar extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             if (isSuperAdmin) ...[
-              OutlinedButton.icon(
+              AdminQuickActionOutlinedButton(
                 onPressed: onOpenDraft,
                 style: _compactBtnStyle,
-                icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
-                label: const Text('Приёмка черновиков'),
+                icon: Icons.move_to_inbox_outlined,
+                label: 'Приёмка черновиков',
+                badgeCount: pendingDraftCount,
               ),
               OutlinedButton.icon(
                 onPressed: onOpenScrap,
@@ -1026,45 +1050,16 @@ class _TopControlBar extends StatelessWidget {
               ),
             ],
             if (isSuperAdmin || showSellerQuickActions)
-              _ReservationsButton(
-                count: activeReservationCount,
-                style: _compactBtnStyle,
+              AdminQuickActionOutlinedButton(
                 onPressed: onOpenReservations,
+                style: _compactBtnStyle,
+                icon: Icons.bookmark_outline,
+                label: 'Брони / Залоги',
+                badgeCount: activeReservationCount,
               ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ReservationsButton extends StatelessWidget {
-  const _ReservationsButton({
-    required this.count,
-    required this.style,
-    required this.onPressed,
-  });
-
-  final int count;
-  final ButtonStyle style;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final button = OutlinedButton.icon(
-      onPressed: onPressed,
-      style: style,
-      icon: const Icon(Icons.bookmark_outline, size: 16),
-      label: const Text('Брони / Залоги'),
-    );
-    if (count <= 0) return button;
-    final label = count > 99 ? '99+' : '$count';
-    return Badge(
-      isLabelVisible: true,
-      backgroundColor: AppColors.saleRed,
-      textColor: AppColors.textOnPrimary,
-      label: Text(label),
-      child: button,
     );
   }
 }

@@ -50,6 +50,49 @@ class AdminNavCountBadge extends StatelessWidget {
 }
 
 /// Оборачивает иконку пункта меню (видно при свёрнутом `NavigationRail`).
+/// Кнопка быстрого действия с красным бейджем справа от подписи (как «Трансферы» в rail).
+class AdminQuickActionOutlinedButton extends StatelessWidget {
+  const AdminQuickActionOutlinedButton({
+    super.key,
+    required this.onPressed,
+    required this.style,
+    required this.icon,
+    required this.label,
+    this.badgeCount = 0,
+  });
+
+  final VoidCallback onPressed;
+  final ButtonStyle style;
+  final IconData icon;
+  final String label;
+  final int badgeCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: style,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (badgeCount > 0) ...[
+            const SizedBox(width: 8),
+            AdminNavCountBadge(count: badgeCount, compact: true),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class AdminNavIconWithBadge extends StatelessWidget {
   const AdminNavIconWithBadge({
     super.key,

@@ -199,6 +199,14 @@ class SalesHistoryRow {
     this.scrapTradeInKrw = 0,
     this.netCashDeltaKrw,
     this.isTradeIn = false,
+    this.isReservationPayment = false,
+    this.reservationPaymentType,
+    this.reservationStatus,
+    this.reservationCustomerName,
+    this.reservationCustomerPhone,
+    this.reservationItemsSummary,
+    this.reservationHasRefund = false,
+    this.reservationExpiresAt,
   });
 
   final String id;
@@ -228,11 +236,70 @@ class SalesHistoryRow {
   final int scrapTradeInKrw;
   final int? netCashDeltaKrw;
   final bool isTradeIn;
+  final bool isReservationPayment;
+  final String? reservationPaymentType;
+  final String? reservationStatus;
+  final String? reservationCustomerName;
+  final String? reservationCustomerPhone;
+  final String? reservationItemsSummary;
+  final bool reservationHasRefund;
+  final DateTime? reservationExpiresAt;
 
   bool get isReturnLine =>
       priceKrw < 0 ||
       migrationMeta?['type']?.toString() == 'return' ||
-      legacyId.startsWith('return_');
+      legacyId.startsWith('return_') ||
+      (isReservationPayment && reservationPaymentType == 'refund');
+
+  String get historyPrimaryTitle {
+    if (isReservationPayment) {
+      final title = productName?.trim();
+      if (title != null && title.isNotEmpty) return title;
+      return sku.isEmpty ? 'Бронь' : sku;
+    }
+    return sku.isEmpty ? '—' : sku;
+  }
+
+  String? get historySecondaryLine {
+    if (isReservationPayment) {
+      final items = reservationItemsSummary?.trim();
+      if (items != null && items.isNotEmpty) return items;
+      return null;
+    }
+    final name = productName?.trim();
+    if (name != null && name.isNotEmpty && name != sku) return name;
+    return null;
+  }
+
+  String? get reservationPaymentKindBadge {
+    if (!isReservationPayment) return null;
+    return switch (reservationPaymentType) {
+      'deposit' => 'Залог / Бронь',
+      'topup' => 'Доплата по брони',
+      'buyout' => 'Выкуп брони',
+      'refund' => 'Возврат залога',
+      _ => 'Бронь',
+    };
+  }
+
+  String? get reservationLifecycleBadge {
+    if (!isReservationPayment) return null;
+    final st = reservationStatus?.trim().toLowerCase();
+    if (st == 'completed') return 'Бронь выкуплена';
+    if (st == 'cancelled') {
+      return reservationHasRefund
+          ? 'Бронь отменена · залог возвращён'
+          : 'Бронь отменена · залог удержан';
+    }
+    if (st == 'active') {
+      final exp = reservationExpiresAt;
+      if (exp != null && exp.toUtc().isBefore(DateTime.now().toUtc())) {
+        return 'Бронь просрочена';
+      }
+      return 'Бронь активна';
+    }
+    return null;
+  }
 
   bool get showsDiscount {
     if (discountPercent > 0) return true;
@@ -275,7 +342,7 @@ class SalesHistoryRow {
     return null;
   }
 
-  bool get canProcessPosReturn => canReturn;
+  bool get canProcessPosReturn => canReturn && !isReservationPayment;
 
   static Set<String> collectReversedLegacyIds(Iterable<SalesHistoryRow> rows) {
     final reversed = <String>{};
@@ -363,6 +430,17 @@ class SalesHistoryRow {
       scrapTradeInKrw: _parseKrw(map['scrap_trade_in_krw']),
       netCashDeltaKrw: _parseKrwOpt(map['net_cash_delta_krw']),
       isTradeIn: map['is_trade_in'] == true,
+      isReservationPayment: map['is_reservation_payment'] == true,
+      reservationPaymentType: map['reservation_payment_type']?.toString().trim(),
+      reservationStatus: map['reservation_status']?.toString().trim(),
+      reservationCustomerName:
+          map['reservation_customer_name']?.toString().trim(),
+      reservationCustomerPhone:
+          map['reservation_customer_phone']?.toString().trim(),
+      reservationItemsSummary:
+          map['reservation_items_summary']?.toString().trim(),
+      reservationHasRefund: map['reservation_has_refund'] == true,
+      reservationExpiresAt: _parseDateTime(map['reservation_expires_at']),
     );
   }
 
@@ -442,6 +520,7 @@ class SalesRowGroupMeta {
 
 /// Ключ одного Trade-In чека с приёмом лома; `null` — обычная продажа (без группировки).
 String? salesHistoryTradeInGroupKey(SalesHistoryRow row) {
+  if (row.isReservationPayment) return null;
   if (!row.isTradeIn || row.scrapTradeInKrw <= 0) return null;
   final batch = row.saleBatchId?.trim();
   if (batch != null && batch.isNotEmpty) return 'batch:$batch';

@@ -132,9 +132,36 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   bool _canShowReturnButton(SalesHistoryRow row) {
-    if (!row.canReturn) return false;
+    if (!row.canProcessPosReturn) return false;
     if (_reversedLegacyIds.contains(row.legacyId)) return false;
     return true;
+  }
+
+  List<SalesHistoryRow> _filterRowsBySeller(List<SalesHistoryRow> rows) {
+    final query = _sellerController.text.trim().toUpperCase();
+    if (query.isEmpty) return rows;
+    return rows.where((row) {
+      final name = row.sellerName?.trim().toUpperCase() ?? '';
+      final code = row.sellerCode?.trim().toUpperCase() ?? '';
+      if (name.contains(query) || code.contains(query)) return true;
+      if (row.isReservationPayment) {
+        final customer = row.reservationCustomerName?.trim().toUpperCase() ?? '';
+        final phone = row.reservationCustomerPhone?.trim().toUpperCase() ?? '';
+        final sku = row.sku.trim().toUpperCase();
+        final items = row.reservationItemsSummary?.trim().toUpperCase() ?? '';
+        if (customer.contains(query) ||
+            phone.contains(query) ||
+            sku.contains(query) ||
+            items.contains(query)) {
+          return true;
+        }
+      } else {
+        final sku = row.sku.trim().toUpperCase();
+        final title = row.productName?.trim().toUpperCase() ?? '';
+        if (sku.contains(query) || title.contains(query)) return true;
+      }
+      return false;
+    }).toList();
   }
 
   bool _showReturnedBadge(SalesHistoryRow row) {
@@ -172,7 +199,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
       );
       _rows
         ..clear()
-        ..addAll(page);
+        ..addAll(_filterRowsBySeller(page));
       _recomputeReversalIndex();
       if (!mounted) return;
       setState(() {
@@ -202,7 +229,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
         soldDateKstEnd: _rangeEndIso,
         store: _storeFilter.rpcValue,
       );
-      _rows.addAll(page);
+      _rows.addAll(_filterRowsBySeller(page));
       _recomputeReversalIndex();
       if (!mounted) return;
       setState(() {
@@ -867,9 +894,10 @@ class _SalesHistoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = row.productName?.trim();
-    final showName = name != null && name.isNotEmpty && name != row.sku;
-    final weightText = formatWeightGrams(row.weightGrams);
+    final primaryTitle = row.historyPrimaryTitle;
+    final secondaryLine = row.historySecondaryLine;
+    final weightText =
+        row.isReservationPayment ? '' : formatWeightGrams(row.weightGrams);
     final metal = metalCategoryBadgeLabel(row.metalCategory);
     final payment = row.paymentMethod?.trim();
     final paymentLabel = payment != null && payment.isNotEmpty
@@ -917,17 +945,17 @@ class _SalesHistoryTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      row.sku.isEmpty ? '—' : row.sku,
+                      primaryTitle,
                       style: AppTypography.productName(),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (showName) ...[
+                    if (secondaryLine != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        name,
+                        secondaryLine,
                         style: AppTypography.productMeta(),
-                        maxLines: 2,
+                        maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -975,6 +1003,17 @@ class _SalesHistoryTile extends StatelessWidget {
                             icon: Icons.recycling_outlined,
                             label: 'С ломом (Trade-In)',
                             emphasized: true,
+                          ),
+                        if (row.reservationPaymentKindBadge != null)
+                          _InfoChip(
+                            icon: Icons.bookmark_outline,
+                            label: row.reservationPaymentKindBadge!,
+                            emphasized: true,
+                          ),
+                        if (row.reservationLifecycleBadge != null)
+                          _InfoChip(
+                            icon: Icons.event_available_outlined,
+                            label: row.reservationLifecycleBadge!,
                           ),
                       ],
                     ),
@@ -1130,6 +1169,10 @@ class _SalePriceColumn extends StatelessWidget {
           ],
           KrwText(
             amount: row.priceKrw,
+            showPlusSign: row.isReservationPayment && row.priceKrw > 0,
+            currencyColor: row.isReservationPayment && !row.isReturnLine
+                ? AppColors.currencyWonAccent
+                : null,
             style: AppTypography.price(fontSize: 17).copyWith(
               color: row.isReturnLine ? AppColors.saleRed : null,
             ),

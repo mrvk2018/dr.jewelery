@@ -77,6 +77,17 @@ DraftMetalBatchGroup classifyDraftMetalBatchGroup(Map<String, dynamic> row) {
     return DraftMetalBatchGroup.other;
   }
 
+  final lower = metal.toLowerCase();
+  if (lower.contains('родирован') ||
+      RegExp(r'\b925\b', caseSensitive: false).hasMatch(metal) ||
+      RegExp(r'\bag\d*', caseSensitive: false).hasMatch(metal)) {
+    return DraftMetalBatchGroup.silver;
+  }
+  if (RegExp(r'(375|583|585|750|999)', caseSensitive: false).hasMatch(metal) ||
+      RegExp(r'\bau\d*', caseSensitive: false).hasMatch(metal)) {
+    return DraftMetalBatchGroup.gold;
+  }
+
   if (_haystackMatchesFacetPatterns(metal, _silverFacetPatterns)) {
     return DraftMetalBatchGroup.silver;
   }
@@ -84,16 +95,13 @@ DraftMetalBatchGroup classifyDraftMetalBatchGroup(Map<String, dynamic> row) {
     return DraftMetalBatchGroup.gold;
   }
 
-  final lower = metal.toLowerCase();
-  if (lower.contains('silver') ||
-      RegExp(r'\bag\d*', caseSensitive: false).hasMatch(metal)) {
+  if (lower.contains('silver')) {
     return DraftMetalBatchGroup.silver;
   }
-  if (lower.contains('gold') ||
-      RegExp(r'\bau\d*', caseSensitive: false).hasMatch(metal)) {
+  if (lower.contains('gold') || lower.contains('золот')) {
     return DraftMetalBatchGroup.gold;
   }
-  if (lower.contains('родирован')) {
+  if (lower.contains('серебр')) {
     return DraftMetalBatchGroup.silver;
   }
 

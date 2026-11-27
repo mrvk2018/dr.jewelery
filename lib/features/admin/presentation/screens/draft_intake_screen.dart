@@ -9,6 +9,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/utils/product_size_utils.dart';
 import '../../../../core/utils/store_location_utils.dart';
 import '../../../../core/utils/won_format.dart';
+import '../../../../core/widgets/krw_text.dart';
 import '../../../printing/domain/jewelry_label_data.dart';
 import '../../../printing/presentation/widgets/jewelry_label_preview.dart';
 import '../../../printing/infrastructure/browser_label_print.dart';
@@ -761,6 +762,11 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final kpiReport = computeDraftBatchReconcileReport(
+      _visibleDrafts,
+      weightGramsForRow: _weight,
+      priceKrwForRow: (row) => _salePriceKrw(row) ?? 0,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -798,6 +804,7 @@ class _DraftIntakeScreenState extends State<DraftIntakeScreen> {
                     _adminDraftFilter = filter;
                     _selectedDraftIds.clear();
                   }),
+                  kpiReport: kpiReport,
                 ),
                 const SizedBox(height: 16),
                 Expanded(
@@ -843,6 +850,7 @@ class _Toolbar extends StatelessWidget {
     required this.onBatchReconcile,
     required this.onSendBatchToAnsan,
     required this.onAdminFilterChanged,
+    required this.kpiReport,
   });
 
   final bool sellerStaffMode;
@@ -858,6 +866,7 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onBatchReconcile;
   final VoidCallback onSendBatchToAnsan;
   final ValueChanged<_AdminDraftFilter> onAdminFilterChanged;
+  final DraftBatchReconcileReport kpiReport;
 
   @override
   Widget build(BuildContext context) {
@@ -995,8 +1004,114 @@ class _Toolbar extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _DraftIntakeKpiStrip(report: kpiReport),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _DraftIntakeKpiStrip extends StatelessWidget {
+  const _DraftIntakeKpiStrip({required this.report});
+
+  final DraftBatchReconcileReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 700;
+    final grand = report.grandTotal;
+    const silverAccent = Color(0xFF6B7280);
+    final metaStyle = AppTypography.productMeta().copyWith(
+      fontSize: 12,
+      color: AppColors.textSecondary,
+    );
+    final valueStyle = AppTypography.productMeta().copyWith(
+      fontWeight: FontWeight.w600,
+      fontSize: 12,
+    );
+
+    Widget block(
+      String title,
+      DraftBatchGroupTotals stats,
+      Color accent,
+    ) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: accent.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              style: AppTypography.caption().copyWith(
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4,
+              runSpacing: 2,
+              children: [
+                Text('${stats.count} шт.', style: valueStyle),
+                Text('·', style: metaStyle),
+                Text(
+                  '${stats.weightGrams.toStringAsFixed(2)} г',
+                  style: valueStyle,
+                ),
+                Text('·', style: metaStyle),
+                KrwText(
+                  amount: stats.priceKrw,
+                  currencyColor: AppColors.currencyWonAccent,
+                  style: valueStyle,
+                  digitStyle: valueStyle,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    final blocks = [
+      block('Золото', report.gold, AppColors.bannerGoldEnd),
+      block('Серебро', report.silver, silverAccent),
+      block('Итого', grand, AppColors.accent),
+    ];
+
+    if (compact) {
+      final itemWidth = width < 420 ? double.infinity : (width - 72) / 2;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final child in blocks)
+            SizedBox(
+              width: itemWidth,
+              child: child,
+            ),
+        ],
+      );
+    }
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: blocks[0]),
+          const SizedBox(width: 8),
+          Expanded(child: blocks[1]),
+          const SizedBox(width: 8),
+          Expanded(child: blocks[2]),
+        ],
       ),
     );
   }

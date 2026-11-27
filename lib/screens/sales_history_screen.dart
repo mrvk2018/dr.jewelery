@@ -413,6 +413,146 @@ String _methodLabel(String method) {
   return AdminPosPaymentMethods.label(method);
 }
 
+class _ShiftCashBreakdown extends StatelessWidget {
+  const _ShiftCashBreakdown({required this.summary});
+
+  final SalesHistorySummary? summary;
+
+  TextStyle get _labelStyle => AppTypography.productMeta().copyWith(
+        color: AppColors.textOnPrimary.withValues(alpha: 0.92),
+        fontSize: 12,
+      );
+
+  TextStyle get _valueStyle => AppTypography.productMeta().copyWith(
+        color: AppColors.textOnPrimary,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      );
+
+  TextStyle get _finalLabelStyle => AppTypography.productMeta().copyWith(
+        color: AppColors.textOnPrimary,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      );
+
+  TextStyle get _finalValueStyle => AppTypography.heading(fontSize: 18).copyWith(
+        color: AppColors.textOnPrimary,
+      );
+
+  Widget _line({
+    required String label,
+    required int amountKrw,
+    String? suffix,
+    bool showPlusSign = false,
+    Color? valueTint,
+    bool bold = false,
+  }) {
+    final valueColor = valueTint ?? AppColors.textOnPrimary;
+    final amtStyle = (bold ? _finalValueStyle : _valueStyle).copyWith(
+      color: valueColor,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Expanded(
+            child: Text(
+              '$label${suffix ?? ''}',
+              style: bold
+                  ? _finalLabelStyle
+                  : _labelStyle.copyWith(
+                      color: valueTint != null
+                          ? valueTint.withValues(alpha: 0.95)
+                          : _labelStyle.color,
+                    ),
+            ),
+          ),
+          KrwText(
+            amount: amountKrw,
+            showPlusSign: showPlusSign,
+            style: amtStyle,
+            digitStyle: amtStyle,
+            currencyColor: valueColor,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = summary;
+    if (s == null) return const SizedBox.shrink();
+
+    final gross = s.grossSalesKrw > 0 ? s.grossSalesKrw : s.totalSumKrw;
+    final reservations = s.reservationsNetKrw != 0
+        ? s.reservationsNetKrw
+        : s.reservationCashKrw;
+    final returns = s.returnsSumKrw;
+    final shiftTotal = s.hasShiftCash ? s.shiftCashKrw : _drawerKrw(s);
+
+    final cash = s.cashKrw != 0 ? s.cashKrw : (s.byMethod['cash'] ?? 0);
+    final card = s.cardKrw != 0 ? s.cardKrw : (s.byMethod['card'] ?? 0);
+    final transfer =
+        s.transferKrw != 0 ? s.transferKrw : (s.byMethod['transfer'] ?? 0);
+    final showMethods = cash != 0 || card != 0 || transfer != 0 ||
+        s.byMethod.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _line(
+          label: 'Общая сумма продаж:',
+          amountKrw: gross,
+          suffix: ' (${s.totalCount} поз.)',
+        ),
+        if (s.tradeInScrapKrw > 0)
+          _line(
+            label: 'С учётом лома (Trade-In):',
+            amountKrw: -s.tradeInScrapKrw,
+          ),
+        if (reservations != 0)
+          _line(
+            label: 'Залоги и доплаты:',
+            amountKrw: reservations,
+            showPlusSign: reservations > 0,
+          ),
+        if (returns > 0)
+          _line(
+            label: 'Возвраты:',
+            amountKrw: -returns,
+            suffix: s.returnsCount > 0 ? ' (${s.returnsCount} поз.)' : null,
+            valueTint: const Color(0xFFFFE0B2),
+          ),
+        const SizedBox(height: 4),
+        _line(
+          label: 'Итоговая в кассе:',
+          amountKrw: shiftTotal,
+          bold: true,
+        ),
+        if (showMethods) ...[
+          const SizedBox(height: 10),
+          if (cash != 0)
+            _line(label: 'Наличные:', amountKrw: cash),
+          if (card != 0) _line(label: 'Карта:', amountKrw: card),
+          if (transfer != 0) _line(label: 'Перевод:', amountKrw: transfer),
+          for (final method in _methodOrder(s.byMethod))
+            if (method != 'cash' &&
+                method != 'card' &&
+                method != 'transfer' &&
+                (s.byMethod[method] ?? 0) != 0)
+              _line(
+                label: '${_methodLabel(method)}:',
+                amountKrw: s.byMethod[method] ?? 0,
+              ),
+        ],
+      ],
+    );
+  }
+}
+
 class _KpiHeader extends StatelessWidget {
   const _KpiHeader({
     required this.rangeLabel,
@@ -550,91 +690,14 @@ class _KpiHeader extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              s?.hasShiftCash == true
-                  ? 'Касса смены'
-                  : ((s?.tradeInScrapKrw ?? 0) > 0
-                      ? 'Фактически в кассу (чистая выручка)'
-                      : 'Сумма продаж'),
+              'Итого в кассе',
               style: AppTypography.productMeta().copyWith(
                 color: AppColors.textOnPrimary.withValues(alpha: 0.88),
                 fontSize: 11,
               ),
             ),
-            if (s?.hasShiftCash == true || (s?.tradeInScrapKrw ?? 0) > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Продано изделий: ${formatWon(s?.grossSalesKrw ?? s?.totalSumKrw ?? 0)}',
-                style: AppTypography.productMeta().copyWith(
-                  color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                ),
-              ),
-            ],
-            if ((s?.reservationCashKrw ?? 0) != 0) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Text(
-                    'Залоги и доплаты: ',
-                    style: AppTypography.productMeta().copyWith(
-                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                    ),
-                  ),
-                  KrwText(
-                    amount: s!.reservationCashKrw,
-                    showPlusSign: s.reservationCashKrw > 0,
-                    style: AppTypography.productMeta().copyWith(
-                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                    ),
-                    digitStyle: AppTypography.productMeta().copyWith(
-                      color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                    ),
-                    currencyColor: AppColors.textOnPrimary,
-                  ),
-                ],
-              ),
-            ],
-            if ((s?.tradeInScrapKrw ?? 0) > 0) ...[
-              const SizedBox(height: 4),
-              Text(
-                sellerController.text.trim().isEmpty
-                    ? 'Зачтено ломом (${s?.tradeInBatchCount ?? 0}): ${formatWon(-(s?.tradeInScrapKrw ?? 0))}'
-                    : 'Зачтено ломом: ${formatWon(-(s?.tradeInScrapKrw ?? 0))}',
-                style: AppTypography.productMeta().copyWith(
-                  color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                ),
-              ),
-            ],
-            if (s?.hasShiftCash == true && (s?.byMethod.isNotEmpty ?? false)) ...[
-              const SizedBox(height: 8),
-              for (final method in _methodOrder(s!.byMethod))
-                if ((s.byMethod[method] ?? 0) != 0)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${_methodLabel(method)}: ',
-                          style: AppTypography.productMeta().copyWith(
-                            color: AppColors.textOnPrimary.withValues(alpha: 0.92),
-                            fontSize: 12,
-                          ),
-                        ),
-                        KrwText(
-                          amount: s.byMethod[method] ?? 0,
-                          style: AppTypography.productMeta().copyWith(
-                            color: AppColors.textOnPrimary,
-                            fontSize: 12,
-                          ),
-                          digitStyle: AppTypography.productMeta().copyWith(
-                            color: AppColors.textOnPrimary,
-                            fontSize: 12,
-                          ),
-                          currencyColor: AppColors.textOnPrimary,
-                        ),
-                      ],
-                    ),
-                  ),
-            ],
+            const SizedBox(height: 12),
+            _ShiftCashBreakdown(summary: s),
             if (sellerController.text.trim().isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -646,13 +709,6 @@ class _KpiHeader extends StatelessWidget {
                   ),
                 ),
               ),
-            const SizedBox(height: 2),
-            Text(
-              '${s?.totalCount ?? 0} поз.',
-              style: AppTypography.productMeta().copyWith(
-                color: AppColors.textOnPrimary.withValues(alpha: 0.9),
-              ),
-            ),
             const SizedBox(height: 14),
             _MetalKpiLine(
               title: 'Золото',

@@ -28,6 +28,12 @@ class SalesHistorySummary {
     this.netCashKrw = 0,
     this.shiftCashKrw = 0,
     this.reservationCashKrw = 0,
+    this.reservationsNetKrw = 0,
+    this.returnsSumKrw = 0,
+    this.returnsCount = 0,
+    this.cashKrw = 0,
+    this.cardKrw = 0,
+    this.transferKrw = 0,
     this.hasShiftCash = false,
     this.byMethod = const {},
   });
@@ -40,6 +46,12 @@ class SalesHistorySummary {
   final int netCashKrw;
   final int shiftCashKrw;
   final int reservationCashKrw;
+  final int reservationsNetKrw;
+  final int returnsSumKrw;
+  final int returnsCount;
+  final int cashKrw;
+  final int cardKrw;
+  final int transferKrw;
   final bool hasShiftCash;
   final Map<String, int> byMethod;
   final double goldWeightGrams;
@@ -87,6 +99,14 @@ class SalesHistorySummary {
       netCashKrw: hasShift ? shift : resolvedNet,
       shiftCashKrw: shift,
       reservationCashKrw: _numToInt(map['reservation_cash_krw']),
+      reservationsNetKrw: _numToInt(
+        map['reservations_net_krw'] ?? map['reservation_cash_krw'],
+      ),
+      returnsSumKrw: _numToInt(map['returns_sum_krw']),
+      returnsCount: _numToInt(map['returns_count']),
+      cashKrw: _numToInt(map['cash_krw']),
+      cardKrw: _numToInt(map['card_krw']),
+      transferKrw: _numToInt(map['transfer_krw']),
       hasShiftCash: hasShift,
       byMethod: _methodMap(map['by_method']),
       goldWeightGrams: _numToDouble(map['gold_weight_grams']),
@@ -100,17 +120,27 @@ class SalesHistorySummary {
   }
 
   SalesHistorySummary withShiftDrawer(Map<String, dynamic> shift) {
+    final grossShift = _numToInt(shift['gross_sales_krw']);
+    final methods = _methodMap(shift['by_method']);
     return SalesHistorySummary(
       totalSumKrw: totalSumKrw,
       totalCount: totalCount,
-      grossSalesKrw: grossSalesKrw,
+      grossSalesKrw: grossShift > 0 ? grossShift : grossSalesKrw,
       tradeInScrapKrw: _numToInt(shift['trade_in_scrap_krw']),
       tradeInBatchCount: tradeInBatchCount,
       netCashKrw: _numToInt(shift['shift_cash_krw']),
       shiftCashKrw: _numToInt(shift['shift_cash_krw']),
       reservationCashKrw: _numToInt(shift['reservation_cash_krw']),
+      reservationsNetKrw: _numToInt(
+        shift['reservations_net_krw'] ?? shift['reservation_cash_krw'],
+      ),
+      returnsSumKrw: _numToInt(shift['returns_sum_krw']),
+      returnsCount: _numToInt(shift['returns_count']),
+      cashKrw: _numToInt(shift['cash_krw'] ?? methods['cash']),
+      cardKrw: _numToInt(shift['card_krw'] ?? methods['card']),
+      transferKrw: _numToInt(shift['transfer_krw'] ?? methods['transfer']),
       hasShiftCash: true,
-      byMethod: _methodMap(shift['by_method']),
+      byMethod: methods,
       goldWeightGrams: goldWeightGrams,
       goldSumKrw: goldSumKrw,
       goldCount: goldCount,

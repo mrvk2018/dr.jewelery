@@ -384,7 +384,7 @@ class SalesHistoryRow {
   }
 }
 
-/// Строка списка «Истории продаж» внутри одного чека (POS batch / Trade-In).
+/// Метаданные визуальной группы в «Истории продаж» (только Trade-In с приёмом лома).
 class SalesRowGroupMeta {
   const SalesRowGroupMeta({
     required this.groupKey,
@@ -410,20 +410,19 @@ class SalesRowGroupMeta {
   );
 }
 
-String salesHistoryGroupKey(SalesHistoryRow row) {
+/// Ключ одного Trade-In чека с приёмом лома; `null` — обычная продажа (без группировки).
+String? salesHistoryTradeInGroupKey(SalesHistoryRow row) {
+  if (!row.isTradeIn || row.scrapTradeInKrw <= 0) return null;
   final batch = row.saleBatchId?.trim();
   if (batch != null && batch.isNotEmpty) return 'batch:$batch';
-  if (row.isTradeIn && row.scrapTradeInKrw > 0) {
-    final sold = row.soldAtUtc?.toIso8601String() ??
-        row.soldDateKst?.trim() ??
-        '';
-    final sellerCode = row.sellerCode?.trim();
-    final seller = (sellerCode != null && sellerCode.isNotEmpty)
-        ? sellerCode
-        : (row.sellerName?.trim() ?? '');
-    return 'ti:$sold|$seller|${row.scrapTradeInKrw}';
-  }
-  return 'solo:${row.legacyId}';
+  final sold = row.soldAtUtc?.toIso8601String() ??
+      row.soldDateKst?.trim() ??
+      '';
+  final sellerCode = row.sellerCode?.trim();
+  final seller = (sellerCode != null && sellerCode.isNotEmpty)
+      ? sellerCode
+      : (row.sellerName?.trim() ?? '');
+  return 'ti:$sold|$seller|${row.scrapTradeInKrw}';
 }
 
 List<SalesRowGroupMeta> computeSalesHistoryGroupMeta(
@@ -434,8 +433,10 @@ List<SalesRowGroupMeta> computeSalesHistoryGroupMeta(
 
   final counts = <String, int>{};
   for (final row in list) {
-    final key = salesHistoryGroupKey(row);
-    counts[key] = (counts[key] ?? 0) + 1;
+    final key = salesHistoryTradeInGroupKey(row);
+    if (key != null) {
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
   }
 
   final seenFirst = <String>{};
@@ -444,7 +445,19 @@ List<SalesRowGroupMeta> computeSalesHistoryGroupMeta(
   final metas = <SalesRowGroupMeta>[];
 
   for (final row in list) {
-    final key = salesHistoryGroupKey(row);
+    final key = salesHistoryTradeInGroupKey(row);
+    if (key == null) {
+      metas.add(
+        SalesRowGroupMeta(
+          groupKey: 'solo:${row.legacyId}',
+          groupSize: 1,
+          isFirstInGroup: true,
+          groupColorIndex: null,
+        ),
+      );
+      continue;
+    }
+
     final size = counts[key] ?? 1;
     final isFirst = !seenFirst.contains(key);
     if (isFirst) seenFirst.add(key);

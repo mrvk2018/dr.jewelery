@@ -93,6 +93,7 @@ class _ReservationCheckoutDialogState extends State<ReservationCheckoutDialog> {
   int? _percent;
   late int _deposit;
   var _busy = false;
+  var _depositTouched = false;
   String? _error;
 
   final _nameController = TextEditingController();
@@ -131,13 +132,37 @@ class _ReservationCheckoutDialogState extends State<ReservationCheckoutDialog> {
     return raw;
   }
 
-  void _setDeposit(int value, {int? percent}) {
-    final next = value.clamp(0, _total);
+  bool get _depositValid => _deposit > 0 && _deposit <= _total;
+
+  String? get _depositFieldError {
+    if (_depositValid) return null;
+    if (!_depositTouched && _percent != null) return null;
+    final maxLabel = formatKrwDigits(_total);
+    return 'Введите сумму залога от 1 ₩ до $maxLabel';
+  }
+
+  void _setDepositFromPercent(int percent) {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
-      _deposit = next;
+      _deposit = _percentOf(percent);
       _percent = percent;
+      _depositTouched = true;
       _error = null;
     });
+  }
+
+  void _setDepositManual(int value) {
+    setState(() {
+      _deposit = value.clamp(0, _total);
+      _percent = null;
+      _depositTouched = true;
+      _error = null;
+    });
+  }
+
+  void _onDepositEditingStarted() {
+    if (_percent == null) return;
+    setState(() => _percent = null);
   }
 
   Future<void> _pickExpiry() async {
@@ -169,8 +194,11 @@ class _ReservationCheckoutDialogState extends State<ReservationCheckoutDialog> {
       setState(() => _error = 'В корзине нет изделий.');
       return;
     }
-    if (_deposit <= 0 || _deposit > _total) {
-      setState(() => _error = reservationErrorMessage('invalid_deposit'));
+    if (!_depositValid) {
+      setState(() {
+        _depositTouched = true;
+        _error = reservationErrorMessage('invalid_deposit');
+      });
       return;
     }
     if (name.isEmpty || phone.isEmpty) {
@@ -274,10 +302,7 @@ class _ReservationCheckoutDialogState extends State<ReservationCheckoutDialog> {
                             selected: _percent == percent,
                             onSelected: _busy
                                 ? null
-                                : (_) => _setDeposit(
-                                      _percentOf(percent),
-                                      percent: percent,
-                                    ),
+                                : (_) => _setDepositFromPercent(percent),
                           ),
                       ],
                     ),
@@ -286,7 +311,9 @@ class _ReservationCheckoutDialogState extends State<ReservationCheckoutDialog> {
                       amount: _deposit,
                       enabled: !_busy,
                       label: 'Залог, ₩',
-                      onChanged: (value) => _setDeposit(value),
+                      errorText: _depositFieldError,
+                      onEditingStarted: _onDepositEditingStarted,
+                      onChanged: _setDepositManual,
                     ),
                     const SizedBox(height: 8),
                     ReservationMoneyRow(

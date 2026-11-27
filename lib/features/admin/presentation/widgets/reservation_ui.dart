@@ -123,6 +123,12 @@ class ReservationPaymentPicker extends StatelessWidget {
 }
 
 /// Сумма в вонах с разделителями тысяч.
+int parseKrwAmountInput(String raw) {
+  final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
+  if (digits.isEmpty) return 0;
+  return int.tryParse(digits) ?? 0;
+}
+
 class ReservationAmountField extends StatefulWidget {
   const ReservationAmountField({
     super.key,
@@ -130,12 +136,16 @@ class ReservationAmountField extends StatefulWidget {
     required this.onChanged,
     this.label = 'Сумма, ₩',
     this.enabled = true,
+    this.onEditingStarted,
+    this.errorText,
   });
 
   final int amount;
   final ValueChanged<int> onChanged;
   final String label;
   final bool enabled;
+  final VoidCallback? onEditingStarted;
+  final String? errorText;
 
   @override
   State<ReservationAmountField> createState() => _ReservationAmountFieldState();
@@ -143,38 +153,55 @@ class ReservationAmountField extends StatefulWidget {
 
 class _ReservationAmountFieldState extends State<ReservationAmountField> {
   late final TextEditingController _controller;
-  var _editing = false;
+  late final FocusNode _focusNode;
 
   @override
   void initState() {
     super.initState();
-    _controller = TextEditingController(text: formatKrwDigits(widget.amount));
+    _controller = TextEditingController(text: _textForAmount(widget.amount));
+    _focusNode = FocusNode()..addListener(_onFocusChange);
   }
+
+  String _textForAmount(int amount) =>
+      amount > 0 ? formatKrwDigits(amount) : '';
 
   @override
   void didUpdateWidget(ReservationAmountField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_editing && oldWidget.amount != widget.amount) {
-      _controller.text = formatKrwDigits(widget.amount);
+    if (oldWidget.amount != widget.amount && !_focusNode.hasFocus) {
+      _controller.text = _textForAmount(widget.amount);
+    }
+  }
+
+  void _onFocusChange() {
+    if (!_focusNode.hasFocus) {
+      final synced = _textForAmount(widget.amount);
+      if (_controller.text != synced) {
+        _controller.text = synced;
+      }
     }
   }
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
+  void _notifyEditingStarted() => widget.onEditingStarted?.call();
+
   void _onChanged(String raw) {
-    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
-    final amount = int.tryParse(digits) ?? 0;
+    _notifyEditingStarted();
+    final amount = parseKrwAmountInput(raw);
+    final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
     final formatted = digits.isEmpty ? '' : formatKrwDigits(amount);
-    _editing = true;
-    _controller.value = TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-    _editing = false;
+    if (_controller.text != formatted) {
+      _controller.value = TextEditingValue(
+        text: formatted,
+        selection: TextSelection.collapsed(offset: formatted.length),
+      );
+    }
     widget.onChanged(amount);
   }
 
@@ -182,13 +209,19 @@ class _ReservationAmountFieldState extends State<ReservationAmountField> {
   Widget build(BuildContext context) {
     return TextField(
       controller: _controller,
+      focusNode: _focusNode,
+      readOnly: false,
       enabled: widget.enabled,
       keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))],
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9,\s]')),
+      ],
       decoration: InputDecoration(
         labelText: widget.label,
         border: const OutlineInputBorder(),
+        errorText: widget.errorText,
       ),
+      onTap: _notifyEditingStarted,
       onChanged: _onChanged,
     );
   }

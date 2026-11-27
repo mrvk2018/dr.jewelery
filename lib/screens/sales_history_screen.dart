@@ -655,26 +655,59 @@ class _KpiHeader extends StatelessWidget {
                 child: TextField(
                   controller: sellerController,
                   onChanged: onSellerChanged,
-                  style: const TextStyle(color: AppColors.textOnPrimary),
+                  cursorColor: const Color(0xFF111827),
+                  style: const TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                   decoration: InputDecoration(
                     isDense: true,
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.96),
                     hintText: 'Касса: продавец (имя или код)',
-                    hintStyle: TextStyle(
-                      color: AppColors.textOnPrimary.withValues(alpha: 0.7),
+                    hintStyle: const TextStyle(
+                      color: Color(0xFF6B7280),
                       fontSize: 13,
                     ),
                     prefixIcon: const Icon(
-                      Icons.person_outline,
-                      color: AppColors.textOnPrimary,
-                      size: 18,
+                      Icons.search,
+                      color: Color(0xFF4B5563),
+                      size: 20,
+                    ),
+                    suffixIcon: sellerController.text.trim().isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              color: Color(0xFF4B5563),
+                              size: 20,
+                            ),
+                            tooltip: 'Очистить',
+                            onPressed: () {
+                              sellerController.clear();
+                              onSellerChanged('');
+                            },
+                          ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
                     ),
                     enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(
-                        color: AppColors.textOnPrimary.withValues(alpha: 0.5),
+                        color: Colors.white.withValues(alpha: 0.35),
                       ),
                     ),
-                    focusedBorder: const OutlineInputBorder(
-                      borderSide: BorderSide(color: AppColors.textOnPrimary),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF2563EB),
+                        width: 1.5,
+                      ),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                 ),

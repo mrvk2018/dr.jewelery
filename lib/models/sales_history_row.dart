@@ -383,3 +383,89 @@ class SalesHistoryRow {
     return null;
   }
 }
+
+/// Строка списка «Истории продаж» внутри одного чека (POS batch / Trade-In).
+class SalesRowGroupMeta {
+  const SalesRowGroupMeta({
+    required this.groupKey,
+    required this.groupSize,
+    required this.isFirstInGroup,
+    this.groupColorIndex,
+  });
+
+  final String groupKey;
+  final int groupSize;
+  final bool isFirstInGroup;
+  final int? groupColorIndex;
+
+  bool get isMultiItemGroup => groupSize > 1;
+
+  bool get showBatchCashSummary => groupSize <= 1 || isFirstInGroup;
+
+  static const SalesRowGroupMeta solo = SalesRowGroupMeta(
+    groupKey: '',
+    groupSize: 1,
+    isFirstInGroup: true,
+    groupColorIndex: null,
+  );
+}
+
+String salesHistoryGroupKey(SalesHistoryRow row) {
+  final batch = row.saleBatchId?.trim();
+  if (batch != null && batch.isNotEmpty) return 'batch:$batch';
+  if (row.isTradeIn && row.scrapTradeInKrw > 0) {
+    final sold = row.soldAtUtc?.toIso8601String() ??
+        row.soldDateKst?.trim() ??
+        '';
+    final sellerCode = row.sellerCode?.trim();
+    final seller = (sellerCode != null && sellerCode.isNotEmpty)
+        ? sellerCode
+        : (row.sellerName?.trim() ?? '');
+    return 'ti:$sold|$seller|${row.scrapTradeInKrw}';
+  }
+  return 'solo:${row.legacyId}';
+}
+
+List<SalesRowGroupMeta> computeSalesHistoryGroupMeta(
+  Iterable<SalesHistoryRow> rows,
+) {
+  final list = rows.toList();
+  if (list.isEmpty) return const [];
+
+  final counts = <String, int>{};
+  for (final row in list) {
+    final key = salesHistoryGroupKey(row);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  final seenFirst = <String>{};
+  final colorByKey = <String, int>{};
+  var multiGroupCounter = 0;
+  final metas = <SalesRowGroupMeta>[];
+
+  for (final row in list) {
+    final key = salesHistoryGroupKey(row);
+    final size = counts[key] ?? 1;
+    final isFirst = !seenFirst.contains(key);
+    if (isFirst) seenFirst.add(key);
+
+    int? colorIndex;
+    if (size > 1) {
+      if (!colorByKey.containsKey(key)) {
+        colorByKey[key] = multiGroupCounter % 3;
+        multiGroupCounter++;
+      }
+      colorIndex = colorByKey[key];
+    }
+
+    metas.add(
+      SalesRowGroupMeta(
+        groupKey: key,
+        groupSize: size,
+        isFirstInGroup: isFirst,
+        groupColorIndex: colorIndex,
+      ),
+    );
+  }
+  return metas;
+}

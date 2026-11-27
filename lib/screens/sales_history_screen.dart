@@ -97,6 +97,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   String? _error;
   String? _returnBusyKey;
   Set<String> _reversedLegacyIds = const {};
+  List<SalesRowGroupMeta> _groupMeta = const [];
 
   String get _rangeStartIso => _isoDateKst(_selectedRange.start);
   String get _rangeEndIso => _isoDateKst(_selectedRange.end);
@@ -127,6 +128,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 
   void _recomputeReversalIndex() {
     _reversedLegacyIds = SalesHistoryRow.collectReversedLegacyIds(_rows);
+    _groupMeta = computeSalesHistoryGroupMeta(_rows);
   }
 
   bool _canShowReturnButton(SalesHistoryRow row) {
@@ -150,6 +152,7 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
       _pageIndex = 0;
       _hasMore = true;
       _reversedLegacyIds = const {};
+      _groupMeta = const [];
       _summary = null;
     });
 
@@ -352,8 +355,28 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           );
                         }
                         final row = _rows[index];
+                        final meta = index < _groupMeta.length
+                            ? _groupMeta[index]
+                            : SalesRowGroupMeta.solo;
+                        final prevMeta = index > 0 && index - 1 < _groupMeta.length
+                            ? _groupMeta[index - 1]
+                            : null;
+                        final nextMeta = index + 1 < _groupMeta.length
+                            ? _groupMeta[index + 1]
+                            : null;
+                        final sameGroupAsPrev = prevMeta != null &&
+                            meta.isMultiItemGroup &&
+                            prevMeta.groupKey == meta.groupKey;
+                        final sameGroupAsNext = nextMeta != null &&
+                            meta.isMultiItemGroup &&
+                            nextMeta.groupKey == meta.groupKey;
                         return _SalesHistoryTile(
                           row: row,
+                          groupMeta: meta,
+                          tilePadding: EdgeInsets.only(
+                            top: sameGroupAsPrev ? 4 : 0,
+                            bottom: sameGroupAsNext ? 4 : 10,
+                          ),
                           returnBusy: _returnBusyKey == row.legacyId,
                           showReturnedBadge: _showReturnedBadge(row),
                           onPhotoTap: () => _openPhotoPreview(row),
@@ -737,16 +760,50 @@ class _MetalKpiLine extends StatelessWidget {
   }
 }
 
+class _SaleBatchGroupPalette {
+  const _SaleBatchGroupPalette({
+    required this.background,
+    required this.border,
+    required this.accent,
+  });
+
+  final Color background;
+  final Color border;
+  final Color accent;
+
+  static const palettes = <_SaleBatchGroupPalette>[
+    _SaleBatchGroupPalette(
+      background: Color(0xFFFFFBEB),
+      border: Color(0xFFFDE68A),
+      accent: Color(0xFFF59E0B),
+    ),
+    _SaleBatchGroupPalette(
+      background: Color(0xFFF0F9FF),
+      border: Color(0xFFBAE6FD),
+      accent: Color(0xFF38BDF8),
+    ),
+    _SaleBatchGroupPalette(
+      background: Color(0xFFF0FDF4),
+      border: Color(0xFFBBF7D0),
+      accent: Color(0xFF4ADE80),
+    ),
+  ];
+}
+
 class _SalesHistoryTile extends StatelessWidget {
   const _SalesHistoryTile({
     required this.row,
+    required this.groupMeta,
     required this.onPhotoTap,
+    this.tilePadding = const EdgeInsets.only(bottom: 10),
     this.onReturn,
     this.returnBusy = false,
     this.showReturnedBadge = false,
   });
 
   final SalesHistoryRow row;
+  final SalesRowGroupMeta groupMeta;
+  final EdgeInsets tilePadding;
   final VoidCallback onPhotoTap;
   final VoidCallback? onReturn;
   final bool returnBusy;
@@ -765,17 +822,34 @@ class _SalesHistoryTile extends StatelessWidget {
     final seller = row.sellerName?.trim();
     final manufacturer = row.manufacturer?.trim();
     final soldAt = formatSoldAtKst(row);
+    final showBatchCash = groupMeta.showBatchCashSummary;
+
+    _SaleBatchGroupPalette? palette;
+    if (groupMeta.isMultiItemGroup && groupMeta.groupColorIndex != null) {
+      palette = _SaleBatchGroupPalette
+          .palettes[groupMeta.groupColorIndex! % _SaleBatchGroupPalette.palettes.length];
+    }
+    final cardColor = palette?.background ?? AppColors.cardBackground;
+    final borderColor = palette?.border ?? AppColors.border;
+    final accentColor = palette?.accent;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: tilePadding,
       child: Material(
-        color: AppColors.cardBackground,
+        color: cardColor,
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
+            border: Border(
+              left: accentColor != null
+                  ? BorderSide(color: accentColor, width: 4)
+                  : BorderSide(color: borderColor),
+              top: BorderSide(color: borderColor),
+              right: BorderSide(color: borderColor),
+              bottom: BorderSide(color: borderColor),
+            ),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -848,7 +922,9 @@ class _SalesHistoryTile extends StatelessWidget {
                           ),
                       ],
                     ),
-                    if (row.isTradeIn && row.scrapTradeInKrw > 0) ...[
+                    if (showBatchCash &&
+                        row.isTradeIn &&
+                        row.scrapTradeInKrw > 0) ...[
                       const SizedBox(height: 6),
                       Text(
                         'Лом: ${formatWon(-row.scrapTradeInKrw)}',
@@ -873,6 +949,7 @@ class _SalesHistoryTile extends StatelessWidget {
               const SizedBox(width: 8),
               _SalePriceColumn(
                 row: row,
+                showNetCashSummary: showBatchCash,
                 onReturn: onReturn,
                 returnBusy: returnBusy,
                 showReturnedBadge: showReturnedBadge,
@@ -936,12 +1013,14 @@ class _InfoChip extends StatelessWidget {
 class _SalePriceColumn extends StatelessWidget {
   const _SalePriceColumn({
     required this.row,
+    this.showNetCashSummary = true,
     this.onReturn,
     this.returnBusy = false,
     this.showReturnedBadge = false,
   });
 
   final SalesHistoryRow row;
+  final bool showNetCashSummary;
   final VoidCallback? onReturn;
   final bool returnBusy;
   final bool showReturnedBadge;
@@ -1007,26 +1086,43 @@ class _SalePriceColumn extends StatelessWidget {
               row.scrapTradeInKrw > 0 &&
               row.netCashDeltaKrw != null) ...[
             const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: KrwText(
-                amount: row.netCashDeltaKrw!,
-                showPlusSign: row.netCashDeltaKrw! > 0,
-                currencyColor: AppColors.currencyWonAccent,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.saleRed,
+            if (showNetCashSummary)
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerRight,
+                child: KrwText(
+                  amount: row.netCashDeltaKrw!,
+                  showPlusSign: row.netCashDeltaKrw! > 0,
+                  currencyColor: AppColors.currencyWonAccent,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.saleRed,
+                  ),
+                  digitStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.saleRed,
+                  ),
+                  textAlign: TextAlign.end,
                 ),
-                digitStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.saleRed,
+              )
+            else
+              SizedBox(
+                height: 22,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '—',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary,
+                      height: 1.2,
+                    ),
+                  ),
                 ),
-                textAlign: TextAlign.end,
               ),
-            ),
           ],
           if (showReturnedBadge) ...[
             const SizedBox(height: 6),

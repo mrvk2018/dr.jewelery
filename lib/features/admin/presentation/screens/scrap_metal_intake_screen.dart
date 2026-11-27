@@ -95,6 +95,9 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   /// Секция серебра на вкладке «Приёмка и расчёт» свёрнута по умолчанию.
   bool _isSilverExpanded = false;
 
+  /// Сброс `TextFormField(initialValue)` после восстановления черновика / акта.
+  int _finenessInputsEpoch = 0;
+
   final ScrollController _intakeScrollController = ScrollController();
 
   @override
@@ -153,6 +156,16 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
         ScrapFinenessRow(fineness: 925),
         ScrapFinenessRow(fineness: 999),
       ];
+
+  static const _standardGoldFineness = <int>[375, 585, 750, 995];
+  static const _standardSilverFineness = <int>[875, 925, 999];
+
+  static String _formatDecimalField(double value, {bool allowZero = false}) {
+    if (value <= 0 && !allowZero) return '';
+    if (value == 0 && allowZero) return '0';
+    final fixed = value.toStringAsFixed(4);
+    return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
+  }
 
   Future<void> _bootstrap() async {
     final restoringTradeIn =
@@ -222,12 +235,16 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     _notesController.text = payload['notes']?.toString() ?? '';
     _goldStdRate.text = '${payload['gold_standard_rate_krw'] ?? ''}';
     _goldTradeRate.text = '${payload['gold_tradein_rate_krw'] ?? ''}';
-    _goldPurchaseGrams.text =
-        '${payload['gold_purchase_offset_grams'] ?? draft.cartGoldWeightGrams}';
+    final goldPurchase = (payload['gold_purchase_offset_grams'] as num?)
+            ?.toDouble() ??
+        draft.cartGoldWeightGrams;
+    _goldPurchaseGrams.text = _formatDecimalField(goldPurchase, allowZero: true);
     _silverStdRate.text = '${payload['silver_standard_rate_krw'] ?? ''}';
     _silverTradeRate.text = '${payload['silver_tradein_rate_krw'] ?? ''}';
+    final silverPurchase =
+        (payload['silver_purchase_offset_grams'] as num?)?.toDouble() ?? 0;
     _silverPurchaseGrams.text =
-        '${payload['silver_purchase_offset_grams'] ?? '0'}';
+        _formatDecimalField(silverPurchase, allowZero: true);
     _goldRows
       ..clear()
       ..addAll(_rowsFromJson(payload['gold_items'], isGold: true));
@@ -235,6 +252,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       ..clear()
       ..addAll(_rowsFromJson(payload['silver_items'], isGold: false));
     _isSilverExpanded = ScrapFinenessRow.activeRows(_silverRows).isNotEmpty;
+    _finenessInputsEpoch++;
     _photoUrls
       ..clear()
       ..addAll(_parseUrlList(payload['photo_urls']));
@@ -413,6 +431,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     _goldBreakdown = null;
     _silverBreakdown = null;
     _acceptKey = widget.initialSellerCode ?? _adminAcceptKey;
+    _finenessInputsEpoch++;
   }
 
   void _loadActToForm(Map<String, dynamic> row) {
@@ -439,6 +458,8 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       _silverRows
         ..clear()
         ..addAll(_rowsFromJson(row['silver_items'], isGold: false));
+      _isSilverExpanded = ScrapFinenessRow.activeRows(_silverRows).isNotEmpty;
+      _finenessInputsEpoch++;
       _calculated = false;
     });
     _tabs.animateTo(0);
@@ -451,28 +472,46 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   }
 
   static List<ScrapFinenessRow> _rowsFromJson(dynamic raw, {required bool isGold}) {
+    final defaults = isGold ? _defaultGoldRows() : _defaultSilverRows();
+    final standards =
+        isGold ? _standardGoldFineness : _standardSilverFineness;
     if (raw is! List || raw.isEmpty) {
-      return isGold ? _defaultGoldRows() : _defaultSilverRows();
+      return defaults;
     }
-    final parsed = <ScrapFinenessRow>[];
+
+    final byStandardFineness = <int, ScrapFinenessRow>{
+      for (final row in defaults) row.fineness.round(): row,
+    };
+    final customRows = <ScrapFinenessRow>[];
+
     for (final item in raw) {
       if (item is! Map) continue;
       final fineness = (item['fineness'] as num?)?.toDouble() ?? 0;
       if (fineness <= 0) continue;
-      parsed.add(
+      final gross = (item['gross_weight'] as num?)?.toDouble() ?? 0;
+      final stone = (item['stone_discount_percent'] as num?)?.toDouble() ?? 0;
+      final key = fineness.round();
+
+      if (standards.contains(key)) {
+        final row = byStandardFineness[key];
+        if (row != null) {
+          row.grossWeight = gross;
+          row.stoneDiscountPercent = stone;
+          continue;
+        }
+      }
+
+      customRows.add(
         ScrapFinenessRow(
           fineness: fineness,
-          grossWeight: (item['gross_weight'] as num?)?.toDouble() ?? 0,
-          stoneDiscountPercent:
-              (item['stone_discount_percent'] as num?)?.toDouble() ?? 0,
-          customFineness: ![375, 585, 750, 995, 875, 925, 999].contains(fineness.round()),
+          grossWeight: gross,
+          stoneDiscountPercent: stone,
+          customFineness: true,
         ),
       );
     }
-    if (parsed.isEmpty) {
-      return isGold ? _defaultGoldRows() : _defaultSilverRows();
-    }
-    return parsed;
+
+    return [...defaults, ...customRows];
   }
 
   Future<void> _loadJournal() async {
@@ -1218,6 +1257,9 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                   ? SizedBox(
                       width: 64,
                       child: TextFormField(
+                        key: ValueKey(
+                          'fineness-${rows[i].fineness}-$i-$_finenessInputsEpoch',
+                        ),
                         initialValue: rows[i].fineness.toStringAsFixed(0),
                         keyboardType: TextInputType.number,
                         onChanged: (v) {
@@ -1258,7 +1300,10 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
 
   Widget _weightField(ScrapFinenessRow row, {bool compact = false}) =>
       TextFormField(
-        initialValue: row.grossWeight > 0 ? '${row.grossWeight}' : '',
+        key: ValueKey(
+          'weight-${row.fineness}-${row.customFineness}-$_finenessInputsEpoch',
+        ),
+        initialValue: _formatDecimalField(row.grossWeight),
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(
           isDense: true,
@@ -1274,9 +1319,10 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
 
   Widget _stoneField(ScrapFinenessRow row, {bool compact = false}) =>
       TextFormField(
-        initialValue: row.stoneDiscountPercent > 0
-            ? '${row.stoneDiscountPercent}'
-            : '',
+        key: ValueKey(
+          'stone-${row.fineness}-${row.customFineness}-$_finenessInputsEpoch',
+        ),
+        initialValue: _formatDecimalField(row.stoneDiscountPercent),
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
         decoration: InputDecoration(
           isDense: true,

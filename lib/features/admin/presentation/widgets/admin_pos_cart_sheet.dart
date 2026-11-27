@@ -41,6 +41,8 @@ class AdminPosCartSheet extends StatefulWidget {
     this.lockSellerSelection = false,
     this.presetSellerPromoCode,
     this.presetSellerName,
+    this.onOpenQrScanner,
+    this.onClearRemoteCart,
   });
 
   final PosCartController cart;
@@ -49,6 +51,8 @@ class AdminPosCartSheet extends StatefulWidget {
   final bool lockSellerSelection;
   final String? presetSellerPromoCode;
   final String? presetSellerName;
+  final VoidCallback? onOpenQrScanner;
+  final Future<void> Function()? onClearRemoteCart;
 
   @override
   State<AdminPosCartSheet> createState() => _AdminPosCartSheetState();
@@ -168,6 +172,7 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
             : 'POS-продажа · заказ ${result.orderId}';
         navigator.pop();
         widget.cart.clearCart();
+        await widget.onClearRemoteCart?.call();
         await widget.onArchived();
         if (host.mounted) showAdminToast(host, notice);
         return;
@@ -222,8 +227,14 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
         : 'Бронь оформлена. Изделия сняты с витрины.';
     Navigator.of(context).pop();
     widget.cart.clearCart();
+    await widget.onClearRemoteCart?.call();
     await widget.onArchived();
     if (host.mounted) showAdminToast(host, notice);
+  }
+
+  Future<void> _clearCartWithSync() async {
+    widget.cart.clearCart();
+    await widget.onClearRemoteCart?.call();
   }
 
   Future<void> _openTradeInScreen({TradeInScrapDraft? restore}) async {
@@ -289,6 +300,12 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                     style: AppTypography.heading(fontSize: 18),
                   ),
                   const Spacer(),
+                  if (widget.onOpenQrScanner != null)
+                    IconButton(
+                      tooltip: 'QR POS-сканер',
+                      onPressed: widget.onOpenQrScanner,
+                      icon: const Icon(Icons.qr_code_scanner),
+                    ),
                   IconButton(
                     tooltip: 'Закрыть',
                     onPressed: () => Navigator.pop(context),
@@ -512,7 +529,7 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
                               final clear = OutlinedButton(
                                 onPressed: _checkoutBusy || empty
                                     ? null
-                                    : cart.clearCart,
+                                    : _clearCartWithSync,
                                 child: const Text('Очистить'),
                               );
                               final reserve = OutlinedButton.icon(

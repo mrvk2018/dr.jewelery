@@ -927,6 +927,47 @@ abstract class DatabaseService {
   });
 
   Future<Map<String, dynamic>> cancelScrapTransfer({required String intakeId});
+
+  /// Строка витрины для POS/QR: id, qr payload или SKU.
+  Future<Map<String, dynamic>?> fetchProductRowForPosLookup(String payload);
+
+  Future<List<Map<String, dynamic>>> listPosUserCartItems();
+
+  Future<void> upsertPosUserCartItem({
+    required String productId,
+    required int discountPercent,
+    required int sortOrder,
+  });
+
+  Future<void> removePosUserCartItem(String productId);
+
+  Future<void> updatePosUserCartItemDiscount({
+    required String productId,
+    required int discountPercent,
+  });
+
+  Future<void> clearPosUserCartRemote();
+
+  Future<Map<String, dynamic>?> fetchActiveInventorySession();
+
+  Future<String?> startInventorySession({
+    required String branchScope,
+    required String starterName,
+  });
+
+  Future<Map<String, dynamic>> recordInventoryScan({
+    required String sessionId,
+    required String rawPayload,
+    required String scannerName,
+  });
+
+  Future<Map<String, dynamic>> completeInventorySession(String sessionId);
+
+  Future<List<Map<String, dynamic>>> listCompletedInventorySessions({
+    int limit = 40,
+  });
+
+  Future<List<Map<String, dynamic>>> listInventorySessionScans(String sessionId);
 }
 
 /// Облачное хранилище: Supabase (read/write по RLS и RPC).
@@ -4182,26 +4223,270 @@ class CloudDatabaseService implements DatabaseService {
     }
   }
 
+  static const _posProductSelect =
+      'id, sku, name, description, metal, metal_type, weight_grams, '
+      'size_value, gem_inserts, insert, notes, sale_price, old_price, '
+      'discount_percent, category, qr_code_payload, store_location, status, '
+      'stock_quantity, image_url, images, gallery_slots, available_sizes';
+
   @override
   Future<Map<String, dynamic>?> fetchProductByQrPayload(String qrPayload) async {
-    final qr = qrPayload.trim();
-    if (qr.isEmpty) return null;
+    return fetchProductRowForPosLookup(qrPayload);
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchProductRowForPosLookup(String payload) async {
+    final raw = payload.trim();
+    if (raw.isEmpty) return null;
+    try {
+      var row = await _supabaseClient
+          .from('products')
+          .select(_posProductSelect)
+          .eq('id', raw)
+          .maybeSingle();
+      row ??= await _supabaseClient
+          .from('products')
+          .select(_posProductSelect)
+          .eq('qr_code_payload', raw)
+          .maybeSingle();
+      if (row == null) {
+        final bySku = await _supabaseClient
+            .from('products')
+            .select(_posProductSelect)
+            .ilike('sku', raw)
+            .limit(1);
+        if (bySku.isNotEmpty) {
+          row = bySku.first;
+        }
+      }
+      if (row == null) return null;
+      return Map<String, dynamic>.from(row);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.fetchProductRowForPosLookup failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listPosUserCartItems() async {
+    final uid = _supabaseClient.auth.currentUser?.id;
+    if (uid == null) return const [];
+    try {
+      final rows = await _supabaseClient
+          .from('pos_user_cart_items')
+          .select('product_id, discount_percent, sort_order')
+          .eq('user_id', uid)
+          .order('sort_order');
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.listPosUserCartItems failed: $error');
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<void> upsertPosUserCartItem({
+    required String productId,
+    required int discountPercent,
+    required int sortOrder,
+  }) async {
+    final uid = _supabaseClient.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _supabaseClient.from('pos_user_cart_items').upsert(
+        {
+          'user_id': uid,
+          'product_id': productId,
+          'discount_percent': discountPercent,
+          'sort_order': sortOrder,
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        onConflict: 'user_id,product_id',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.upsertPosUserCartItem failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<void> removePosUserCartItem(String productId) async {
+    final uid = _supabaseClient.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _supabaseClient
+          .from('pos_user_cart_items')
+          .delete()
+          .eq('user_id', uid)
+          .eq('product_id', productId);
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.removePosUserCartItem failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<void> updatePosUserCartItemDiscount({
+    required String productId,
+    required int discountPercent,
+  }) async {
+    final uid = _supabaseClient.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _supabaseClient
+          .from('pos_user_cart_items')
+          .update({
+            'discount_percent': discountPercent,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('user_id', uid)
+          .eq('product_id', productId);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.updatePosUserCartItemDiscount failed: $error',
+      );
+      debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<void> clearPosUserCartRemote() async {
+    final uid = _supabaseClient.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _supabaseClient.rpc('pos_user_cart_clear');
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.clearPosUserCartRemote failed: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchActiveInventorySession() async {
     try {
       final row = await _supabaseClient
-          .from('products')
-          .select(
-            'id, sku, metal_type, weight_grams, size_value, gem_inserts, '
-            'notes, sale_price, qr_code_payload, store_location, status, '
-            'product_status, stock_quantity, is_customer_order',
-          )
-          .eq('qr_code_payload', qr)
+          .from('inventory_sessions')
+          .select()
+          .eq('status', 'active')
           .maybeSingle();
       if (row == null) return null;
       return Map<String, dynamic>.from(row);
     } catch (error, stackTrace) {
-      debugPrint('CloudDatabaseService.fetchProductByQrPayload failed: $error');
+      debugPrint(
+        'CloudDatabaseService.fetchActiveInventorySession failed: $error',
+      );
       debugPrint('$stackTrace');
       return null;
+    }
+  }
+
+  @override
+  Future<String?> startInventorySession({
+    required String branchScope,
+    required String starterName,
+  }) async {
+    try {
+      final id = await _supabaseClient.rpc(
+        'inventory_start_session',
+        params: {
+          'p_branch_scope': branchScope.trim().toUpperCase(),
+          'p_starter_name': starterName.trim(),
+        },
+      );
+      return id?.toString();
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.startInventorySession failed: $error');
+      debugPrint('$stackTrace');
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> recordInventoryScan({
+    required String sessionId,
+    required String rawPayload,
+    required String scannerName,
+  }) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        'inventory_record_scan',
+        params: {
+          'p_session_id': sessionId,
+          'p_raw_payload': rawPayload,
+          'p_scanner_name': scannerName,
+        },
+      );
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return {'ok': false, 'error': 'unexpected_response'};
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.recordInventoryScan failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeInventorySession(String sessionId) async {
+    try {
+      final result = await _supabaseClient.rpc(
+        'inventory_complete_session',
+        params: {'p_session_id': sessionId},
+      );
+      if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      }
+      return {'ok': false, 'error': 'unexpected_response'};
+    } catch (error, stackTrace) {
+      debugPrint('CloudDatabaseService.completeInventorySession failed: $error');
+      debugPrint('$stackTrace');
+      return {'ok': false, 'error': error.toString()};
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listCompletedInventorySessions({
+    int limit = 40,
+  }) async {
+    try {
+      final rows = await _supabaseClient
+          .from('inventory_sessions')
+          .select()
+          .eq('status', 'completed')
+          .order('completed_at', ascending: false)
+          .limit(limit);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.listCompletedInventorySessions failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return const [];
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> listInventorySessionScans(
+    String sessionId,
+  ) async {
+    try {
+      final rows = await _supabaseClient
+          .from('inventory_session_scans')
+          .select()
+          .eq('session_id', sessionId)
+          .order('created_at', ascending: false);
+      return rows.map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (error, stackTrace) {
+      debugPrint(
+        'CloudDatabaseService.listInventorySessionScans failed: $error',
+      );
+      debugPrint('$stackTrace');
+      return const [];
     }
   }
 

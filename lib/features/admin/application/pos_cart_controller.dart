@@ -8,8 +8,10 @@ import '../domain/trade_in_scrap_draft.dart';
 class PosCartController extends ChangeNotifier {
   final List<PosCartItem> _items = [];
   TradeInScrapDraft? _tradeInDraft;
+  bool _applyingRemote = false;
 
   List<PosCartItem> get items => List.unmodifiable(_items);
+  bool get isApplyingRemote => _applyingRemote;
   TradeInScrapDraft? get tradeInDraft => _tradeInDraft;
 
   int get lineCount => _items.length;
@@ -20,14 +22,18 @@ class PosCartController extends ChangeNotifier {
   bool containsProduct(String productId) =>
       _items.any((line) => line.product.id == productId);
 
-  void addToCart(ProductItem product) {
+  void addToCart(ProductItem product, {int discountPercent = 0}) {
+    if (_applyingRemote) return;
     if (!product.isCatalogPurchasable || product.isOutOfStock) return;
     if (containsProduct(product.id)) return;
-    _items.add(PosCartItem(product: product));
+    _items.add(
+      PosCartItem(product: product, discountPercent: discountPercent),
+    );
     notifyListeners();
   }
 
   void removeFromCart(String productId) {
+    if (_applyingRemote) return;
     _items.removeWhere((line) => line.product.id == productId);
     notifyListeners();
   }
@@ -58,6 +64,7 @@ class PosCartController extends ChangeNotifier {
   void clearTradeInSession() => clearTradeInDraft();
 
   void setLineDiscount(String productId, int discountPercent) {
+    if (_applyingRemote) return;
     if (!PosCartDiscountOptions.values.contains(discountPercent)) return;
     for (final line in _items) {
       if (line.product.id == productId) {
@@ -69,9 +76,22 @@ class PosCartController extends ChangeNotifier {
   }
 
   void clearCart() {
+    if (_applyingRemote) return;
     if (_items.isEmpty && _tradeInDraft == null) return;
     _items.clear();
     _tradeInDraft = null;
+    notifyListeners();
+  }
+
+  void replaceFromRemote(List<PosCartItem> lines) {
+    _applyingRemote = true;
+  try {
+      _items
+        ..clear()
+        ..addAll(lines);
+    } finally {
+      _applyingRemote = false;
+    }
     notifyListeners();
   }
 

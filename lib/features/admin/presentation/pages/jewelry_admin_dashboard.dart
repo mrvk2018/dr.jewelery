@@ -14,7 +14,9 @@ import '../../../../core/utils/round_krw_up_1000.dart';
 import '../../../../core/widgets/krw_text.dart';
 import '../../../../shared/providers/profile_scope.dart';
 import '../../application/pos_cart_controller.dart';
+import '../../application/pos_live_cart_sync.dart';
 import '../widgets/admin_pos_cart_sheet.dart';
+import '../widgets/pos_qr_scanner_sheet.dart';
 import '../widgets/admin_nav_count_badge.dart';
 import '../widgets/admin_toast.dart';
 import '../widgets/reservations_dialog.dart';
@@ -109,6 +111,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   /// Обновить каталог после возврата с другой вкладки (История продаж).
   Future<void> refreshCatalog() => _refreshCatalog();
   final PosCartController _posCart = PosCartController();
+  PosLiveCartSync? _posLiveCartSync;
 
   List<Map<String, dynamic>> _products = const [];
   Map<String, dynamic>? _selected;
@@ -120,14 +123,37 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
   void initState() {
     super.initState();
     _posCart.addListener(_onPosCartChanged);
+    _posLiveCartSync = PosLiveCartSync(
+      cart: _posCart,
+      database: widget.database,
+    );
+    unawaited(_posLiveCartSync!.start());
     _refreshCatalog();
   }
 
   @override
   void dispose() {
+    _posLiveCartSync?.dispose();
     _posCart.removeListener(_onPosCartChanged);
     _posCart.dispose();
     super.dispose();
+  }
+
+  String get _posStaffStoreCode {
+    final fromRow = _selected != null
+        ? storeLocationCodeFromProductRow(_selected!)
+        : StoreLocationCode.icn;
+    if (fromRow != StoreLocationCode.unselected) return fromRow;
+    return StoreLocationCode.icn;
+  }
+
+  Future<void> _openPosQrScanner() async {
+    await PosQrScannerSheet.open(
+      context: context,
+      cart: _posCart,
+      database: widget.database,
+      staffStoreCode: _posStaffStoreCode,
+    );
   }
 
   void _onPosCartChanged() {
@@ -571,8 +597,13 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         lockSellerSelection: widget.sellerStaffMode,
         presetSellerPromoCode: widget.presetSellerPromoCode,
         presetSellerName: widget.presetSellerName,
+        onOpenQrScanner: _openPosQrScanner,
+        onClearRemoteCart: () async {
+          await _posLiveCartSync?.clearRemote();
+        },
         onArchived: () async {
           _posCart.clearCart();
+          await _posLiveCartSync?.clearRemote();
           await _refreshCatalog();
           widget.onPosSaleArchived?.call();
         },
@@ -904,6 +935,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
                     posCartCount: _posCart.lineCount,
                     onAddToPosCart: _addSelectedToPosCart,
                     onOpenPosCart: _openPosCartSheet,
+                    onOpenPosQrScanner: _openPosQrScanner,
                     onPrint: _printDuplicateLabel,
                     onEdit: _editSelectedCard,
                     onMarkSold: _markSoldSelected,
@@ -1715,6 +1747,7 @@ class _BottomActionBar extends StatelessWidget {
     required this.posCartCount,
     required this.onAddToPosCart,
     required this.onOpenPosCart,
+    required this.onOpenPosQrScanner,
     required this.onPrint,
     required this.onEdit,
     required this.onMarkSold,
@@ -1727,6 +1760,7 @@ class _BottomActionBar extends StatelessWidget {
   final int posCartCount;
   final VoidCallback onAddToPosCart;
   final VoidCallback onOpenPosCart;
+  final VoidCallback onOpenPosQrScanner;
   final VoidCallback onPrint;
   final VoidCallback onEdit;
   final VoidCallback onMarkSold;
@@ -1769,6 +1803,12 @@ class _BottomActionBar extends StatelessWidget {
             posCartCount > 0 ? 'POS ($posCartCount)' : 'POS-корзина',
           ),
         ),
+      ),
+      OutlinedButton.icon(
+        onPressed: onOpenPosQrScanner,
+        style: _barBtnStyle,
+        icon: const Icon(Icons.qr_code_scanner, size: 16),
+        label: const Text('QR POS'),
       ),
       FilledButton.tonalIcon(
         onPressed: hasSelection ? onPrint : null,

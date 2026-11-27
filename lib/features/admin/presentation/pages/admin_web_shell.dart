@@ -15,8 +15,10 @@ import '../screens/scrap_metal_intake_screen.dart';
 import '../screens/staff_management_screen.dart';
 import '../../../seller/presentation/screens/seller_my_payroll_screen.dart';
 import '../../../seller/presentation/screens/seller_terminal_screen.dart';
+import '../../application/inventory_active_session_counter.dart';
 import '../../application/product_transfers_in_transit_counter.dart';
 import '../widgets/admin_nav_count_badge.dart';
+import '../../../../screens/inventory_revision_screen.dart';
 import 'jewelry_admin_dashboard.dart';
 
 /// Web-админка: супер-админ или режим продавца (смена после пасхалки).
@@ -28,13 +30,15 @@ class AdminWebShell extends StatefulWidget {
 }
 
 class _AdminWebShellState extends State<AdminWebShell> {
-  static const _salesHistoryTabIndex = 2;
+  static const _salesHistoryTabIndex = 3;
+  static const _revisionNavLabel = 'Ревизия';
 
   int _selectedIndex = 0;
   final _dashboardKey = GlobalKey<JewelryAdminDashboardState>();
   final _salesHistoryKey = GlobalKey<SalesHistoryScreenState>();
   late final DatabaseService _database = DatabaseService.create();
   late final ProductTransfersInTransitCounter _transfersInTransitCounter;
+  late final InventoryActiveSessionCounter _inventoryActiveCounter;
 
   AdminStaffSession? _staffSession;
   bool _sessionReady = false;
@@ -44,12 +48,15 @@ class _AdminWebShellState extends State<AdminWebShell> {
     super.initState();
     _transfersInTransitCounter = ProductTransfersInTransitCounter(_database);
     _transfersInTransitCounter.start();
+    _inventoryActiveCounter = InventoryActiveSessionCounter(_database);
+    _inventoryActiveCounter.start();
     _loadStaffSession();
   }
 
   @override
   void dispose() {
     _transfersInTransitCounter.dispose();
+    _inventoryActiveCounter.dispose();
     super.dispose();
   }
 
@@ -82,6 +89,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
           icon: Icons.local_shipping_outlined,
           selectedIcon: Icons.local_shipping,
           label: 'Трансферы',
+        ),
+        (
+          icon: Icons.fact_check_outlined,
+          selectedIcon: Icons.fact_check,
+          label: _revisionNavLabel,
         ),
         (
           icon: Icons.history_edu_outlined,
@@ -130,6 +142,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
               label: 'Трансферы',
             ),
             (
+              icon: Icons.fact_check_outlined,
+              selectedIcon: Icons.fact_check,
+              label: _revisionNavLabel,
+            ),
+            (
               icon: Icons.move_to_inbox_outlined,
               selectedIcon: Icons.move_to_inbox,
               label: 'Черновики',
@@ -149,16 +166,18 @@ class _AdminWebShellState extends State<AdminWebShell> {
         1 => 'Моя зарплата и продажи',
         2 => 'Приёмка и журнал лома',
         3 => 'Трансферы ICN ↔ ANS',
-        4 => 'Приёмка черновиков',
+        4 => 'Ревизия витрин',
+        5 => 'Приёмка черновиков',
         _ => 'Смена продавца',
       };
     }
     return switch (safe) {
       0 => 'Доктор Ювелирка · Рабочий стол',
       1 => 'Трансферы ICN ↔ ANS',
-      2 => 'История продаж · KST / KRW',
-      3 when isSuperAdmin => 'Управление персоналом',
-      4 when isSuperAdmin => 'Приёмка лома',
+      2 => 'Ревизия витрин',
+      3 => 'История продаж · KST / KRW',
+      4 when isSuperAdmin => 'Управление персоналом',
+      5 when isSuperAdmin => 'Приёмка лома',
       _ => 'Доктор Ювелирка',
     };
   }
@@ -189,6 +208,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
         ProductTransfersScreen(
           actorCode: _panelActorCode(session),
           onTransfersMutated: _refreshTransfersBadge,
+        ),
+        InventoryRevisionScreen(
+          database: _database,
+          scannerDisplayName:
+              session?.name ?? (isSuperAdmin ? 'Админ' : 'Сотрудник'),
         ),
         SalesHistoryScreen(
           key: _salesHistoryKey,
@@ -227,6 +251,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
           actorCode: session.promoCode,
           onTransfersMutated: _refreshTransfersBadge,
         ),
+        InventoryRevisionScreen(
+          database: _database,
+          scannerDisplayName: session.name,
+        ),
         DraftIntakeScreen(
           database: _database,
           sellerStaffMode: true,
@@ -264,10 +292,13 @@ class _AdminWebShellState extends State<AdminWebShell> {
     required ({IconData icon, IconData selectedIcon, String label}) dest,
     required int index,
     required int transfersTabIndex,
+    required int revisionTabIndex,
+    required bool revisionActive,
     required int inTransitCount,
     required bool railExtended,
   }) {
     final isTransfers = index == transfersTabIndex;
+    final isRevision = index == revisionTabIndex;
     final badgeCount = isTransfers ? inTransitCount : 0;
 
     Widget icon = Icon(dest.icon);
@@ -276,6 +307,17 @@ class _AdminWebShellState extends State<AdminWebShell> {
       icon = AdminNavIconWithBadge(icon: icon, count: badgeCount);
       selectedIcon =
           AdminNavIconWithBadge(icon: selectedIcon, count: badgeCount);
+    } else if (isRevision && revisionActive) {
+      icon = Badge(
+        backgroundColor: const Color(0xFF1B5E20),
+        smallSize: 10,
+        child: icon,
+      );
+      selectedIcon = Badge(
+        backgroundColor: const Color(0xFF1B5E20),
+        smallSize: 10,
+        child: selectedIcon,
+      );
     }
 
     final label = isTransfers && railExtended
@@ -289,7 +331,22 @@ class _AdminWebShellState extends State<AdminWebShell> {
               ],
             ],
           )
-        : Text(dest.label);
+        : isRevision && railExtended && revisionActive
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text(dest.label)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Идёт',
+                    style: AppTypography.caption(
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF1B5E20),
+                    ),
+                  ),
+                ],
+              )
+            : Text(dest.label);
 
     return NavigationRailDestination(
       icon: icon,
@@ -346,6 +403,8 @@ class _AdminWebShellState extends State<AdminWebShell> {
 
     final transfersTabIndex =
         destinations.indexWhere((d) => d.label == 'Трансферы');
+    final revisionTabIndex =
+        destinations.indexWhere((d) => d.label == _revisionNavLabel);
     final railExtended = MediaQuery.sizeOf(context).width >= 960;
 
     return Scaffold(
@@ -391,9 +450,13 @@ class _AdminWebShellState extends State<AdminWebShell> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListenableBuilder(
-            listenable: _transfersInTransitCounter,
+            listenable: Listenable.merge([
+              _transfersInTransitCounter,
+              _inventoryActiveCounter,
+            ]),
             builder: (context, _) {
               final inTransitCount = _transfersInTransitCounter.count;
+              final revisionActive = _inventoryActiveCounter.hasActiveSession;
               return NavigationRail(
                 selectedIndex: safeIndex,
                 extended: railExtended,
@@ -424,6 +487,8 @@ class _AdminWebShellState extends State<AdminWebShell> {
                       dest: destinations[i],
                       index: i,
                       transfersTabIndex: transfersTabIndex,
+                      revisionTabIndex: revisionTabIndex,
+                      revisionActive: revisionActive,
                       inTransitCount: inTransitCount,
                       railExtended: railExtended,
                     ),

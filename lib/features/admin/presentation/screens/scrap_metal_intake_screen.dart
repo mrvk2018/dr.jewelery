@@ -155,14 +155,18 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       ];
 
   Future<void> _bootstrap() async {
+    final restoringTradeIn =
+        widget.tradeInMode && widget.initialTradeInDraft != null;
     try {
       final storage = await ScrapMetalStorage.create();
       if (!mounted) return;
-      setState(() => _storeLocation = storage.storeLocation);
-      _goldStdRate.text = '${storage.goldStandardRateKrw}';
-      _goldTradeRate.text = '${storage.goldTradeinRateKrw}';
-      _silverStdRate.text = '${storage.silverStandardRateKrw}';
-      _silverTradeRate.text = '${storage.silverTradeinRateKrw}';
+      if (!restoringTradeIn) {
+        setState(() => _storeLocation = storage.storeLocation);
+        _goldStdRate.text = '${storage.goldStandardRateKrw}';
+        _goldTradeRate.text = '${storage.goldTradeinRateKrw}';
+        _silverStdRate.text = '${storage.silverStandardRateKrw}';
+        _silverTradeRate.text = '${storage.silverTradeinRateKrw}';
+      }
     } catch (_) {}
 
     try {
@@ -209,12 +213,12 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
 
   void _applyTradeInDraft(TradeInScrapDraft draft) {
     final payload = draft.scrapPayload;
-    _storeLocation =
-        payload['store_location']?.toString().trim().toUpperCase() == 'ANS'
-            ? StoreLocationCode.ans
-            : StoreLocationCode.icn;
+    final loc = payload['store_location']?.toString().trim().toUpperCase();
+    _storeLocation = loc == 'ANS' ? StoreLocationCode.ans : StoreLocationCode.icn;
     final code = payload['accepted_by_code']?.toString();
-    if (code != null && code.isNotEmpty) _acceptKey = code;
+    if (code != null && code.isNotEmpty) {
+      _acceptKey = code == 'ADMIN' ? _adminAcceptKey : code;
+    }
     _notesController.text = payload['notes']?.toString() ?? '';
     _goldStdRate.text = '${payload['gold_standard_rate_krw'] ?? ''}';
     _goldTradeRate.text = '${payload['gold_tradein_rate_krw'] ?? ''}';
@@ -224,29 +228,19 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     _silverTradeRate.text = '${payload['silver_tradein_rate_krw'] ?? ''}';
     _silverPurchaseGrams.text =
         '${payload['silver_purchase_offset_grams'] ?? '0'}';
-    final goldItems = payload['gold_items'];
-    if (goldItems is List) {
-      for (final item in goldItems) {
-        if (item is! Map) continue;
-        final f = (item['fineness'] as num?)?.toDouble();
-        if (f == null) continue;
-        for (final row in _goldRows) {
-          if ((row.fineness - f).abs() < 0.01) {
-            row.grossWeight = (item['gross_weight'] as num?)?.toDouble() ?? 0;
-            row.stoneDiscountPercent =
-                (item['stone_discount_percent'] as num?)?.toDouble() ?? 0;
-          }
-        }
-      }
-    }
-    final urls = payload['photo_urls'];
-    if (urls is List) {
-      _photoUrls
-        ..clear()
-        ..addAll(urls.map((e) => e.toString()).where((u) => u.isNotEmpty));
-    }
+    _goldRows
+      ..clear()
+      ..addAll(_rowsFromJson(payload['gold_items'], isGold: true));
+    _silverRows
+      ..clear()
+      ..addAll(_rowsFromJson(payload['silver_items'], isGold: false));
+    _isSilverExpanded = ScrapFinenessRow.activeRows(_silverRows).isNotEmpty;
+    _photoUrls
+      ..clear()
+      ..addAll(_parseUrlList(payload['photo_urls']));
+    _pendingPhotoBytes.clear();
     _runCalculate();
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _runCalculate() {

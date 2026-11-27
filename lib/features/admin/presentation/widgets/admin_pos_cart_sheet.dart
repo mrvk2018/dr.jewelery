@@ -68,6 +68,12 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
     _loadActiveSellers();
   }
 
+  @override
+  void dispose() {
+    widget.cart.clearTradeInSession();
+    super.dispose();
+  }
+
   Future<void> _loadActiveSellers() async {
     try {
       if (widget.lockSellerSelection) {
@@ -237,7 +243,8 @@ class _AdminPosCartSheetState extends State<AdminPosCartSheet> {
         ),
       ),
     );
-    if (result != null && mounted) {
+    if (!mounted) return;
+    if (result != null) {
       cart.attachTradeInDraft(result);
       setState(() => _storeLocation = result.storeLocation);
     }

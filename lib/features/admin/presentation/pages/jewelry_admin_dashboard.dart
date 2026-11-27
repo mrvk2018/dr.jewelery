@@ -558,6 +558,7 @@ class JewelryAdminDashboardState extends State<JewelryAdminDashboard> {
         },
       ),
     );
+    _posCart.clearTradeInSession();
   }
 
   Future<void> _startProductTransfer() async {

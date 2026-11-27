@@ -54,6 +54,9 @@ class PosCartController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Сброс Trade-In при закрытии POS-корзины (сессия модалки).
+  void clearTradeInSession() => clearTradeInDraft();
+
   void setLineDiscount(String productId, int discountPercent) {
     if (!PosCartDiscountOptions.values.contains(discountPercent)) return;
     for (final line in _items) {

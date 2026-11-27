@@ -114,7 +114,7 @@ class _GemInsertPickerDialogBodyState extends State<_GemInsertPickerDialogBody> 
               if (_legacy.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Text(
-                  'Значения со склада (сохранятся при записи)',
+                  'Значения со склада (замените чекбоксами — при сохранении пишется только выбор)',
                   style: AppTypography.productMeta().copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -146,7 +146,7 @@ class _GemInsertPickerDialogBodyState extends State<_GemInsertPickerDialogBody> 
         FilledButton(
           onPressed: () {
             Navigator.of(context).pop(
-              GemInsertPickerResult(catalog: _catalog, legacy: _legacy),
+              GemInsertPickerResult(catalog: _catalog, legacy: const []),
             );
           },
           style: FilledButton.styleFrom(

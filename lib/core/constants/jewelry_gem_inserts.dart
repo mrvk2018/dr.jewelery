@@ -4,6 +4,7 @@ const String kJewelryGemInsertNone = 'Без вставок';
 const List<String> kJewelryGemInserts = [
   kJewelryGemInsertNone,
   'Фианит',
+  'Цветные фианиты',
   'Топаз Sky Blue',
   'Топаз Swiss Blue',
   'Топаз London Blue',
@@ -22,6 +23,7 @@ const List<String> kJewelryGemInserts = [
   'Рубин натуральный',
   'Рубин Г/Т',
   'Александрит',
+  'Бриллиант',
   'Бриллиант натуральный',
   'Бриллиант лабораторный',
   'Муассанит',
@@ -62,6 +64,28 @@ String? normalizeGemInsertToken(String raw) {
   for (final item in kJewelryGemInserts) {
     if (item.toLowerCase() == lower) return item;
   }
+  return mapLegacyGemInsertAlias(trimmed);
+}
+
+/// Старые подписи склада / MSSQL → пункт справочника.
+String? mapLegacyGemInsertAlias(String raw) {
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  final lower = trimmed.toLowerCase();
+  if (lower == 'фианит') return 'Фианит';
+  if (lower.contains('цветн') && lower.contains('фианит')) {
+    return 'Цветные фианиты';
+  }
+  if (lower == 'бриллиант') return 'Бриллиант';
+  if (lower.contains('бриллиант')) {
+    if (lower.contains('лабор') ||
+        lower.contains('искусствен') ||
+        lower.contains('синтет') ||
+        lower.contains('выращ')) {
+      return 'Бриллиант лабораторный';
+    }
+    if (lower.contains('натуральн')) return 'Бриллиант натуральный';
+  }
   return null;
 }
 
@@ -101,19 +125,31 @@ ParsedGemInserts parseGemInsertsFromProductField(Object? raw) {
 String formatGemInsertsForStorage({
   required Set<String> catalog,
   Iterable<String> legacy = const [],
+  bool includeLegacy = true,
 }) {
   final parts = <String>[];
   for (final item in kJewelryGemInserts) {
     if (catalog.contains(item)) parts.add(item);
   }
-  for (final extra in legacy) {
-    final t = extra.trim();
-    if (t.isEmpty) continue;
-    if (!parts.any((p) => p.toLowerCase() == t.toLowerCase())) {
-      parts.add(t);
+  if (includeLegacy) {
+    for (final extra in legacy) {
+      final t = extra.trim();
+      if (t.isEmpty) continue;
+      if (!parts.any((p) => p.toLowerCase() == t.toLowerCase())) {
+        parts.add(t);
+      }
     }
   }
   return parts.join(', ');
+}
+
+/// Сохранение из админ-формы: только выбранные чекбоксы, без складских хвостов.
+String formatAdminGemInsertsForSave(Set<String> catalog) {
+  return formatGemInsertsForStorage(
+    catalog: catalog,
+    legacy: const [],
+    includeLegacy: false,
+  );
 }
 
 String gemInsertsFieldHint(Set<String> catalog, Iterable<String> legacy) {

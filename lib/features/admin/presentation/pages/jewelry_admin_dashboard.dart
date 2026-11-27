@@ -2262,7 +2262,14 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
       edit['gem_inserts'] ?? edit['insert'],
     );
     _selectedCatalogGems = Set<String>.from(parsed.catalog);
-    _legacyGemValues = parsed.legacy.toList();
+    for (final legacy in parsed.legacy) {
+      final alias = mapLegacyGemInsertAlias(legacy);
+      if (alias != null) {
+        _selectedCatalogGems.add(alias);
+      } else {
+        _legacyGemValues.add(legacy);
+      }
+    }
     _syncGemControllerFromSelection();
     _notesController.text = edit['notes']?.toString().trim() ?? '';
     _initPriceField(edit);
@@ -2407,10 +2414,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
   }
 
   void _syncGemControllerFromSelection() {
-    _gemController.text = formatGemInsertsForStorage(
-      catalog: _selectedCatalogGems,
-      legacy: _legacyGemValues,
-    );
+    _gemController.text = formatAdminGemInsertsForSave(_selectedCatalogGems);
   }
 
   Future<void> _openGemInsertsPicker() async {
@@ -2422,7 +2426,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
     if (result == null || !mounted) return;
     setState(() {
       _selectedCatalogGems = Set<String>.from(result.catalog);
-      _legacyGemValues = List<String>.from(result.legacy);
+      _legacyGemValues = const [];
       _syncGemControllerFromSelection();
     });
   }
@@ -2851,14 +2855,8 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
           'category': productCategory,
           'metal_type': _resolvedMetalType,
           'metal': _resolvedMetalType,
-          'insert': formatGemInsertsForStorage(
-            catalog: _selectedCatalogGems,
-            legacy: _legacyGemValues,
-          ),
-          'gem_inserts': formatGemInsertsForStorage(
-            catalog: _selectedCatalogGems,
-            legacy: _legacyGemValues,
-          ),
+          'insert': formatAdminGemInsertsForSave(_selectedCatalogGems),
+          'gem_inserts': formatAdminGemInsertsForSave(_selectedCatalogGems),
           'weight_grams': weight,
           ...productSizeDbFieldsFromInput(size),
           'notes': notes,
@@ -2894,10 +2892,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               weightGrams: weight,
               price: price,
               sizeValue: size,
-              gemInserts: formatGemInsertsForStorage(
-                catalog: _selectedCatalogGems,
-                legacy: _legacyGemValues,
-              ),
+              gemInserts: formatAdminGemInsertsForSave(_selectedCatalogGems),
               notes: notes,
               manufacturer: manufacturer,
               stockQuantity: _restockQuantityIfMissing(widget.editProduct!),
@@ -2912,10 +2907,7 @@ class _ManualProductDialogState extends State<_ManualProductDialog> {
               weightGrams: weight,
               price: price,
               sizeValue: size,
-              gemInserts: formatGemInsertsForStorage(
-                catalog: _selectedCatalogGems,
-                legacy: _legacyGemValues,
-              ),
+              gemInserts: formatAdminGemInsertsForSave(_selectedCatalogGems),
               notes: notes,
               isDraft: asDraft,
               manufacturer: manufacturer,

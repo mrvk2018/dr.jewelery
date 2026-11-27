@@ -137,7 +137,7 @@ const DELETE_CHUNK_SIZE = 500;
 /** Поля products для зеркальной сверки MSSQL ↔ Supabase. */
 const MIRROR_PRODUCT_COLUMNS =
   'id, sku, stock_quantity, status, product_status, manual_return_lock, name, description, metal, metal_type, sale_price, old_price, ' +
-  'discount_percent, category, insert, icon_index, available_sizes, warehouse_attributes, ' +
+  'discount_percent, category, insert, gem_inserts, icon_index, available_sizes, warehouse_attributes, ' +
   'weight_grams, image_url, images, store_location';
 
 const MIRROR_SCALAR_KEYS = [
@@ -348,6 +348,20 @@ function preserveManualReturnScalars(scalars, existing) {
   if (existing.product_status != null && String(existing.product_status).trim() !== '') {
     out.product_status = existing.product_status;
   }
+  return out;
+}
+
+/** Не затирать insert/gem_inserts, если витрина уже отличается от Items.Stones. */
+function preserveAdminEditedInsert(scalars, existing) {
+  if (!existing) return scalars;
+  const mssqlStones = String(scalars.insert ?? '').trim();
+  const supInsert = String(existing.insert ?? '').trim();
+  const supGems = String(existing.gem_inserts ?? '').trim();
+  const curated = (supGems || supInsert).trim();
+  if (!curated || curated === '—' || curated === '-') return scalars;
+  if (curated.toLowerCase() === mssqlStones.toLowerCase()) return scalars;
+  const out = { ...scalars };
+  out.insert = supInsert || curated;
   return out;
 }
 
@@ -1066,6 +1080,7 @@ async function syncProducts(supabase, pool, allInStockRows, rowsToProcess) {
 
       const existing = supabaseById.get(id);
       scalars = preserveManualReturnScalars(scalars, existing);
+      scalars = preserveAdminEditedInsert(scalars, existing);
       const isNew = !existing;
 
       let scalarsMatch = false;

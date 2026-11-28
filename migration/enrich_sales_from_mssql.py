@@ -29,6 +29,20 @@ REPO_ROOT = SCRIPT_DIR.parent
 BACKUP_DIR = SCRIPT_DIR / "backups"
 LOG_PATH = SCRIPT_DIR / "enrich_sales_from_mssql.log"
 
+# DrJaw typо: PurshaseSource / PurshaseType / PurshaseDate (not Purchase*).
+# PWA POS (AdminPosPaymentMethods): cash | card | transfer
+PURSHASE_TYPE_TO_PAYMENT: dict[str, str] = {
+    "Наличные": "cash",
+    "Карта": "card",
+    "Перевод": "transfer",
+}
+
+PAYMENT_UI_LABEL: dict[str, str] = {
+    "cash": "Наличные",
+    "card": "Карта",
+    "transfer": "Перевод",
+}
+
 MSSQL_ENRICH_SELECT = """
 SELECT
   CAST(i.Id AS VARCHAR(32)) AS legacy_id,
@@ -37,22 +51,25 @@ SELECT
   i.Weight,
   i.Mart,
   i.Manager,
-  i.CartId,
+  i.CartId AS cart_id,
   i.Bonus,
   i.Comment,
   a.Metall,
-  a.Type
+  a.Type,
+  c.PurshaseSource,
+  c.PurshaseType,
+  c.PurshaseDate
 FROM dbo.Items AS i
 LEFT JOIN dbo.Articuls AS a ON a.Articul = i.Articul
+INNER JOIN dbo.Cart AS c
+  ON c.CartId = i.CartId AND c.OperationType = N'Sold' AND i.Status = N'Sold'
 """
 
 MSSQL_ENRICH_BY_IDS = MSSQL_ENRICH_SELECT + """
 WHERE CAST(i.Id AS VARCHAR(32)) IN ({placeholders})
 """
 
-MSSQL_ENRICH_SOLD_WITH_CART = MSSQL_ENRICH_SELECT + """
-WHERE i.CartId IS NOT NULL AND LTRIM(RTRIM(i.CartId)) <> ''
-"""
+MSSQL_ENRICH_SOLD_WITH_CART = MSSQL_ENRICH_SELECT
 
 
 def setup_logging() -> logging.Logger:
@@ -180,6 +197,18 @@ def is_drjaw_row(row: dict[str, Any]) -> bool:
     return False
 
 
+def map_purshase_type_to_payment(purshase_type: Any) -> str | None:
+    raw = str(purshase_type or "").strip()
+    if not raw:
+        return None
+    return PURSHASE_TYPE_TO_PAYMENT.get(raw)
+
+
+def map_purshase_source_to_seller(purshase_source: Any) -> str | None:
+    raw = str(purshase_source or "").strip()
+    return raw or None
+
+
 def merge_payload(existing: dict[str, Any] | None, patch: dict[str, Any]) -> dict[str, Any]:
     base = dict(existing or {})
     for key, val in patch.items():
@@ -202,7 +231,7 @@ def fetch_sales_rows(
 ) -> list[dict[str, Any]]:
     columns = (
         "id, legacy_id, sku, price_krw, sold_date_kst, product_id, "
-        "store_location, seller_name, metal_category, list_price_krw, "
+        "store_location, seller_name, payment_method, metal_category, list_price_krw, "
         "discount_percent, source_system, raw_legacy_payload, migration_meta"
     )
     out: list[dict[str, Any]] = []
@@ -332,6 +361,11 @@ def build_patch(
     manager = str(ms_row.get("Manager") or "").strip() or None
     weight = parse_weight(ms_row.get("Weight"))
 
+    cart_id = str(ms_row.get("cart_id") or ms_row.get("CartId") or "").strip() or None
+    purshase_source = map_purshase_source_to_seller(ms_row.get("PurshaseSource"))
+    purshase_type = str(ms_row.get("PurshaseType") or "").strip() or None
+    payment_method = map_purshase_type_to_payment(purshase_type)
+
     payload_patch: dict[str, Any] = {
         "Metall": metall,
         "Type": ms_row.get("Type"),
@@ -339,6 +373,10 @@ def build_patch(
         "Manager": manager,
         "Mart": ms_row.get("Mart"),
         "Bonus": bonus if bonus > 0 else ms_row.get("Bonus"),
+        "cart_id": cart_id,
+        "PurshaseSource": purshase_source,
+        "PurshaseType": purshase_type,
+        "PurshaseDate": ms_row.get("PurshaseDate"),
     }
     new_payload = merge_payload(sh_row.get("raw_legacy_payload"), payload_patch)
 
@@ -362,6 +400,11 @@ def build_patch(
     elif not sh_row.get("list_price_krw"):
         patch["list_price_krw"] = price_krw
 
+    if purshase_source:
+        patch["seller_name"] = purshase_source
+    if payment_method:
+        patch["payment_method"] = payment_method
+
     return {
         "sales_history_id": sh_row["id"],
         "legacy_id": legacy_id,
@@ -370,6 +413,7 @@ def build_patch(
         "before": {
             "store_location": sh_row.get("store_location"),
             "seller_name": sh_row.get("seller_name"),
+            "payment_method": sh_row.get("payment_method"),
             "metal_category": sh_row.get("metal_category"),
             "product_id": sh_row.get("product_id"),
             "list_price_krw": sh_row.get("list_price_krw"),
@@ -383,6 +427,9 @@ def build_patch(
             "Mart": ms_row.get("Mart"),
             "Manager": manager,
             "Bonus": bonus,
+            "PurshaseSource": purshase_source,
+            "PurshaseType": purshase_type,
+            "payment_method": payment_method,
         },
     }
 
@@ -401,6 +448,10 @@ def write_backup(records: list[dict[str, Any]], label: str) -> Path:
 
 
 def sales_row_needs_enrich(row: dict[str, Any]) -> bool:
+    if not str(row.get("payment_method") or "").strip():
+        return True
+    if not str(row.get("seller_name") or "").strip():
+        return True
     payload = row.get("raw_legacy_payload") or {}
     if not isinstance(payload, dict):
         return True
@@ -411,6 +462,51 @@ def sales_row_needs_enrich(row: dict[str, Any]) -> bool:
     if str(row.get("metal_category") or "other") == "other":
         return True
     return False
+
+
+def print_cart_enrich_dry_run(
+    plans: list[dict[str, Any]],
+    logger: logging.Logger,
+) -> None:
+    """Mapping table + seller distribution for dry-run (--cart fields)."""
+    type_counts: dict[str, int] = {}
+    seller_counts: dict[str, int] = {}
+    unknown_types: dict[str, int] = {}
+
+    for plan in plans:
+        ms = plan.get("mssql") or {}
+        pt = str(ms.get("PurshaseType") or "").strip() or "(null)"
+        pm = ms.get("payment_method")
+        type_counts[pt] = type_counts.get(pt, 0) + 1
+        if pt not in PURSHASE_TYPE_TO_PAYMENT and pt != "(null)":
+            unknown_types[pt] = unknown_types.get(pt, 0) + 1
+        seller = str(ms.get("PurshaseSource") or "").strip() or "(null)"
+        seller_counts[seller] = seller_counts.get(seller, 0) + 1
+
+    logger.info("--- PurshaseType -> sales_history.payment_method -> UI label ---")
+    for pt, cnt in sorted(type_counts.items(), key=lambda x: -x[1]):
+        db_val = PURSHASE_TYPE_TO_PAYMENT.get(pt, "(unmapped)" if pt != "(null)" else "—")
+        ui = PAYMENT_UI_LABEL.get(db_val, db_val) if db_val not in ("(unmapped)", "—") else "—"
+        logger.info("  %s | %s rows | DB: %s | UI: %s", pt, cnt, db_val, ui)
+    if unknown_types:
+        logger.warning("Unmapped PurshaseType values: %s", unknown_types)
+
+    logger.info("--- seller_name (PurshaseSource) distribution (top 15) ---")
+    for name, cnt in sorted(seller_counts.items(), key=lambda x: -x[1])[:15]:
+        logger.info("  %s: %s", name, cnt)
+
+    with_payment = sum(
+        1 for p in plans if str((p.get("after") or {}).get("payment_method") or "")
+    )
+    with_seller = sum(
+        1 for p in plans if str((p.get("after") or {}).get("seller_name") or "")
+    )
+    logger.info(
+        "Plans with payment_method=%s, seller_name=%s (of %s)",
+        with_payment,
+        with_seller,
+        len(plans),
+    )
 
 
 def make_supabase_client(cfg: dict[str, Any]) -> Client:
@@ -542,6 +638,7 @@ def main() -> None:
         )
 
     if args.dry_run:
+        print_cart_enrich_dry_run(plans, logger)
         logger.info("Dry-run complete (%s plans).", len(plans))
         return
 

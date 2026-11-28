@@ -17,7 +17,7 @@ String scrapPurityTitle(String purity) {
   return 'Золото $purity°';
 }
 
-String formatScrapGrams(double grams, {int decimals = 3}) {
+String formatScrapGrams(double grams, {int decimals = 2}) {
   if (grams == 0) return '0 г';
   final text = grams.toStringAsFixed(decimals);
   final trimmed = text.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');

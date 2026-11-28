@@ -1,0 +1,180 @@
+﻿{
+  "sellers": [
+    {
+      "promo_code": "ADMIN",
+      "name": "Администратор",
+      "is_active": true,
+      "created_at": "2026-11-17T22:41:14.158912+00:00",
+      "buyer_bonus_krw": 0,
+      "buyer_bonus_percent": 0,
+      "gold_commission_percent": 0.0,
+      "silver_commission_percent": 0.0,
+      "app_gold_commission_percent": 0.0,
+      "app_silver_commission_percent": 0.0,
+      "app_gold_buyer_discount_percent": 0.0,
+      "app_silver_buyer_discount_percent": 0.0,
+      "login_password": null,
+      "pin_code": null
+    },
+    {
+      "promo_code": "FCZ123",
+      "name": "Ася",
+      "is_active": true,
+      "created_at": "2026-11-18T00:41:44.932218+00:00",
+      "buyer_bonus_krw": 0,
+      "buyer_bonus_percent": 0,
+      "gold_commission_percent": 6.0,
+      "silver_commission_percent": 15.0,
+      "app_gold_commission_percent": 2.0,
+      "app_silver_commission_percent": 5.0,
+      "app_gold_buyer_discount_percent": 3.0,
+      "app_silver_buyer_discount_percent": 0.0,
+      "login_password": "FCZ321",
+      "pin_code": "1111"
+    },
+    {
+      "promo_code": "QWER75",
+      "name": "Люда",
+      "is_active": true,
+      "created_at": "2026-11-18T02:48:25.146278+00:00",
+      "buyer_bonus_krw": 0,
+      "buyer_bonus_percent": 0,
+      "gold_commission_percent": 6.0,
+      "silver_commission_percent": 15.0,
+      "app_gold_commission_percent": 2.0,
+      "app_silver_commission_percent": 5.0,
+      "app_gold_buyer_discount_percent": 2.0,
+      "app_silver_buyer_discount_percent": 5.0,
+      "login_password": "QWER57",
+      "pin_code": "4444"
+    }
+  ],
+  "sales_rows_nov_positive": 70,
+  "groups": [
+    {
+      "seller_code": null,
+      "seller_name": "Андрей",
+      "source_system": "DrJaw",
+      "count": 28,
+      "sum_krw": 18560000,
+      "gold_cnt": 17,
+      "gold_krw": 16715000,
+      "silver_cnt": 11,
+      "silver_krw": 1845000,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Люда",
+      "source_system": "DrJaw",
+      "count": 18,
+      "sum_krw": 9005000,
+      "gold_cnt": 10,
+      "gold_krw": 7545000,
+      "silver_cnt": 8,
+      "silver_krw": 1460000,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Люда",
+      "source_system": "legacy_mssql",
+      "count": 6,
+      "sum_krw": 2020000,
+      "gold_cnt": 3,
+      "gold_krw": 1925000,
+      "silver_cnt": 3,
+      "silver_krw": 95000,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Ася",
+      "source_system": "DrJaw",
+      "count": 4,
+      "sum_krw": 1740000,
+      "gold_cnt": 3,
+      "gold_krw": 1620000,
+      "silver_cnt": 1,
+      "silver_krw": 120000,
+      "comm": 0
+    },
+    {
+      "seller_code": "ADMIN",
+      "seller_name": "Администратор",
+      "source_system": "pwa_store",
+      "count": 2,
+      "sum_krw": 1252700,
+      "gold_cnt": 2,
+      "gold_krw": 1252700,
+      "silver_cnt": 0,
+      "silver_krw": 0,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Люда",
+      "source_system": "pwa_store",
+      "count": 1,
+      "sum_krw": 640000,
+      "gold_cnt": 1,
+      "gold_krw": 640000,
+      "silver_cnt": 0,
+      "silver_krw": 0,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Андрей",
+      "source_system": "legacy_mssql",
+      "count": 2,
+      "sum_krw": 355000,
+      "gold_cnt": 1,
+      "gold_krw": 235000,
+      "silver_cnt": 1,
+      "silver_krw": 120000,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Ася",
+      "source_system": "pwa_store",
+      "count": 3,
+      "sum_krw": 220000,
+      "gold_cnt": 0,
+      "gold_krw": 0,
+      "silver_cnt": 3,
+      "silver_krw": 220000,
+      "comm": 0
+    },
+    {
+      "seller_code": null,
+      "seller_name": "Ася",
+      "source_system": "legacy_mssql",
+      "count": 3,
+      "sum_krw": 170000,
+      "gold_cnt": 0,
+      "gold_krw": 0,
+      "silver_cnt": 3,
+      "silver_krw": 170000,
+      "comm": 0
+    },
+    {
+      "seller_code": "QWER75",
+      "seller_name": "Люда",
+      "source_system": "pwa_store",
+      "count": 3,
+      "sum_krw": 125000,
+      "gold_cnt": 0,
+      "gold_krw": 0,
+      "silver_cnt": 3,
+      "silver_krw": 125000,
+      "comm": 18750
+    }
+  ],
+  "unassigned_seller_name_counts": {
+    "Андрей": 30,
+    "Люда": 25,
+    "Ася": 10
+  }
+}

@@ -144,7 +144,18 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
       final name = row.sellerName?.trim().toUpperCase() ?? '';
       final code = row.sellerCode?.trim().toUpperCase() ?? '';
       if (name.contains(query) || code.contains(query)) return true;
-      if (row.isReservationPayment) {
+      if (row.isScrapIntake) {
+        final summary = row.scrapIntakeSummary?.trim().toUpperCase() ?? '';
+        final notes = row.scrapIntakeNotes?.trim().toUpperCase() ?? '';
+        final sku = row.sku.trim().toUpperCase();
+        final title = row.productName?.trim().toUpperCase() ?? '';
+        if (summary.contains(query) ||
+            notes.contains(query) ||
+            sku.contains(query) ||
+            title.contains(query)) {
+          return true;
+        }
+      } else if (row.isReservationPayment) {
         final customer = row.reservationCustomerName?.trim().toUpperCase() ?? '';
         final phone = row.reservationCustomerPhone?.trim().toUpperCase() ?? '';
         final sku = row.sku.trim().toUpperCase();
@@ -328,14 +339,129 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
   }
 
   Future<void> _openPhotoPreview(SalesHistoryRow row) async {
-    final url = row.imageUrl?.trim();
-    if (url == null || url.isEmpty) return;
+    final urls = row.isScrapIntake && row.scrapIntakePhotoUrls.isNotEmpty
+        ? row.scrapIntakePhotoUrls
+        : [
+            if (row.imageUrl != null && row.imageUrl!.trim().isNotEmpty)
+              row.imageUrl!.trim(),
+          ];
+    if (urls.isEmpty) {
+      if (row.isScrapIntake) _openScrapIntakeDetails(row);
+      return;
+    }
     final title = row.sku.isNotEmpty ? row.sku : row.productName ?? 'Фото';
     await showAdminProductPhotoPreview(
       context,
       title: title,
-      subtitle: row.productName,
-      imageUrls: [url],
+      subtitle: row.historySecondaryLine ?? row.productName,
+      imageUrls: urls,
+    );
+  }
+
+  void _openScrapIntakeDetails(SalesHistoryRow row) {
+    if (!row.isScrapIntake) return;
+    final photoUrls = row.scrapIntakePhotoUrls;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.cardBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text('Приёмка лома', style: AppTypography.heading(fontSize: 18)),
+                const SizedBox(height: 6),
+                Text(
+                  row.sku.isNotEmpty ? row.sku : '—',
+                  style: AppTypography.productMeta(),
+                ),
+                const SizedBox(height: 12),
+                _ScrapDetailLine(
+                  label: 'Дата (KST)',
+                  value: formatSoldAtKst(row),
+                ),
+                _ScrapDetailLine(
+                  label: 'Филиал',
+                  value: salesStorePointLabel(row.storeLocation),
+                ),
+                _ScrapDetailLine(
+                  label: 'Принял',
+                  value: row.sellerName?.trim().isNotEmpty == true
+                      ? row.sellerName!
+                      : '—',
+                ),
+                if (row.scrapIntakeSummary != null &&
+                    row.scrapIntakeSummary!.trim().isNotEmpty)
+                  _ScrapDetailLine(
+                    label: 'Состав',
+                    value: row.scrapIntakeSummary!,
+                  ),
+                if (row.scrapIntakeNotes != null &&
+                    row.scrapIntakeNotes!.trim().isNotEmpty)
+                  _ScrapDetailLine(
+                    label: 'Клиент / комментарий',
+                    value: row.scrapIntakeNotes!,
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Выплата из кассы',
+                      style: AppTypography.productMeta().copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    KrwText(
+                      amount: row.priceKrw,
+                      style: AppTypography.price(fontSize: 18).copyWith(
+                        color: AppColors.saleRed,
+                      ),
+                      digitStyle: AppTypography.price(fontSize: 18).copyWith(
+                        color: AppColors.saleRed,
+                      ),
+                    ),
+                  ],
+                ),
+                if (photoUrls.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      showAdminProductPhotoPreview(
+                        context,
+                        title: row.sku,
+                        subtitle: row.scrapIntakeSummary,
+                        imageUrls: photoUrls,
+                      );
+                    },
+                    icon: const Icon(Icons.photo_library_outlined, size: 18),
+                    label: Text('Фото (${photoUrls.length})'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -407,6 +533,9 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
                           returnBusy: _returnBusyKey == row.legacyId,
                           showReturnedBadge: _showReturnedBadge(row),
                           onPhotoTap: () => _openPhotoPreview(row),
+                          onDetailsTap: row.isScrapIntake
+                              ? () => _openScrapIntakeDetails(row)
+                              : null,
                           onReturn: _canShowReturnButton(row)
                               ? () => _openPosReturnDialog(row)
                               : null,
@@ -424,7 +553,11 @@ class SalesHistoryScreenState extends State<SalesHistoryScreen> {
 int _drawerKrw(SalesHistorySummary? summary) {
   if (summary == null) return 0;
   if (summary.hasShiftCash) return summary.shiftCashKrw;
-  if (summary.tradeInScrapKrw > 0) return summary.netCashKrw;
+  if (summary.tradeInScrapKrw > 0 ||
+      summary.standaloneScrapPayoutKrw > 0 ||
+      summary.reservationsNetKrw != 0) {
+    return summary.netCashKrw;
+  }
   return summary.totalSumKrw;
 }
 
@@ -539,6 +672,15 @@ class _ShiftCashBreakdown extends StatelessWidget {
           _line(
             label: 'С учётом лома (Trade-In):',
             amountKrw: -s.tradeInScrapKrw,
+          ),
+        if (s.standaloneScrapPayoutKrw > 0)
+          _line(
+            label: 'Выкуп лома (приёмка):',
+            amountKrw: -s.standaloneScrapPayoutKrw,
+            suffix: s.standaloneScrapCount > 0
+                ? ' (${s.standaloneScrapCount} акт.)'
+                : null,
+            valueTint: const Color(0xFFFFE0B2),
           ),
         if (reservations != 0)
           _line(
@@ -913,6 +1055,7 @@ class _SalesHistoryTile extends StatelessWidget {
     required this.onPhotoTap,
     this.tilePadding = const EdgeInsets.only(bottom: 10),
     this.onReturn,
+    this.onDetailsTap,
     this.returnBusy = false,
     this.showReturnedBadge = false,
   });
@@ -922,6 +1065,7 @@ class _SalesHistoryTile extends StatelessWidget {
   final EdgeInsets tilePadding;
   final VoidCallback onPhotoTap;
   final VoidCallback? onReturn;
+  final VoidCallback? onDetailsTap;
   final bool returnBusy;
   final bool showReturnedBadge;
 
@@ -929,13 +1073,16 @@ class _SalesHistoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final primaryTitle = row.historyPrimaryTitle;
     final secondaryLine = row.historySecondaryLine;
-    final weightText =
-        row.isReservationPayment ? '' : formatWeightGrams(row.weightGrams);
+    final weightText = row.isReservationPayment || row.isScrapIntake
+        ? ''
+        : formatWeightGrams(row.weightGrams);
     final metal = metalCategoryBadgeLabel(row.metalCategory);
     final payment = row.paymentMethod?.trim();
-    final paymentLabel = payment != null && payment.isNotEmpty
-        ? AdminPosPaymentMethods.label(payment)
-        : '—';
+    final paymentLabel = row.isScrapIntake
+        ? 'Наличные (выкуп)'
+        : payment != null && payment.isNotEmpty
+            ? AdminPosPaymentMethods.label(payment)
+            : '—';
     final seller = row.sellerName?.trim();
     final manufacturer = row.manufacturer?.trim();
     final soldAt = formatSoldAtKst(row);
@@ -950,12 +1097,7 @@ class _SalesHistoryTile extends StatelessWidget {
     final borderColor = palette?.border ?? AppColors.border;
     final accentColor = palette?.accent;
 
-    return Padding(
-      padding: tilePadding,
-      child: Material(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
+    final tileBody = Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
@@ -1031,6 +1173,12 @@ class _SalesHistoryTile extends StatelessWidget {
                           icon: Icons.schedule,
                           label: soldAt,
                         ),
+                        if (row.isScrapIntake)
+                          _InfoChip(
+                            icon: Icons.scale_outlined,
+                            label: 'Приёмка лома',
+                            emphasized: true,
+                          ),
                         if (row.isTradeIn && row.scrapTradeInKrw > 0)
                           _InfoChip(
                             icon: Icons.recycling_outlined,
@@ -1084,7 +1232,55 @@ class _SalesHistoryTile extends StatelessWidget {
               ),
             ],
           ),
-        ),
+        );
+
+    final wrapped = onDetailsTap != null
+        ? InkWell(
+            onTap: onDetailsTap,
+            borderRadius: BorderRadius.circular(12),
+            child: tileBody,
+          )
+        : tileBody;
+
+    return Padding(
+      padding: tilePadding,
+      child: Material(
+        color: row.isScrapIntake
+            ? AppColors.saleRed.withValues(alpha: 0.04)
+            : cardColor,
+        borderRadius: BorderRadius.circular(12),
+        child: wrapped,
+      ),
+    );
+  }
+}
+
+class _ScrapDetailLine extends StatelessWidget {
+  const _ScrapDetailLine({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: Text(
+              label,
+              style: AppTypography.productMeta().copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: AppTypography.productMeta()),
+          ),
+        ],
       ),
     );
   }
@@ -1155,6 +1351,7 @@ class _SalePriceColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cashOut = row.isStandaloneScrapCashOut || row.isReturnLine;
     final showsDiscount = row.showsDiscount;
     final discountPct = row.discountPercent > 0
         ? row.discountPercent
@@ -1207,10 +1404,10 @@ class _SalePriceColumn extends StatelessWidget {
                 ? AppColors.currencyWonAccent
                 : null,
             style: AppTypography.price(fontSize: 17).copyWith(
-              color: row.isReturnLine ? AppColors.saleRed : null,
+              color: cashOut ? AppColors.saleRed : null,
             ),
             digitStyle: AppTypography.price(fontSize: 17).copyWith(
-              color: row.isReturnLine ? AppColors.saleRed : null,
+              color: cashOut ? AppColors.saleRed : null,
             ),
             textAlign: TextAlign.end,
           ),

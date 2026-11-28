@@ -14,6 +14,7 @@ import '../../data/scrap_metal_storage.dart';
 import '../../domain/scrap_metal_calculator.dart';
 import '../../domain/trade_in_scrap_draft.dart';
 import '../widgets/admin_toast.dart';
+import '../widgets/scrap_ledger_ui.dart';
 import 'scrap_ledger_screen.dart';
 
 /// Приёмка лома: расчёт 585/925, журнал, списание со склада.
@@ -30,6 +31,7 @@ class ScrapMetalIntakeScreen extends StatefulWidget {
     this.initialPurchasedGoldWeightG,
     this.initialStoreLocation,
     this.initialTradeInDraft,
+    this.onCancelToDashboard,
   }) : database = database ?? DatabaseService.create();
 
   final DatabaseService database;
@@ -44,6 +46,9 @@ class ScrapMetalIntakeScreen extends StatefulWidget {
   final double? initialPurchasedGoldWeightG;
   final String? initialStoreLocation;
   final TradeInScrapDraft? initialTradeInDraft;
+
+  /// Вкладка в [AdminWebShell]: сброс формы и переход на «Рабочий стол».
+  final VoidCallback? onCancelToDashboard;
 
   @override
   State<ScrapMetalIntakeScreen> createState() => _ScrapMetalIntakeScreenState();
@@ -121,7 +126,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     if (widget.initialPurchasedGoldWeightG != null &&
         widget.initialPurchasedGoldWeightG! > 0) {
       _goldPurchaseGrams.text =
-          widget.initialPurchasedGoldWeightG!.toStringAsFixed(4);
+          widget.initialPurchasedGoldWeightG!.toStringAsFixed(2);
     }
     _bootstrap().then((_) {
       if (!mounted) return;
@@ -163,7 +168,7 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
   static String _formatDecimalField(double value, {bool allowZero = false}) {
     if (value <= 0 && !allowZero) return '';
     if (value == 0 && allowZero) return '0';
-    final fixed = value.toStringAsFixed(4);
+    final fixed = value.toStringAsFixed(2);
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
@@ -418,20 +423,59 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     _silverRows
       ..clear()
       ..addAll(_defaultSilverRows());
-    if (!keepRates) {
-      _goldPurchaseGrams.text = '0';
-      _silverPurchaseGrams.text = '0';
-    } else {
-      _goldPurchaseGrams.text = '0';
-      _silverPurchaseGrams.text = '0';
-    }
+    _goldPurchaseGrams.text = '0';
+    _silverPurchaseGrams.text = '0';
     _photoUrls.clear();
     _pendingPhotoBytes.clear();
     _calculated = false;
     _goldBreakdown = null;
     _silverBreakdown = null;
+    _highlightPayout = null;
+    _isSilverExpanded = false;
     _acceptKey = widget.initialSellerCode ?? _adminAcceptKey;
+    if (!keepRates) {
+      _goldStdRate.clear();
+      _goldTradeRate.clear();
+      _silverStdRate.clear();
+      _silverTradeRate.clear();
+    }
     _finenessInputsEpoch++;
+  }
+
+  Future<void> _cancelToDashboard() async {
+    final go = widget.onCancelToDashboard;
+    if (go == null) return;
+
+    setState(() {
+      _editingId = null;
+      _resetIntakeForm(keepRates: false);
+      _acceptKey = widget.initialSellerCode ?? _adminAcceptKey;
+      final initialLoc = widget.initialStoreLocation?.trim().toUpperCase();
+      if (initialLoc != null && initialLoc.isNotEmpty) {
+        _storeLocation = initialLoc;
+      } else {
+        _storeLocation = StoreLocationCode.icn;
+      }
+    });
+
+    try {
+      final storage = await ScrapMetalStorage.create();
+      if (mounted) {
+        setState(() {
+          _storeLocation = storage.storeLocation;
+          _goldStdRate.text = '${storage.goldStandardRateKrw}';
+          _goldTradeRate.text = '${storage.goldTradeinRateKrw}';
+          _silverStdRate.text = '${storage.silverStandardRateKrw}';
+          _silverTradeRate.text = '${storage.silverTradeinRateKrw}';
+        });
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    if (!widget.tradeInMode && _tabs.index != 0) {
+      _tabs.animateTo(0);
+    }
+    go();
   }
 
   void _loadActToForm(Map<String, dynamic> row) {
@@ -613,6 +657,10 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        automaticallyImplyLeading: widget.onCancelToDashboard == null,
+        leading: widget.onCancelToDashboard != null
+            ? const SizedBox.shrink()
+            : null,
         title: Text(
           tradeIn ? 'Приёмка лома (Trade-In)' : 'Приёмка лома',
           style: AppTypography.heading(fontSize: 20),
@@ -804,6 +852,18 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (widget.onCancelToDashboard != null)
+                    OutlinedButton(
+                      onPressed: _cancelToDashboard,
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                      ),
+                      child: const Text('Отмена'),
+                    ),
                   OutlinedButton(
                     onPressed: _runCalculate,
                     style: OutlinedButton.styleFrom(
@@ -1125,12 +1185,12 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
       if (breakdown != null) ...[
         SizedBox(height: wide ? 8 : 12),
         Text(
-          'Всего в ${standardProbe.toInt()} пробе: ${breakdown.totalEquivalent.toStringAsFixed(4)} г',
+          'Всего в ${standardProbe.toInt()} пробе: ${formatScrapGrams(breakdown.totalEquivalent)}',
           style: AppTypography.productMeta().copyWith(fontSize: wide ? 12 : null),
         ),
         Text(
-          'Повышенный тариф: ${breakdown.tradeinPaidGrams.toStringAsFixed(4)} г · '
-          'Стандарт: ${breakdown.standardPaidGrams.toStringAsFixed(4)} г',
+          'Повышенный тариф: ${formatScrapGrams(breakdown.tradeinPaidGrams)} · '
+          'Стандарт: ${formatScrapGrams(breakdown.standardPaidGrams)}',
           style: AppTypography.productMeta().copyWith(fontSize: wide ? 12 : null),
         ),
         Text(
@@ -1277,7 +1337,9 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
                 padding: EdgeInsets.symmetric(vertical: rowPad),
                 child: Text(
                   rows[i].grossWeight > 0
-                      ? rows[i].equivalentToStandard(standardProbe).toStringAsFixed(4)
+                      ? rows[i]
+                          .equivalentToStandard(standardProbe)
+                          .toStringAsFixed(2)
                       : '—',
                   style: AppTypography.caption(),
                 ),
@@ -1685,8 +1747,8 @@ class _ScrapMetalIntakeScreenState extends State<ScrapMetalIntakeScreen>
               style: AppTypography.price(fontSize: 14),
             ),
             Text(
-              '585: ${((row['gold_total_eq_585'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} г · '
-              '925: ${((row['silver_total_eq_925'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} г',
+              '585: ${formatScrapGrams((row['gold_total_eq_585'] as num?)?.toDouble() ?? 0)} · '
+              '925: ${formatScrapGrams((row['silver_total_eq_925'] as num?)?.toDouble() ?? 0)}',
               style: AppTypography.productMeta(),
             ),
             ExpansionTile(

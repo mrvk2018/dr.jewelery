@@ -107,7 +107,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In ru, this message translates to:
-  /// **'Dr. Jewelry'**
+  /// **'Доктор Ювелирка'**
   String get appTitle;
 
   /// No description provided for @appTagline.

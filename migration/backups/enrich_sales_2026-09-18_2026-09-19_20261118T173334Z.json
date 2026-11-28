@@ -1,0 +1,151 @@
+{
+  "created_at_utc": "2026-11-18T17:33:34.509644+00:00",
+  "date_from": "2026-09-18",
+  "date_to": "2026-09-19",
+  "rows": [
+    {
+      "id": "05c550c0-ebf3-4a6b-a7a4-ebf3d440319b",
+      "legacy_id": "15611",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 85000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 15611,
+        "Mart": "Основной магазин",
+        "Size": "Нет",
+        "Price": 85000,
+        "CartId": "20260918165841Основной магазин",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 2.42,
+        "Articul": "421-94025925",
+        "Manager": "Sokolov"
+      }
+    },
+    {
+      "id": "8203f77e-3bc8-4298-aacd-f4d2f8c99b73",
+      "legacy_id": "17151",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 970000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 17151,
+        "Mart": "D.Y №2",
+        "Size": "Нет",
+        "Price": 970000,
+        "CartId": "20260918163817D.Y №2",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 3.87,
+        "Articul": "321-0004",
+        "Manager": "caravan"
+      }
+    },
+    {
+      "id": "36f579cb-c377-4805-895e-7f25292a0601",
+      "legacy_id": "16780",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 20000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 16780,
+        "Mart": "D.Y №2",
+        "Size": "Нет",
+        "Price": 20000,
+        "CartId": "20260919125437D.Y №2",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 0.86,
+        "Articul": "031-017",
+        "Manager": "Высоковы"
+      }
+    },
+    {
+      "id": "7fb945b9-c773-4aa9-bfa5-6970af86b5f4",
+      "legacy_id": "17191",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 65000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 17191,
+        "Mart": "Основной магазин",
+        "Size": "17",
+        "Price": 65000,
+        "CartId": "20260919191718Основной магазин",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 2.89,
+        "Articul": "65661",
+        "Manager": "Высоковы"
+      }
+    },
+    {
+      "id": "fc026868-6d4d-4506-b45e-cb6c7cac6bd4",
+      "legacy_id": "17701",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 80000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 17701,
+        "Mart": "D.Y №2",
+        "Size": "Нет",
+        "Price": 80000,
+        "CartId": "20260919201452D.Y №2",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 0.2,
+        "Articul": "11141-111753/103930",
+        "Manager": "new gold"
+      }
+    },
+    {
+      "id": "b61e446a-601b-446d-918d-4256d8f980a5",
+      "legacy_id": "18806",
+      "snapshot_before": {
+        "store_location": null,
+        "seller_name": null,
+        "metal_category": "other",
+        "product_id": null,
+        "list_price_krw": 385000,
+        "discount_percent": 0
+      },
+      "raw_legacy_payload": {
+        "Id": 18806,
+        "Mart": "Основной магазин",
+        "Size": "16.5",
+        "Price": 385000,
+        "CartId": "20260919152902Основной магазин",
+        "Status": "Sold",
+        "Stones": "Фианит",
+        "Weight": 1.54,
+        "Articul": "15684",
+        "Manager": "Диана"
+      }
+    }
+  ]
+}

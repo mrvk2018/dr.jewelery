@@ -2656,12 +2656,15 @@ class CloudDatabaseService implements DatabaseService {
   }) async {
     try {
       final params = <String, dynamic>{
-        ScrapMetalRpc.storeLocationParam: storeLocation?.trim(),
         ScrapMetalRpc.metalParam: metal?.trim(),
         ScrapMetalRpc.statusParam: status?.trim(),
         ScrapMetalRpc.dateFromParam: _formatScrapFilterDate(dateFrom),
         ScrapMetalRpc.dateToParam: _formatScrapFilterDate(dateTo),
       };
+      final loc = storeLocation?.trim().toUpperCase();
+      if (loc != null && loc.isNotEmpty && loc != 'ALL') {
+        params[ScrapMetalRpc.storeLocationParam] = loc;
+      }
       final result = await _supabaseClient.rpc(ScrapMetalRpc.list, params: params);
       if (result is! List) return const [];
       return result
@@ -2737,10 +2740,14 @@ class CloudDatabaseService implements DatabaseService {
   @override
   Future<Map<String, dynamic>> getScrapBalances({String? branch}) {
     final store = branch?.trim().toUpperCase();
-    return _reservationRpc(ScrapLedgerRpc.balances, {
-      if (store != null && store.isNotEmpty && store != 'ALL')
-        ScrapLedgerRpc.branch: store,
-    });
+    final params = <String, dynamic>{};
+    if (store != null && store.isNotEmpty && store != 'ALL') {
+      params[ScrapLedgerRpc.branch] = store;
+    } else {
+      // Явный ALL: PostgREST без параметра иногда оставляет устаревший p_branch.
+      params[ScrapLedgerRpc.branch] = 'ALL';
+    }
+    return _reservationRpc(ScrapLedgerRpc.balances, params);
   }
 
   @override
@@ -2780,9 +2787,14 @@ class CloudDatabaseService implements DatabaseService {
     final probe = purity?.trim();
     final from = dateFromKst?.trim();
     final to = dateToKst?.trim();
+    final params = <String, dynamic>{};
+    if (store != null && store.isNotEmpty && store != 'ALL') {
+      params[ScrapLedgerRpc.branch] = store;
+    } else {
+      params[ScrapLedgerRpc.branch] = 'ALL';
+    }
     return _reservationRpc(ScrapLedgerRpc.list, {
-      if (store != null && store.isNotEmpty && store != 'ALL')
-        ScrapLedgerRpc.branch: store,
+      ...params,
       if (probe != null && probe.isNotEmpty) ScrapLedgerRpc.purity: probe,
       ScrapLedgerRpc.filter: filter.trim().isEmpty ? 'all' : filter.trim(),
       if (from != null && from.isNotEmpty) ScrapLedgerRpc.dateFrom: from,

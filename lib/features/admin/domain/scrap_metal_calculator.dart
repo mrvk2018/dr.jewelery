@@ -28,8 +28,8 @@ class ScrapFinenessRow {
       'fineness': fineness,
       'gross_weight': grossWeight,
       'stone_discount_percent': stoneDiscountPercent,
-      'net_weight': double.parse(netWeight.toStringAsFixed(4)),
-      'equivalent_585_weight': double.parse(eq.toStringAsFixed(4)),
+      'net_weight': double.parse(netWeight.toStringAsFixed(2)),
+      'equivalent_585_weight': double.parse(eq.toStringAsFixed(2)),
     };
   }
 
@@ -39,8 +39,8 @@ class ScrapFinenessRow {
       'fineness': fineness,
       'gross_weight': grossWeight,
       'stone_discount_percent': stoneDiscountPercent,
-      'net_weight': double.parse(netWeight.toStringAsFixed(4)),
-      'equivalent_925_weight': double.parse(eq.toStringAsFixed(4)),
+      'net_weight': double.parse(netWeight.toStringAsFixed(2)),
+      'equivalent_925_weight': double.parse(eq.toStringAsFixed(2)),
     };
   }
 

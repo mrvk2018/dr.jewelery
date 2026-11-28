@@ -97,12 +97,19 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
   String? _journalPurity;
   DateTimeRange? _journalRange;
 
+  /// Сбрасывает устаревшие ответы RPC при быстром переключении филиала.
+  int _fetchGeneration = 0;
+
   @override
   void initState() {
     super.initState();
     _mobileTabs = TabController(length: 2, vsync: this);
-    final seed = widget.initialBranch?.trim().toUpperCase();
-    _branch = seed == 'ICN' || seed == 'ANS' ? seed! : 'ALL';
+    if (widget.embedded) {
+      _branch = 'ALL';
+    } else {
+      final seed = widget.initialBranch?.trim().toUpperCase();
+      _branch = seed == 'ICN' || seed == 'ANS' ? seed! : 'ALL';
+    }
     _reloadAll();
   }
 
@@ -113,18 +120,25 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
   }
 
   Future<void> _reloadAll() async {
-    await Future.wait([_loadBalances(), _loadJournal(reset: true)]);
+    final generation = ++_fetchGeneration;
+    await Future.wait([
+      _loadBalances(generation: generation),
+      _loadJournal(generation: generation, reset: true),
+    ]);
   }
 
-  Future<void> _loadBalances() async {
+  String? get _rpcBranch =>
+      _branch == 'ALL' || _branch.isEmpty ? null : _branch;
+
+  Future<void> _loadBalances({required int generation}) async {
     setState(() {
       _balancesLoading = true;
       _error = null;
     });
     final result = await widget.database.getScrapBalances(
-      branch: _branch == 'ALL' ? null : _branch,
+      branch: _rpcBranch,
     );
-    if (!mounted) return;
+    if (!mounted || generation != _fetchGeneration) return;
     if (result['ok'] != true) {
       setState(() {
         _balancesLoading = false;
@@ -140,7 +154,10 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
     });
   }
 
-  Future<void> _loadJournal({bool reset = false}) async {
+  Future<void> _loadJournal({
+    required int generation,
+    bool reset = false,
+  }) async {
     setState(() => _journalLoading = true);
     final range = _journalRange;
     String? from;
@@ -150,7 +167,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
       to = _isoDateKst(range.end);
     }
     final result = await widget.database.listScrapLedger(
-      branch: _branch == 'ALL' ? null : _branch,
+      branch: _rpcBranch,
       purity: _journalPurity,
       filter: _journalFilter,
       dateFromKst: from,
@@ -158,7 +175,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
       limit: 80,
       offset: 0,
     );
-    if (!mounted) return;
+    if (!mounted || generation != _fetchGeneration) return;
     if (result['ok'] != true) {
       setState(() => _journalLoading = false);
       if (_error == null) {
@@ -179,7 +196,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
   }
 
   List<ScrapBalanceRow> get _visibleBalances {
-  final rows = _balanceRows.where(
+    final rows = _balanceRows.where(
       (r) =>
           r.operationCount > 0 ||
           r.totalWeightG.abs() > 0.0005 ||
@@ -187,6 +204,62 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
     );
     if (_branch == 'ALL') return rows.toList();
     return rows.where((r) => r.branch == _branch).toList();
+  }
+
+  /// На «Все» — одна карточка на пробу (сумма ICN + ANS).
+  List<ScrapBalanceRow> _displayBalanceCards() {
+    final base = _visibleBalances.toList();
+    if (_branch != 'ALL') {
+      base.sort((a, b) {
+        return (double.tryParse(a.purity) ?? 0).compareTo(
+          double.tryParse(b.purity) ?? 0,
+        );
+      });
+      return base;
+    }
+
+    final byPurity = <String, ScrapBalanceRow>{};
+    for (final row in base) {
+      final key = row.purity;
+      final existing = byPurity[key];
+      if (existing == null) {
+        byPurity[key] = ScrapBalanceRow(
+          branch: 'ALL',
+          purity: row.purity,
+          totalWeightG: row.totalWeightG,
+          totalIntakeG: row.totalIntakeG,
+          totalWriteoffG: row.totalWriteoffG,
+          operationCount: row.operationCount,
+        );
+      } else {
+        byPurity[key] = ScrapBalanceRow(
+          branch: 'ALL',
+          purity: row.purity,
+          totalWeightG: existing.totalWeightG + row.totalWeightG,
+          totalIntakeG: existing.totalIntakeG + row.totalIntakeG,
+          totalWriteoffG: existing.totalWriteoffG + row.totalWriteoffG,
+          operationCount: existing.operationCount + row.operationCount,
+        );
+      }
+    }
+    final merged = byPurity.values.toList()
+      ..sort((a, b) {
+        return (double.tryParse(a.purity) ?? 0).compareTo(
+          double.tryParse(b.purity) ?? 0,
+        );
+      });
+    return merged;
+  }
+
+  String? _branchHintForPurity(String purity) {
+    final parts = _visibleBalances
+        .where((r) => r.purity == purity && r.totalWeightG > 0.0005)
+        .map((r) => r.branch)
+        .toSet()
+        .toList()
+      ..sort();
+    if (parts.isEmpty) return null;
+    return parts.map(scrapLedgerBranchLabel).join(' · ');
   }
 
   Set<String> get _journalPurityOptions {
@@ -228,7 +301,22 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
     );
     if (picked == null || !mounted) return;
     setState(() => _journalRange = picked);
-    await _loadJournal();
+    final generation = ++_fetchGeneration;
+    await _loadJournal(generation: generation);
+  }
+
+  Future<void> _onBranchChanged(Set<String> next) async {
+    setState(() => _branch = next.first);
+    final generation = ++_fetchGeneration;
+    await Future.wait([
+      _loadBalances(generation: generation),
+      _loadJournal(generation: generation, reset: true),
+    ]);
+  }
+
+  Future<void> _reloadJournalOnly() async {
+    final generation = ++_fetchGeneration;
+    await _loadJournal(generation: generation);
   }
 
   @override
@@ -334,10 +422,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
               ButtonSegment(value: 'ANS', label: Text('ANS')),
             ],
             selected: {_branch},
-            onSelectionChanged: (next) {
-              setState(() => _branch = next.first);
-              _reloadAll();
-            },
+            onSelectionChanged: _onBranchChanged,
             style: const ButtonStyle(visualDensity: VisualDensity.compact),
           ),
           IconButton(
@@ -358,14 +443,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
       );
     }
 
-    final cards = _visibleBalances.toList()
-      ..sort((a, b) {
-        final bc = a.branch.compareTo(b.branch);
-        if (bc != 0) return bc;
-        return (double.tryParse(a.purity) ?? 0).compareTo(
-          double.tryParse(b.purity) ?? 0,
-        );
-      });
+    final cards = _displayBalanceCards();
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -421,15 +499,23 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
                   itemCount: cards.length,
                   itemBuilder: (context, index) {
                     final row = cards[index];
-                    final showWrite = _branch != 'ALL' && row.totalWeightG > 0.0005;
+                    final showWrite = row.totalWeightG > 0.0005;
+                    final branchHint = _branch == 'ALL' && row.branch == 'ALL'
+                        ? _branchHintForPurity(row.purity)
+                        : null;
                     return _PurityBalanceCard(
                       row: row,
-                      showBranch: _branch == 'ALL',
+                      showBranch: _branch == 'ALL' && row.branch != 'ALL',
+                      branchHint: branchHint,
                       onWriteOff: showWrite
                           ? () => _openWriteOff(
-                                branch: row.branch,
+                                branch: row.branch == 'ALL'
+                                    ? null
+                                    : row.branch,
                                 purity: row.purity,
-                                availableG: row.totalWeightG,
+                                availableG: row.branch == 'ALL'
+                                    ? null
+                                    : row.totalWeightG,
                               )
                           : null,
                     );
@@ -475,7 +561,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
             ],
             onChanged: (v) {
               setState(() => _journalPurity = v);
-              _loadJournal();
+              _reloadJournalOnly();
             },
           ),
           OutlinedButton.icon(
@@ -491,7 +577,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
             TextButton(
               onPressed: () {
                 setState(() => _journalRange = null);
-                _loadJournal();
+                _reloadJournalOnly();
               },
               child: const Text('Сбросить даты'),
             ),
@@ -502,7 +588,7 @@ class _ScrapLedgerPanelState extends State<ScrapLedgerPanel>
 
   void _setJournalFilter(String filter) {
     setState(() => _journalFilter = filter);
-    _loadJournal();
+    _reloadJournalOnly();
   }
 
   Widget _buildJournalSection() {
@@ -574,11 +660,13 @@ class _PurityBalanceCard extends StatelessWidget {
   const _PurityBalanceCard({
     required this.row,
     required this.showBranch,
+    this.branchHint,
     this.onWriteOff,
   });
 
   final ScrapBalanceRow row;
   final bool showBranch;
+  final String? branchHint;
   final VoidCallback? onWriteOff;
 
   @override
@@ -599,6 +687,9 @@ class _PurityBalanceCard extends StatelessWidget {
             if (showBranch) ...[
               const SizedBox(height: 2),
               Text(scrapLedgerBranchLabel(row.branch), style: meta),
+            ] else if (branchHint != null && branchHint!.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(branchHint!, style: meta),
             ],
             const SizedBox(height: 8),
             Text(
@@ -730,11 +821,20 @@ class _ScrapWriteOffDialogState extends State<_ScrapWriteOffDialog> {
   @override
   void initState() {
     super.initState();
-    _branch = widget.branch ?? 'ICN';
     _purity = widget.purity;
+    final purityOpts = _purity != null
+        ? _options.where((o) => o.purity == _purity).toList()
+        : <({String branch, String purity, double available})>[];
+    if (widget.branch != null) {
+      _branch = widget.branch!;
+    } else if (purityOpts.isNotEmpty) {
+      _branch = purityOpts.first.branch;
+    } else {
+      _branch = _options.isNotEmpty ? _options.first.branch : 'ICN';
+    }
     final avail = widget.availableG ?? 0;
     _weight = TextEditingController(
-      text: avail > 0 ? avail.toStringAsFixed(3) : '',
+      text: avail > 0 ? avail.toStringAsFixed(2) : '',
     );
     _reason = TextEditingController();
     _comment = TextEditingController();
@@ -742,8 +842,13 @@ class _ScrapWriteOffDialogState extends State<_ScrapWriteOffDialog> {
       final opts = _options.where((o) => o.branch == _branch).toList();
       if (opts.isNotEmpty) {
         _purity = opts.first.purity;
-        _weight.text = opts.first.available.toStringAsFixed(3);
+        _weight.text = opts.first.available.toStringAsFixed(2);
       }
+    } else if (avail <= 0 && purityOpts.isNotEmpty) {
+      final match =
+          purityOpts.where((o) => o.branch == _branch).firstOrNull ??
+              purityOpts.first;
+      _weight.text = match.available.toStringAsFixed(2);
     }
   }
 
@@ -781,7 +886,7 @@ class _ScrapWriteOffDialogState extends State<_ScrapWriteOffDialog> {
     final a = _available;
     if (a <= 0) return;
     setState(() {
-      _weight.text = a.toStringAsFixed(3);
+      _weight.text = a.toStringAsFixed(2);
       _weightError = null;
     });
   }

@@ -25,6 +25,8 @@ class SalesHistorySummary {
     this.grossSalesKrw = 0,
     this.tradeInScrapKrw = 0,
     this.tradeInBatchCount = 0,
+    this.standaloneScrapPayoutKrw = 0,
+    this.standaloneScrapCount = 0,
     this.netCashKrw = 0,
     this.shiftCashKrw = 0,
     this.reservationCashKrw = 0,
@@ -43,6 +45,8 @@ class SalesHistorySummary {
   final int grossSalesKrw;
   final int tradeInScrapKrw;
   final int tradeInBatchCount;
+  final int standaloneScrapPayoutKrw;
+  final int standaloneScrapCount;
   final int netCashKrw;
   final int shiftCashKrw;
   final int reservationCashKrw;
@@ -96,6 +100,8 @@ class SalesHistorySummary {
       grossSalesKrw: gross > 0 ? gross : total,
       tradeInScrapKrw: tradeIn,
       tradeInBatchCount: _numToInt(map['trade_in_batch_count']),
+      standaloneScrapPayoutKrw: _numToInt(map['standalone_scrap_payout_krw']),
+      standaloneScrapCount: _numToInt(map['standalone_scrap_count']),
       netCashKrw: hasShift ? shift : resolvedNet,
       shiftCashKrw: shift,
       reservationCashKrw: _numToInt(map['reservation_cash_krw']),
@@ -128,6 +134,14 @@ class SalesHistorySummary {
       grossSalesKrw: grossShift > 0 ? grossShift : grossSalesKrw,
       tradeInScrapKrw: _numToInt(shift['trade_in_scrap_krw']),
       tradeInBatchCount: tradeInBatchCount,
+      standaloneScrapPayoutKrw: _numToInt(
+        shift['standalone_scrap_payout_krw'],
+      ) != 0
+          ? _numToInt(shift['standalone_scrap_payout_krw'])
+          : standaloneScrapPayoutKrw,
+      standaloneScrapCount: _numToInt(shift['standalone_scrap_count']) != 0
+          ? _numToInt(shift['standalone_scrap_count'])
+          : standaloneScrapCount,
       netCashKrw: _numToInt(shift['shift_cash_krw']),
       shiftCashKrw: _numToInt(shift['shift_cash_krw']),
       reservationCashKrw: _numToInt(shift['reservation_cash_krw']),
@@ -207,6 +221,13 @@ class SalesHistoryRow {
     this.reservationItemsSummary,
     this.reservationHasRefund = false,
     this.reservationExpiresAt,
+    this.isScrapIntake = false,
+    this.scrapIntakeId,
+    this.scrapIntakeSummary,
+    this.scrapIntakeNotes,
+    this.scrapIntakeGoldEq585,
+    this.scrapIntakeSilverEq925,
+    this.scrapIntakePhotoUrls = const [],
   });
 
   final String id;
@@ -244,14 +265,26 @@ class SalesHistoryRow {
   final String? reservationItemsSummary;
   final bool reservationHasRefund;
   final DateTime? reservationExpiresAt;
+  final bool isScrapIntake;
+  final String? scrapIntakeId;
+  final String? scrapIntakeSummary;
+  final String? scrapIntakeNotes;
+  final double? scrapIntakeGoldEq585;
+  final double? scrapIntakeSilverEq925;
+  final List<String> scrapIntakePhotoUrls;
+
+  bool get isStandaloneScrapCashOut => isScrapIntake && priceKrw < 0;
 
   bool get isReturnLine =>
-      priceKrw < 0 ||
+      (priceKrw < 0 && !isScrapIntake) ||
       migrationMeta?['type']?.toString() == 'return' ||
       legacyId.startsWith('return_') ||
       (isReservationPayment && reservationPaymentType == 'refund');
 
   String get historyPrimaryTitle {
+    if (isScrapIntake) {
+      return sku.isNotEmpty ? sku : 'Приёмка лома';
+    }
     if (isReservationPayment) {
       final title = productName?.trim();
       if (title != null && title.isNotEmpty) return title;
@@ -261,6 +294,16 @@ class SalesHistoryRow {
   }
 
   String? get historySecondaryLine {
+    if (isScrapIntake) {
+      final parts = <String>[
+        if (scrapIntakeSummary != null && scrapIntakeSummary!.trim().isNotEmpty)
+          scrapIntakeSummary!.trim(),
+        if (scrapIntakeNotes != null && scrapIntakeNotes!.trim().isNotEmpty)
+          scrapIntakeNotes!.trim(),
+      ];
+      if (parts.isEmpty) return productName;
+      return parts.join(' · ');
+    }
     if (isReservationPayment) {
       final items = reservationItemsSummary?.trim();
       if (items != null && items.isNotEmpty) return items;
@@ -441,7 +484,22 @@ class SalesHistoryRow {
           map['reservation_items_summary']?.toString().trim(),
       reservationHasRefund: map['reservation_has_refund'] == true,
       reservationExpiresAt: _parseDateTime(map['reservation_expires_at']),
+      isScrapIntake: map['is_scrap_intake'] == true,
+      scrapIntakeId: map['scrap_intake_id']?.toString().trim(),
+      scrapIntakeSummary: map['scrap_intake_summary']?.toString().trim(),
+      scrapIntakeNotes: map['scrap_intake_notes']?.toString().trim(),
+      scrapIntakeGoldEq585: _parseDouble(map['scrap_intake_gold_eq_585']),
+      scrapIntakeSilverEq925: _parseDouble(map['scrap_intake_silver_eq_925']),
+      scrapIntakePhotoUrls: _parseStringList(map['scrap_intake_photo_urls']),
     );
+  }
+
+  static List<String> _parseStringList(Object? raw) {
+    if (raw is! List) return const [];
+    return raw
+        .map((e) => e?.toString().trim() ?? '')
+        .where((u) => u.isNotEmpty)
+        .toList();
   }
 
   factory SalesHistoryRow.fromMap(Map<String, dynamic> map) {
@@ -520,7 +578,7 @@ class SalesRowGroupMeta {
 
 /// Ключ одного Trade-In чека с приёмом лома; `null` — обычная продажа (без группировки).
 String? salesHistoryTradeInGroupKey(SalesHistoryRow row) {
-  if (row.isReservationPayment) return null;
+  if (row.isReservationPayment || row.isScrapIntake) return null;
   if (!row.isTradeIn || row.scrapTradeInKrw <= 0) return null;
   final batch = row.saleBatchId?.trim();
   if (batch != null && batch.isNotEmpty) return 'batch:$batch';

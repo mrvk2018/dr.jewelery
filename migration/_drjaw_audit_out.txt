@@ -1,0 +1,320 @@
+﻿◇ injected env (2) from .env // tip: ⌘ override existing { override: true }
+=== ALL dbo TABLES/VIEWS ===
+BASE TABLE: dbo.articul_images
+BASE TABLE: dbo.Articuls
+BASE TABLE: dbo.Cart
+BASE TABLE: dbo.Items
+BASE TABLE: dbo.IUsers
+BASE TABLE: dbo.Managers
+BASE TABLE: dbo.Marts
+BASE TABLE: dbo.Metall
+
+=== ALL COLUMNS (by table) ===
+
+--- articul_images ---
+  articul: nvarchar len=50 nullable=NO
+  image2: varbinary len=-1 nullable=YES
+  image3: varbinary len=-1 nullable=YES
+  image4: varbinary len=-1 nullable=YES
+
+--- Articuls ---
+  Articul: nvarchar len=50 nullable=NO
+  Image: image len=2147483647 nullable=YES
+  Type: nvarchar len=50 nullable=YES
+  Metall: nvarchar len=50 nullable=YES
+
+--- Cart ---
+  CartId: nvarchar len=50 nullable=NO
+  TotalSum: decimal (20,0) nullable=YES
+  PurshaseSource: nvarchar len=50 nullable=YES
+  PurshaseType: nvarchar len=50 nullable=YES
+  PurshaseDate: datetime nullable=YES
+  OperationType: nvarchar len=50 nullable=YES
+  HasLom: decimal (18,2) nullable=YES
+
+--- Items ---
+  Id: int (10,0) nullable=NO
+  Articul: nvarchar len=50 nullable=YES
+  Weight: decimal (18,4) nullable=YES
+  Size: nvarchar len=50 nullable=YES
+  Mart: nvarchar len=50 nullable=NO
+  Manager: nvarchar len=50 nullable=NO
+  Price: decimal (18,0) nullable=YES
+  Stones: nvarchar len=100 nullable=YES
+  Status: nvarchar len=50 nullable=YES
+  CartId: nvarchar len=50 nullable=YES
+  Bonus: nvarchar len=50 nullable=YES
+  Comment: nvarchar len=200 nullable=YES
+
+--- IUsers ---
+  Name: nvarchar len=50 nullable=YES
+
+--- Managers ---
+  Name: nvarchar len=50 nullable=NO
+
+--- Marts ---
+  Name: nvarchar len=50 nullable=NO
+
+--- Metall ---
+  Name: nvarchar len=50 nullable=NO
+
+=== Cart column PurchaseSource missing or error: Invalid column name 'PurchaseSource'.
+
+=== Cart column PurchaseType missing or error: Invalid column name 'PurchaseType'.
+
+=== Cart DISTINCT OperationType ===
+[
+  {
+    "val": "Sold",
+    "cnt": 9632
+  },
+  {
+    "val": "Lom",
+    "cnt": 722
+  },
+  {
+    "val": "Return",
+    "cnt": 355
+  },
+  {
+    "val": "LomOut",
+    "cnt": 8
+  }
+]
+
+=== Cart TOP 15 (by CartId DESC) ===
+[
+  {
+    "CartId": "20261118112129Основной магазин",
+    "TotalSum": 855000,
+    "PurshaseSource": "Андрей",
+    "PurshaseType": "Наличные",
+    "PurshaseDate": "2026-11-18T11:21:29.273Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261117192540Основной магазин",
+    "TotalSum": 170400,
+    "PurshaseSource": null,
+    "PurshaseType": null,
+    "PurshaseDate": "2026-11-17T19:25:40.690Z",
+    "OperationType": "Lom",
+    "HasLom": 2.13
+  },
+  {
+    "CartId": "20261117190938Основной магазин",
+    "TotalSum": 162000,
+    "PurshaseSource": "Ася",
+    "PurshaseType": "Перевод",
+    "PurshaseDate": "2026-11-17T19:09:38.567Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261117182140Основной магазин",
+    "TotalSum": 50000,
+    "PurshaseSource": "Ася",
+    "PurshaseType": "Карта",
+    "PurshaseDate": "2026-11-17T18:21:40.187Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261117122831D.Y №2",
+    "TotalSum": 621000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Перевод",
+    "PurshaseDate": "2026-11-17T12:28:31.407Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261116191904Основной магазин",
+    "TotalSum": 333000,
+    "PurshaseSource": "Ася",
+    "PurshaseType": "Наличные",
+    "PurshaseDate": "2026-11-16T19:19:04.900Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261116122103Основной магазин",
+    "TotalSum": 430000,
+    "PurshaseSource": "Ася",
+    "PurshaseType": "Карта",
+    "PurshaseDate": "2026-11-16T12:21:03.690Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115174212Основной магазин",
+    "TotalSum": -96000,
+    "PurshaseSource": "Андрей",
+    "PurshaseType": "Наличные",
+    "PurshaseDate": "2026-11-15T17:42:12.087Z",
+    "OperationType": "Sold",
+    "HasLom": 6.87
+  },
+  {
+    "CartId": "20261115165732D.Y №2",
+    "TotalSum": 185000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Перевод",
+    "PurshaseDate": "2026-11-15T16:57:33.587Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115163533D.Y №2",
+    "TotalSum": 1195000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Карта",
+    "PurshaseDate": "2026-11-15T16:35:34.583Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115162844D.Y №2",
+    "TotalSum": 55000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Карта",
+    "PurshaseDate": "2026-11-15T16:28:45.230Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115161911D.Y №2",
+    "TotalSum": 35000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Карта",
+    "PurshaseDate": "2026-11-15T16:19:12.573Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115160341Основной магазин",
+    "TotalSum": 100000,
+    "PurshaseSource": "Андрей",
+    "PurshaseType": "Перевод",
+    "PurshaseDate": "2026-11-15T16:03:41.250Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  },
+  {
+    "CartId": "20261115140805Основной магазин",
+    "TotalSum": 116800,
+    "PurshaseSource": null,
+    "PurshaseType": null,
+    "PurshaseDate": "2026-11-15T14:08:05.467Z",
+    "OperationType": "Lom",
+    "HasLom": 1.46
+  },
+  {
+    "CartId": "20261115133156D.Y №2",
+    "TotalSum": 295000,
+    "PurshaseSource": "Люда",
+    "PurshaseType": "Перевод",
+    "PurshaseDate": "2026-11-15T13:31:57.503Z",
+    "OperationType": "Sold",
+    "HasLom": 0
+  }
+]
+node : RequestError: Invalid column name 'UserId'.
+At line:1 char:46
++ ... ts\dr.jewelery"; node scripts/_drjaw_schema_audit_tmp.js 2>&1 | Out-F ...
++                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (RequestError: I... name 'UserId'.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    at handleError (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\mssql\lib\tedious\request.js:427:15)
+    at Connection.emit (node:events:514:28)
+    at Connection.emit (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\connection.js:1022:18)
+    at RequestTokenHandler.onErrorMessage (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\handle
+r.js:285:21)
+    at Readable.<anonymous> (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\token-stream-parser.
+js:19:33)
+    at Readable.emit (node:events:514:28)
+    at addChunk (node:internal/streams/readable:567:12)
+    at readableAddChunkPushObjectMode (node:internal/streams/readable:544:3)
+    at Readable.push (node:internal/streams/readable:399:5)
+    at nextAsync (node:internal/streams/from:205:22) {
+  code: 'EREQUEST',
+  originalError: Error: Invalid column name 'UserId'.
+      at handleError (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\mssql\lib\tedious\request.js:425:19)
+      at Connection.emit (node:events:514:28)
+      at Connection.emit (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\connection.js:1022:18)
+      at RequestTokenHandler.onErrorMessage (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\hand
+ler.js:285:21)
+      at Readable.<anonymous> (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\token-stream-parse
+r.js:19:33)
+      at Readable.emit (node:events:514:28)
+      at addChunk (node:internal/streams/readable:567:12)
+      at readableAddChunkPushObjectMode (node:internal/streams/readable:544:3)
+      at Readable.push (node:internal/streams/readable:399:5)
+      at nextAsync (node:internal/streams/from:205:22) {
+    info: ErrorMessageToken {
+      name: 'ERROR',
+      handlerName: 'onErrorMessage',
+      number: 207,
+      state: 1,
+      class: 16,
+      message: "Invalid column name 'UserId'.",
+      serverName: 'DRJMAGAZ\\SQLEXPRESS',
+      procName: '',
+      lineNumber: 7
+    }
+  },
+  number: 207,
+  lineNumber: 7,
+  state: 1,
+  class: 16,
+  serverName: 'DRJMAGAZ\\SQLEXPRESS',
+  procName: '',
+  precedingErrors: [
+    RequestError: Invalid column name 'PurchaseSource'.
+        at handleError (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\mssql\lib\tedious\request.js:427:15)
+        at Connection.emit (node:events:514:28)
+        at Connection.emit (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\connection.js:1022:18)
+        at RequestTokenHandler.onErrorMessage (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\ha
+ndler.js:285:21)
+        at Readable.<anonymous> (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\token-stream-par
+ser.js:19:33)
+        at Readable.emit (node:events:514:28)
+        at addChunk (node:internal/streams/readable:567:12)
+        at readableAddChunkPushObjectMode (node:internal/streams/readable:544:3)
+        at Readable.push (node:internal/streams/readable:399:5)
+        at nextAsync (node:internal/streams/from:205:22) {
+      code: 'EREQUEST',
+      originalError: [Error],
+      number: 207,
+      lineNumber: 4,
+      state: 1,
+      class: 16,
+      serverName: 'DRJMAGAZ\\SQLEXPRESS',
+      procName: ''
+    },
+    RequestError: Invalid column name 'PurchaseType'.
+        at handleError (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\mssql\lib\tedious\request.js:427:15)
+        at Connection.emit (node:events:514:28)
+        at Connection.emit (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\connection.js:1022:18)
+        at RequestTokenHandler.onErrorMessage (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\ha
+ndler.js:285:21)
+        at Readable.<anonymous> (C:\Users\Vaka_Kang\projets\dr.jewelery\node_modules\tedious\lib\token\token-stream-par
+ser.js:19:33)
+        at Readable.emit (node:events:514:28)
+        at addChunk (node:internal/streams/readable:567:12)
+        at readableAddChunkPushObjectMode (node:internal/streams/readable:544:3)
+        at Readable.push (node:internal/streams/readable:399:5)
+        at nextAsync (node:internal/streams/from:205:22) {
+      code: 'EREQUEST',
+      originalError: [Error],
+      number: 207,
+      lineNumber: 5,
+      state: 1,
+      class: 16,
+      serverName: 'DRJMAGAZ\\SQLEXPRESS',
+      procName: ''
+    }
+  ]
+}

@@ -31,6 +31,7 @@ class AdminWebShell extends StatefulWidget {
 
 class _AdminWebShellState extends State<AdminWebShell> {
   static const _salesHistoryTabIndex = 3;
+  static const _sellerSalesHistoryTabIndex = 3;
   static const _revisionNavLabel = 'Ревизия';
 
   int _selectedIndex = 0;
@@ -137,6 +138,11 @@ class _AdminWebShellState extends State<AdminWebShell> {
               label: 'Приёмка лома',
             ),
             (
+              icon: Icons.history_edu_outlined,
+              selectedIcon: Icons.history_edu,
+              label: 'История продаж',
+            ),
+            (
               icon: Icons.local_shipping_outlined,
               selectedIcon: Icons.local_shipping,
               label: 'Трансферы',
@@ -165,9 +171,10 @@ class _AdminWebShellState extends State<AdminWebShell> {
         0 => 'Касса · витрина',
         1 => 'Моя зарплата и продажи',
         2 => 'Приёмка и журнал лома',
-        3 => 'Трансферы ICN ↔ ANS',
-        4 => 'Ревизия витрин',
-        5 => 'Приёмка черновиков',
+        3 => 'История продаж · KST / KRW',
+        4 => 'Трансферы ICN ↔ ANS',
+        5 => 'Ревизия витрин',
+        6 => 'Приёмка черновиков',
         _ => 'Смена продавца',
       };
     }
@@ -223,6 +230,7 @@ class _AdminWebShellState extends State<AdminWebShell> {
           ScrapMetalIntakeScreen(
             database: _database,
             actorCode: _panelActorCode(session),
+            onCancelToDashboard: () => setState(() => _selectedIndex = 0),
           ),
       ];
 
@@ -244,8 +252,12 @@ class _AdminWebShellState extends State<AdminWebShell> {
           database: _database,
           initialSellerCode: session.promoCode,
           initialSellerName: session.name,
-          hideJournalBulkWriteOff: true,
           actorCode: session.promoCode,
+          onCancelToDashboard: () => setState(() => _selectedIndex = 0),
+        ),
+        SalesHistoryScreen(
+          key: _salesHistoryKey,
+          onProductReturned: _scheduleCatalogRefreshAfterReturn,
         ),
         ProductTransfersScreen(
           actorCode: session.promoCode,
@@ -474,7 +486,8 @@ class _AdminWebShellState extends State<AdminWebShell> {
                     return;
                   }
                   setState(() => _selectedIndex = index);
-                  if (!sellerMode && index == _salesHistoryTabIndex) {
+                  if ((!sellerMode && index == _salesHistoryTabIndex) ||
+                      (sellerMode && index == _sellerSalesHistoryTabIndex)) {
                     _scheduleSalesHistoryReload();
                   }
                   if (index == transfersTabIndex) {
